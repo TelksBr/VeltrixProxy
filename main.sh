@@ -26,10 +26,11 @@ declare -A EMOJIS=(
 
 readonly TOKEN_PATH="$HOME/.proxy_token"
 readonly PROXY_EXECUTABLE="/usr/local/bin/proxy"
+readonly PROJECT_NAME="VeltrixProxy"
 readonly LOG_PATH="/var/log"
 readonly SYSTEMD_SERVICE_PATH="/etc/systemd/system"
 readonly DEFAULT_BUFFER_SIZE=32768
-readonly DEFAULT_HTTP_RESPONSE="VTProxy"
+readonly DEFAULT_HTTP_RESPONSE="$PROJECT_NAME"
 readonly MIN_PORT=1
 readonly MAX_PORT=65535
 
@@ -120,7 +121,7 @@ prompt_for_token_if_missing() {
 
     if [[ -z "$token" ]]; then
         clear
-        print_message "WARN" "Token de acesso não encontrado."
+        print_message "WARN" "Token de acesso do ${PROJECT_NAME} não encontrado."
 
         while true; do
             token=$(read_input "Por favor, insira seu token")
@@ -174,7 +175,7 @@ build_service_file() {
 
     cat >"$service_file_path" <<EOF
 [Unit]
-Description=VTProxy Server na porta $port
+Description=${PROJECT_NAME} Server na porta $port
 
 [Service]
 ExecStart=$PROXY_EXECUTABLE --token=$token --port=$port$ssl_enabled $ssl_cert_path $ssh_only_flag --buffer-size=$DEFAULT_BUFFER_SIZE --response=$http_response --domain --log-file=$(get_log_file_path "$port")
@@ -268,7 +269,7 @@ list_active_proxies() {
 display_menu() {
     local active_ports
     echo -e "${COLORS[TITLE]}╔═════════════════════════════╗${COLORS[RESET]}"
-    echo -e "${COLORS[TITLE]}║${COLORS[SUCCESS]}       VTProxy Menu          ${COLORS[RESET]}${COLORS[TITLE]}║${COLORS[RESET]}"
+    echo -e "${COLORS[TITLE]}║${COLORS[SUCCESS]}$(printf '%*s' $(( (29 + ${#PROJECT_NAME}) / 2 )) "$PROJECT_NAME")${COLORS[TITLE]}║${COLORS[RESET]}"
     echo -e "${COLORS[TITLE]}║═════════════════════════════║${COLORS[RESET]}"
 
     active_ports=$(list_active_proxies)
@@ -300,7 +301,7 @@ main() {
         3 | 03) restart_proxy_service ;;
         4 | 04) show_proxy_logs ;;
         0 | 00)
-            print_message "EXIT" "Saindo. Até logo!"
+            print_message "EXIT" "Saindo do ${PROJECT_NAME}. Até logo!"
             exit 0
             ;;
         *)
