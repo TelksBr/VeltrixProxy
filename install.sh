@@ -29,6 +29,32 @@ log_success() { echo -e "${GREEN}✅ $1${NC}"; }
 log_warn() { echo -e "${YELLOW}⚠️  $1${NC}"; }
 log_error() { echo -e "${RED}❌ $1${NC}" >&2; }
 
+has_command() {
+  local cmd="$1"
+  command -v "$cmd" >/dev/null 2>&1 && return 0
+  [[ -x "/usr/bin/$cmd" ]] && return 0
+  [[ -x "/bin/$cmd" ]] && return 0
+  return 1
+}
+
+has_checksum_command() {
+  has_command sha256sum || has_command gsha256sum || has_command shasum
+}
+
+run_checksum_verify() {
+  local sha_file="$1"
+  if has_command sha256sum; then
+    sha256sum -c "$sha_file"
+  elif has_command gsha256sum; then
+    gsha256sum -c "$sha_file"
+  elif has_command shasum; then
+    shasum -a 256 -c "$sha_file"
+  else
+    log_warn "Comando de checksum indisponível. Pulando verificação..."
+    return 0
+  fi
+}
+
 usage() {
   cat <<EOF
 Uso: $0 [opções]
@@ -143,24 +169,28 @@ detect_package_manager() {
 
 get_missing_commands() {
   local missing=()
-  command -v curl >/dev/null 2>&1 || missing+=("curl")
-  command -v jq >/dev/null 2>&1 || missing+=("jq")
-  command -v sha256sum >/dev/null 2>&1 || missing+=("sha256sum")
-  printf '%s\n' "${missing[@]}"
+  has_command curl || missing+=("curl")
+  has_checksum_command || missing+=("sha256sum")
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    printf '%s\n' "${missing[@]}"
+  fi
 }
 
 commands_to_packages() {
   local cmd packages=() pkg
   for cmd in "$@"; do
+    cmd="${cmd//$'\r'/}"
+    [[ -z "$cmd" ]] && continue
     case "$cmd" in
     curl) pkg="curl" ;;
-    jq) pkg="jq" ;;
     sha256sum) pkg="coreutils" ;;
     *) continue ;;
     esac
     [[ " ${packages[*]} " == *" $pkg "* ]] || packages+=("$pkg")
   done
-  printf '%s\n' "${packages[@]}"
+  if [[ ${#packages[@]} -gt 0 ]]; then
+    printf '%s\n' "${packages[@]}"
+  fi
 }
 
 install_packages() {
@@ -194,10 +224,20 @@ install_packages() {
   esac
 }
 
-ensure_dependencies() {
-  local missing=() packages=() pm
+read_nonempty_lines() {
+  local -n _target=$1
+  local line
+  _target=()
+  while IFS= read -r line; do
+    line="${line//$'\r'/}"
+    [[ -n "$line" ]] && _target+=("$line")
+  done
+}
 
-  mapfile -t missing < <(get_missing_commands)
+ensure_dependencies() {
+  local missing=() packages=() still_missing=() pm line
+
+  read_nonempty_lines missing < <(get_missing_commands)
   [[ ${#missing[@]} -eq 0 ]] && return 0
 
   log_warn "Dependências ausentes: ${missing[*]}"
@@ -205,11 +245,16 @@ ensure_dependencies() {
   pm=$(detect_package_manager)
   if [[ "$pm" == "unknown" ]]; then
     log_error "Gerenciador de pacotes não suportado."
-    log_info "Instale manualmente: curl jq coreutils"
+    log_info "Instale manualmente: curl coreutils"
     exit 1
   fi
 
-  mapfile -t packages < <(commands_to_packages "${missing[@]}")
+  read_nonempty_lines packages < <(commands_to_packages "${missing[@]}")
+  if [[ ${#packages[@]} -eq 0 ]]; then
+    log_error "Não foi possível mapear pacotes para: ${missing[*]}"
+    exit 1
+  fi
+
   log_info "Instalando dependências via ${pm}: ${packages[*]}"
 
   if ! install_packages "$pm" "${packages[@]}"; then
@@ -217,13 +262,24 @@ ensure_dependencies() {
     exit 1
   fi
 
-  mapfile -t missing < <(get_missing_commands)
-  if [[ ${#missing[@]} -gt 0 ]]; then
-    log_error "Ainda faltam dependências após instalação: ${missing[*]}"
+  hash -r 2>/dev/null || true
+  export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+
+  has_command curl || still_missing+=("curl")
+  has_checksum_command || still_missing+=("sha256sum")
+
+  if [[ ${#still_missing[@]} -gt 0 ]]; then
+    log_error "Ainda faltam dependências após instalação: ${still_missing[*]}"
+    for line in "${still_missing[@]}"; do
+      case "$line" in
+      curl) log_info "curl não encontrado em: $(command -v curl 2>/dev/null || echo 'não localizado')" ;;
+      sha256sum) log_info "Tente: apt install coreutils (ou reinicie o terminal)" ;;
+      esac
+    done
     exit 1
   fi
 
-  log_success "Dependências instaladas com sucesso."
+  log_success "Dependências OK (curl + checksum)."
 }
 
 detect_platform() {
@@ -271,16 +327,26 @@ show_current_installation() {
 }
 
 fetch_releases() {
-  local releases_json
+  local releases_json line
+  RELEASES=()
+
   releases_json=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=${MAX_VERSIONS}")
 
-  if ! echo "$releases_json" | jq -e 'type == "array"' >/dev/null; then
+  if [[ -z "$releases_json" || "$releases_json" != \[* ]]; then
     log_error "Erro ao buscar releases no GitHub."
     echo "$releases_json"
     exit 1
   fi
 
-  mapfile -t RELEASES < <(echo "$releases_json" | jq -r '.[].tag_name')
+  while IFS= read -r line; do
+    line="${line//$'\r'/}"
+    [[ -n "$line" ]] && RELEASES+=("$line")
+  done < <(
+    echo "$releases_json" \
+      | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' \
+      | sed -E 's/.*"([^"]+)"$/\1/' \
+      | head -n "$MAX_VERSIONS"
+  )
 
   if [[ ${#RELEASES[@]} -eq 0 ]]; then
     log_error "Nenhuma release encontrada em ${REPO}."
@@ -374,7 +440,7 @@ verify_checksum() {
   fi
 
   log_info "Verificando integridade com SHA256..."
-  if ! (cd "$TMP_DIR" && sha256sum -c "$sha_file"); then
+  if ! (cd "$TMP_DIR" && run_checksum_verify "$sha_file"); then
     log_error "Checksum inválido para $filename"
     exit 1
   fi
@@ -391,8 +457,8 @@ list_proxy_services() {
 }
 
 stop_proxy_services() {
-  local services
-  mapfile -t services < <(list_proxy_services)
+  local services=() service
+  read_nonempty_lines services < <(list_proxy_services)
   [[ ${#services[@]} -eq 0 ]] && return 0
 
   log_info "Parando ${#services[@]} serviço(s) do proxy..."
@@ -402,8 +468,8 @@ stop_proxy_services() {
 }
 
 restart_proxy_services() {
-  local services
-  mapfile -t services < <(list_proxy_services)
+  local services=() service
+  read_nonempty_lines services < <(list_proxy_services)
   [[ ${#services[@]} -eq 0 ]] && return 0
 
   log_info "Reiniciando ${#services[@]} serviço(s) do proxy..."
