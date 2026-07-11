@@ -29,7 +29,7 @@ readonly PROXY_EXECUTABLE="/usr/local/bin/proxy"
 readonly LOG_PATH="/var/log"
 readonly SYSTEMD_SERVICE_PATH="/etc/systemd/system"
 readonly DEFAULT_BUFFER_SIZE=32768
-readonly DEFAULT_HTTP_RESPONSE="VeltrixProxy"
+readonly DEFAULT_HTTP_RESPONSE="VTProxy"
 readonly MIN_PORT=1
 readonly MAX_PORT=65535
 
@@ -174,7 +174,7 @@ build_service_file() {
 
     cat >"$service_file_path" <<EOF
 [Unit]
-Description=VeltrixProxy Server na porta $port
+Description=VTProxy Server na porta $port
 
 [Service]
 ExecStart=$PROXY_EXECUTABLE --token=$token --port=$port$ssl_enabled $ssl_cert_path $ssh_only_flag --buffer-size=$DEFAULT_BUFFER_SIZE --response=$http_response --domain --log-file=$(get_log_file_path "$port")
@@ -268,7 +268,7 @@ list_active_proxies() {
 display_menu() {
     local active_ports
     echo -e "${COLORS[TITLE]}╔═════════════════════════════╗${COLORS[RESET]}"
-    echo -e "${COLORS[TITLE]}║${COLORS[SUCCESS]}    VeltrixProxy Menu       ${COLORS[RESET]}${COLORS[TITLE]}║${COLORS[RESET]}"
+    echo -e "${COLORS[TITLE]}║${COLORS[SUCCESS]}       VTProxy Menu          ${COLORS[RESET]}${COLORS[TITLE]}║${COLORS[RESET]}"
     echo -e "${COLORS[TITLE]}║═════════════════════════════║${COLORS[RESET]}"
 
     active_ports=$(list_active_proxies)
