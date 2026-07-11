@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPO="TelksBr/VeltrixProxy"
+PROJECT_NAME="VTProxy"
 MAIN_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/refs/heads/main/main.sh"
 BINARY_NAME="proxy"
 MAIN_NAME="main"
@@ -102,7 +103,7 @@ print_header() {
   [[ "$SKIP_HEADER" == true ]] && return 0
   clear
   echo -e "${BLUE}╔═══════════════════════════════════════════════════╗"
-  echo -e "║            INSTALADOR VeltrixProxy                ║"
+  echo -e "║              INSTALADOR ${PROJECT_NAME}$(printf '%*s' $((19 - ${#PROJECT_NAME})) '')║"
   echo -e "╠═══════════════════════════════════════════════════╣"
   echo -e "║ Repositório: $(printf '%-36s' "$REPO") ║"
   echo -e "║ Modo:        $(printf '%-36s' "$MODE") ║"
@@ -111,17 +112,118 @@ print_header() {
   echo
 }
 
-check_dependencies() {
-  local missing=()
-  for dep in curl jq sha256sum; do
-    command -v "$dep" >/dev/null 2>&1 || missing+=("$dep")
-  done
-
-  if [[ ${#missing[@]} -gt 0 ]]; then
-    log_error "Dependências ausentes: ${missing[*]}"
-    log_info "Instale com: apt install curl jq coreutils"
+run_privileged() {
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    log_error "Privilégios de root necessários. Execute como root ou instale sudo."
     exit 1
   fi
+}
+
+detect_package_manager() {
+  if command -v apt-get >/dev/null 2>&1; then
+    echo apt
+  elif command -v apk >/dev/null 2>&1; then
+    echo apk
+  elif command -v dnf >/dev/null 2>&1; then
+    echo dnf
+  elif command -v yum >/dev/null 2>&1; then
+    echo yum
+  elif command -v pacman >/dev/null 2>&1; then
+    echo pacman
+  elif command -v zypper >/dev/null 2>&1; then
+    echo zypper
+  else
+    echo unknown
+  fi
+}
+
+get_missing_commands() {
+  local missing=()
+  command -v curl >/dev/null 2>&1 || missing+=("curl")
+  command -v jq >/dev/null 2>&1 || missing+=("jq")
+  command -v sha256sum >/dev/null 2>&1 || missing+=("sha256sum")
+  printf '%s\n' "${missing[@]}"
+}
+
+commands_to_packages() {
+  local cmd packages=() pkg
+  for cmd in "$@"; do
+    case "$cmd" in
+    curl) pkg="curl" ;;
+    jq) pkg="jq" ;;
+    sha256sum) pkg="coreutils" ;;
+    *) continue ;;
+    esac
+    [[ " ${packages[*]} " == *" $pkg "* ]] || packages+=("$pkg")
+  done
+  printf '%s\n' "${packages[@]}"
+}
+
+install_packages() {
+  local pm="$1"
+  shift
+  local packages=("$@")
+
+  case "$pm" in
+  apt)
+    run_privileged apt-get update -qq
+    run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+    ;;
+  apk)
+    run_privileged apk add --no-cache "${packages[@]}"
+    ;;
+  dnf)
+    run_privileged dnf install -y "${packages[@]}"
+    ;;
+  yum)
+    run_privileged yum install -y "${packages[@]}"
+    ;;
+  pacman)
+    run_privileged pacman -Sy --noconfirm "${packages[@]}"
+    ;;
+  zypper)
+    run_privileged zypper install -y "${packages[@]}"
+    ;;
+  *)
+    return 1
+    ;;
+  esac
+}
+
+ensure_dependencies() {
+  local missing=() packages=() pm
+
+  mapfile -t missing < <(get_missing_commands)
+  [[ ${#missing[@]} -eq 0 ]] && return 0
+
+  log_warn "Dependências ausentes: ${missing[*]}"
+
+  pm=$(detect_package_manager)
+  if [[ "$pm" == "unknown" ]]; then
+    log_error "Gerenciador de pacotes não suportado."
+    log_info "Instale manualmente: curl jq coreutils"
+    exit 1
+  fi
+
+  mapfile -t packages < <(commands_to_packages "${missing[@]}")
+  log_info "Instalando dependências via ${pm}: ${packages[*]}"
+
+  if ! install_packages "$pm" "${packages[@]}"; then
+    log_error "Falha ao instalar dependências automaticamente."
+    exit 1
+  fi
+
+  mapfile -t missing < <(get_missing_commands)
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    log_error "Ainda faltam dependências após instalação: ${missing[*]}"
+    exit 1
+  fi
+
+  log_success "Dependências instaladas com sucesso."
 }
 
 detect_platform() {
@@ -353,7 +455,7 @@ print_finish_message() {
 main() {
   parse_args "$@"
   print_header
-  check_dependencies
+  ensure_dependencies
   detect_platform
   show_current_installation
   fetch_releases
