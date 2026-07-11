@@ -102,7 +102,7 @@ print_header() {
   [[ "$SKIP_HEADER" == true ]] && return 0
   clear
   echo -e "${BLUE}╔═══════════════════════════════════════════════════╗"
-  echo -e "║              INSTALADOR VTProxy                   ║"
+  echo -e "║            INSTALADOR VeltrixProxy                ║"
   echo -e "╠═══════════════════════════════════════════════════╣"
   echo -e "║ Repositório: $(printf '%-36s' "$REPO") ║"
   echo -e "║ Modo:        $(printf '%-36s' "$MODE") ║"
