@@ -3,7 +3,8 @@ set -euo pipefail
 
 REPO="TelksBr/VeltrixProxy"
 PROJECT_NAME="VTProxy"
-MAIN_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/refs/heads/main/main.sh"
+INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
+MAIN_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/main.sh"
 BINARY_NAME="proxy"
 MAIN_NAME="main"
 INSTALL_DIR="/usr/local/bin"
@@ -516,6 +517,9 @@ print_finish_message() {
   if [[ "$BINARY_ONLY" == false ]]; then
     log_info "Execute o menu com: ${MAIN_NAME}"
   fi
+  echo ""
+  log_info "Para reinstalar/atualizar depois:"
+  echo -e "  ${CYAN}curl -fsSL ${INSTALL_URL} | bash -s -- --update --yes${NC}"
 }
 
 main() {
