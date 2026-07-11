@@ -5,10 +5,16 @@ REPO="TelksBr/VeltrixProxy"
 PROJECT_NAME="VTProxy"
 INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 MAIN_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/main.sh"
-BINARY_NAME="proxy"
+# Artefato no GitHub (padrão original): proxy-linux-amd64
+RELEASE_BINARY_PREFIX="proxy"
+# Binário instalado (novo nome — não sobrescreve /usr/local/bin/proxy legado)
+BINARY_NAME="proxy-server"
 MAIN_NAME="main"
 INSTALL_DIR="/usr/local/bin"
-VERSION_FILE="/etc/proxyvt-version"
+VERSION_FILE="/etc/proxy-version"
+LEGACY_BINARY_NAME="proxy"
+LEGACY_VERSION_FILE="/etc/proxyvt-version"
+BOX_WIDTH=51
 TMP_DIR=""
 
 MODE="install"
@@ -128,14 +134,15 @@ parse_args() {
 
 print_header() {
   [[ "$SKIP_HEADER" == true ]] && return 0
+  local title="INSTALADOR ${PROJECT_NAME}"
   clear
-  echo -e "${BLUE}╔═══════════════════════════════════════════════════╗"
-  echo -e "║              INSTALADOR ${PROJECT_NAME}$(printf '%*s' $((19 - ${#PROJECT_NAME})) '')║"
-  echo -e "╠═══════════════════════════════════════════════════╣"
-  echo -e "║ Repositório: $(printf '%-36s' "$REPO") ║"
-  echo -e "║ Modo:        $(printf '%-36s' "$MODE") ║"
-  echo -e "║ Binário:     $(printf '%-36s' "$INSTALL_DIR/$BINARY_NAME") ║"
-  echo -e "╚═══════════════════════════════════════════════════╝${NC}"
+  echo -e "${BLUE}╔═══════════════════════════════════════════════════╗${NC}"
+  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" "$title"
+  echo -e "${BLUE}╠═══════════════════════════════════════════════════╣${NC}"
+  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Repositório: ${REPO}"
+  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Modo:        ${MODE}"
+  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Binário:     ${INSTALL_DIR}/${BINARY_NAME}"
+  echo -e "${BLUE}╚═══════════════════════════════════════════════════╝${NC}"
   echo
 }
 
@@ -312,8 +319,18 @@ get_installed_version() {
     return
   fi
 
+  if [[ -x "${INSTALL_DIR}/${LEGACY_BINARY_NAME}" ]]; then
+    "${INSTALL_DIR}/${LEGACY_BINARY_NAME}" --version 2>/dev/null | awk '{print $2}' | tr -d 'v' || true
+    return
+  fi
+
   if [[ -f "$VERSION_FILE" ]]; then
     tr -d 'v' <"$VERSION_FILE"
+    return
+  fi
+
+  if [[ -f "$LEGACY_VERSION_FILE" ]]; then
+    tr -d 'v' <"$LEGACY_VERSION_FILE"
   fi
 }
 
@@ -322,6 +339,9 @@ show_current_installation() {
   current=$(get_installed_version || true)
   if [[ -n "$current" ]]; then
     log_info "Versão instalada atualmente: v${current}"
+    if [[ -x "${INSTALL_DIR}/${LEGACY_BINARY_NAME}" && ! -x "${INSTALL_DIR}/${BINARY_NAME}" ]]; then
+      log_warn "Instalação legada detectada em ${INSTALL_DIR}/${LEGACY_BINARY_NAME}"
+    fi
   else
     log_warn "Nenhuma instalação detectada em ${INSTALL_DIR}/${BINARY_NAME}"
   fi
@@ -480,7 +500,7 @@ restart_proxy_services() {
 }
 
 download_and_install_binary() {
-  local filename="${BINARY_NAME}-${OS_NAME}-${ARCH_NAME}"
+  local filename="${RELEASE_BINARY_PREFIX}-${OS_NAME}-${ARCH_NAME}"
   DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${filename}"
 
   TMP_DIR=$(mktemp -d)

@@ -25,8 +25,20 @@ declare -A EMOJIS=(
 )
 
 readonly TOKEN_PATH="$HOME/.proxy_token"
-readonly PROXY_EXECUTABLE="/usr/local/bin/proxy"
-readonly PROJECT_NAME="VeltrixProxy"
+readonly MENU_BOX_WIDTH=29
+
+resolve_proxy_executable() {
+    if [[ -x "/usr/local/bin/proxy-server" ]]; then
+        echo "/usr/local/bin/proxy-server"
+    elif [[ -x "/usr/local/bin/proxy" ]]; then
+        echo "/usr/local/bin/proxy"
+    else
+        echo "/usr/local/bin/proxy-server"
+    fi
+}
+
+readonly PROXY_EXECUTABLE="$(resolve_proxy_executable)"
+readonly PROJECT_NAME="VTProxy"
 readonly LOG_PATH="/var/log"
 readonly SYSTEMD_SERVICE_PATH="/etc/systemd/system"
 readonly DEFAULT_BUFFER_SIZE=32768
@@ -266,24 +278,48 @@ list_active_proxies() {
     systemctl list-units --type=service --state=running | grep -oE 'proxy-[0-9]+' | cut -d'-' -f2 | tr '\n' ' '
 }
 
+menu_box_title() {
+    local title="$1"
+    local pad_left=$(( (MENU_BOX_WIDTH - ${#title}) / 2 ))
+    local pad_right=$(( MENU_BOX_WIDTH - ${#title} - pad_left ))
+    echo -e "${COLORS[TITLE]}║${COLORS[SUCCESS]}$(printf '%*s' $pad_left '')${title}$(printf '%*s' $pad_right '')${COLORS[TITLE]}║${COLORS[RESET]}"
+}
+
+menu_box_separator() {
+    echo -e "${COLORS[TITLE]}╠$(printf '═%.0s' {1..29})╣${COLORS[RESET]}"
+}
+
+menu_option_row() {
+    local num="$1"
+    local label="$2"
+    local label_color="${3:-${COLORS[ERROR]}}"
+    local visible="[${num}] • ${label}"
+    local pad=$(( MENU_BOX_WIDTH - ${#visible} ))
+    (( pad < 0 )) && pad=0
+    echo -e "${COLORS[TITLE]}║${COLORS[INFO]}[${COLORS[SUCCESS]}${num}${COLORS[INFO]}] ${COLORS[SUCCESS]}• ${label_color}${label}$(printf '%*s' $pad '')${COLORS[TITLE]}║${COLORS[RESET]}"
+}
+
 display_menu() {
-    local active_ports
-    echo -e "${COLORS[TITLE]}╔═════════════════════════════╗${COLORS[RESET]}"
-    echo -e "${COLORS[TITLE]}║${COLORS[SUCCESS]}$(printf '%*s' $(( (29 + ${#PROJECT_NAME}) / 2 )) "$PROJECT_NAME")${COLORS[TITLE]}║${COLORS[RESET]}"
-    echo -e "${COLORS[TITLE]}║═════════════════════════════║${COLORS[RESET]}"
+    local active_ports usage_line pad
+    echo -e "${COLORS[TITLE]}╔$(printf '═%.0s' {1..29})╗${COLORS[RESET]}"
+    menu_box_title "$PROJECT_NAME"
+    menu_box_separator
 
     active_ports=$(list_active_proxies)
     if [[ -n "$active_ports" ]]; then
-        echo -e "${COLORS[TITLE]}║${COLORS[SUCCESS]}Em uso:${COLORS[WARN]} $(printf "%-20s ${COLORS[TITLE]}║" "$active_ports")${COLORS[RESET]}"
-        echo -e "${COLORS[TITLE]}║═════════════════════════════║${COLORS[RESET]}"
+        usage_line="Em uso: ${active_ports}"
+        pad=$(( MENU_BOX_WIDTH - ${#usage_line} ))
+        (( pad < 0 )) && pad=0
+        echo -e "${COLORS[TITLE]}║${COLORS[SUCCESS]}Em uso:${COLORS[WARN]} ${active_ports}$(printf '%*s' $pad '')${COLORS[TITLE]}║${COLORS[RESET]}"
+        menu_box_separator
     fi
 
-    echo -e "${COLORS[TITLE]}║${COLORS[INFO]}[${COLORS[SUCCESS]}01${COLORS[INFO]}] ${COLORS[SUCCESS]}• ${COLORS[ERROR]}ABRIR PORTA           ${COLORS[TITLE]}║${COLORS[RESET]}"
-    echo -e "${COLORS[TITLE]}║${COLORS[INFO]}[${COLORS[SUCCESS]}02${COLORS[INFO]}] ${COLORS[SUCCESS]}• ${COLORS[ERROR]}FECHAR PORTA          ${COLORS[TITLE]}║${COLORS[RESET]}"
-    echo -e "${COLORS[TITLE]}║${COLORS[INFO]}[${COLORS[SUCCESS]}03${COLORS[INFO]}] ${COLORS[SUCCESS]}• ${COLORS[ERROR]}REINICIAR PORTA       ${COLORS[TITLE]}║${COLORS[RESET]}"
-    echo -e "${COLORS[TITLE]}║${COLORS[INFO]}[${COLORS[SUCCESS]}04${COLORS[INFO]}] ${COLORS[SUCCESS]}• ${COLORS[ERROR]}VER LOG DA PORTA      ${COLORS[TITLE]}║${COLORS[RESET]}"
-    echo -e "${COLORS[TITLE]}║${COLORS[INFO]}[${COLORS[SUCCESS]}00${COLORS[INFO]}] ${COLORS[ERROR]}• ${COLORS[WARN]}SAIR                  ${COLORS[TITLE]}║${COLORS[RESET]}"
-    echo -e "${COLORS[TITLE]}╚═════════════════════════════╝${COLORS[RESET]}"
+    menu_option_row "01" "ABRIR PORTA"
+    menu_option_row "02" "FECHAR PORTA"
+    menu_option_row "03" "REINICIAR PORTA"
+    menu_option_row "04" "VER LOG DA PORTA"
+    menu_option_row "00" "SAIR" "${COLORS[WARN]}"
+    echo -e "${COLORS[TITLE]}╚$(printf '═%.0s' {1..29})╝${COLORS[RESET]}"
 }
 
 main() {
