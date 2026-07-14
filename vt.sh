@@ -48,20 +48,20 @@ DEFAULT_HTTP_RESPONSE="$PROJECT_NAME"
 MIN_PORT=1
 MAX_PORT=65535
 
-RED='\033[1;31m'
-GREEN='\033[1;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[1;34m'
-PURPLE='\033[1;35m'
-CYAN='\033[1;36m'
-WHITE='\033[1;37m'
-GRAY='\033[1;90m'
-BG_BLUE='\033[44m'
-BG_GREEN='\033[42m'
-BG_RED='\033[41m'
-BG_GRAY='\033[100m'
-RESET='\033[0m'
-BOLD='\033[1m'
+RED=$'\033[1;31m'
+GREEN=$'\033[1;32m'
+YELLOW=$'\033[1;33m'
+BLUE=$'\033[1;34m'
+PURPLE=$'\033[1;35m'
+CYAN=$'\033[1;36m'
+WHITE=$'\033[1;37m'
+GRAY=$'\033[1;90m'
+BG_BLUE=$'\033[44m'
+BG_GREEN=$'\033[42m'
+BG_RED=$'\033[41m'
+BG_GRAY=$'\033[100m'
+RESET=$'\033[0m'
+BOLD=$'\033[1m'
 
 strip_ansi() {
     printf '%s' "$1" | sed -u 's/\x1b\[[0-9;]*m//g'
@@ -72,7 +72,9 @@ visible_len() {
 import re
 import sys
 
-text = re.sub(r'\x1b\[[0-9;]*m', '', sys.argv[1])
+text = sys.argv[1]
+text = re.sub(r'\x1b\[[0-9;]*m', '', text)
+text = re.sub(r'\\033\[[0-9;]*m', '', text)
 print(len(text))
 PY
 }
@@ -94,7 +96,9 @@ print_box_line() {
     local inner_width="${2:-$MENU_BOX_WIDTH}"
     local pad=$((inner_width - $(visible_len "$content")))
     ((pad < 0)) && pad=0
-    printf "${BLUE}║${RESET}%s%*s${BLUE}║${RESET}\n" "$content" "$pad" ""
+    printf '%b' "${BLUE}║${RESET}${content}"
+    printf '%*s' "$pad" ""
+    printf '%b\n' "${BLUE}║${RESET}"
 }
 
 print_box_heading() {
