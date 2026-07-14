@@ -22,7 +22,7 @@ PROTO_CREDENTIALS_FILE="${PROTO_DATA_DIR}/credentials.json"
 PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
-INSTALLER_REV="2026-07-14-svc2"
+INSTALLER_REV="2026-07-14-svc3"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
 LEGACY_BINARY_NAME="proxy"
@@ -31,6 +31,8 @@ BOX_WIDTH=51
 TMP_DIR=""
 ACTIVE_PROXY_SERVICES=()
 ACTIVE_PROTO=false
+SERVICES_WERE_STOPPED=false
+INSTALL_COMPLETED=false
 
 MODE="install"
 VERSION=""
@@ -115,6 +117,13 @@ EOF
 
 cleanup() {
   [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]] && rm -rf "$TMP_DIR"
+
+  if [[ "$SERVICES_WERE_STOPPED" == true && "$INSTALL_COMPLETED" != true ]]; then
+    log_warn "Instalação interrompida — tentando restaurar serviços parados..."
+    has_systemd && run_privileged systemctl daemon-reload 2>/dev/null || true
+    restart_proxy_services || true
+    restart_proto_server || true
+  fi
 }
 trap cleanup EXIT
 
@@ -640,6 +649,16 @@ escape_sed_replacement() {
   printf '%s' "$1" | sed 's/[\\/&|]/\\&/g'
 }
 
+safe_sed_inplace() {
+  local service_file="$1"
+  shift
+
+  if ! run_privileged sed -Ei "$@" "$service_file"; then
+    log_warn "Falha ao atualizar $(basename "$service_file") — continuando..."
+    return 1
+  fi
+}
+
 has_systemd() {
   command -v systemctl >/dev/null 2>&1
 }
@@ -779,8 +798,17 @@ restart_proto_server() {
   fi
 
   if [[ "$MODE" == "update" || "$MODE" == "reinstall" || "$ACTIVE_PROTO" == true ]]; then
-    log_info "Reiniciando serviço proto-server..."
-    run_privileged systemctl restart proto-server || log_warn "Não foi possível reiniciar proto-server"
+    log_info "Iniciando/reiniciando serviço proto-server..."
+    if ! run_privileged systemctl restart proto-server; then
+      log_warn "Não foi possível reiniciar proto-server."
+      log_info "Verifique: journalctl -u proto-server -n 30 --no-pager"
+      return 1
+    fi
+    if systemctl is-active --quiet proto-server 2>/dev/null; then
+      log_success "proto-server ativo."
+    else
+      log_warn "proto-server não ficou ativo após restart."
+    fi
   fi
 }
 
@@ -805,18 +833,16 @@ sync_proxy_service_executables() {
 
   while IFS= read -r service_file; do
     [[ -f "$service_file" ]] || continue
-    run_privileged sed -Ei \
+    safe_sed_inplace "$service_file" \
       -e "s|ExecStart=${INSTALL_DIR}/${LEGACY_BINARY_NAME}([^-a-zA-Z])|ExecStart=${new_bin}\1|g" \
-      -e "s|ExecStart=${INSTALL_DIR}/${BINARY_NAME}|ExecStart=${new_bin}|g" \
-      "$service_file"
+      -e "s|ExecStart=${INSTALL_DIR}/${BINARY_NAME}|ExecStart=${new_bin}|g" || true
   done < <(find_service_files_by_exec 'ExecStart=.*(/usr/local/bin/proxy-server|/usr/local/bin/proxy)( |$)')
 
   for service_file in /etc/systemd/system/proxy-*.service; do
     [[ -f "$service_file" ]] || continue
-    run_privileged sed -Ei \
+    safe_sed_inplace "$service_file" \
       -e "s|ExecStart=${INSTALL_DIR}/${LEGACY_BINARY_NAME}([^-a-zA-Z])|ExecStart=${new_bin}\1|g" \
-      -e "s|ExecStart=${INSTALL_DIR}/${BINARY_NAME}|ExecStart=${new_bin}|g" \
-      "$service_file"
+      -e "s|ExecStart=${INSTALL_DIR}/${BINARY_NAME}|ExecStart=${new_bin}|g" || true
   done
 }
 
@@ -830,14 +856,14 @@ sync_proxy_service_tokens() {
   while IFS= read -r service_file; do
     [[ -f "$service_file" ]] || continue
     if grep -q -- '--token=' "$service_file"; then
-      run_privileged sed -Ei "s|--token=[^ ]+|--token=${safe_token}|g" "$service_file"
+      safe_sed_inplace "$service_file" "s|--token=[^ ]+|--token=${safe_token}|g" || true
     fi
   done < <(find_service_files_by_exec 'ExecStart=.*(/usr/local/bin/proxy-server|/usr/local/bin/proxy)( |$)')
 
   for service_file in /etc/systemd/system/proxy-*.service; do
     [[ -f "$service_file" ]] || continue
     if grep -q -- '--token=' "$service_file"; then
-      run_privileged sed -Ei "s|--token=[^ ]+|--token=${safe_token}|g" "$service_file"
+      safe_sed_inplace "$service_file" "s|--token=[^ ]+|--token=${safe_token}|g" || true
     fi
   done
 }
@@ -926,11 +952,14 @@ sync_proto_service() {
   service_file="$(find_proto_service_file || true)"
   [[ -n "$service_file" && -f "$service_file" ]] || return 0
 
-  run_privileged sed -Ei "s|/usr/local/bin/proto-server|${proto_bin}|g" "$service_file"
+  run_privileged sed -Ei "s|/usr/local/bin/proto-server|${proto_bin}|g" "$service_file" || {
+    log_warn "Falha ao atualizar binário em $(basename "$service_file")"
+    return 0
+  }
 
   [[ -n "$token" ]] || return 0
   safe_token=$(escape_sed_replacement "$token")
-  run_privileged sed -Ei "s|--token=[^ ]+|--token=${safe_token}|g" "$service_file"
+  safe_sed_inplace "$service_file" "s|--token=[^ ]+|--token=${safe_token}|g" || true
 }
 
 refresh_existing_services() {
@@ -1146,6 +1175,7 @@ main() {
   confirm_installation
 
   if should_manage_services; then
+    SERVICES_WERE_STOPPED=true
     stop_proxy_services
     stop_proto_server
   fi
@@ -1162,6 +1192,7 @@ main() {
     restart_proto_server
   fi
 
+  INSTALL_COMPLETED=true
   print_finish_message
 }
 
