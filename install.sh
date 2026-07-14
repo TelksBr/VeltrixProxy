@@ -15,13 +15,21 @@ PROTO_FALLBACK_REPO="${PROTO_FALLBACK_REPO:-DTunnel0/DTProto-Server-Releases}"
 BINARY_NAME="proxy-server"
 PROTO_BINARY_NAME="proto-server"
 MENU_NAME="vt"
-INSTALL_DIR="/usr/local/bin"
+PROTO_CONFIG_FILE="/etc/proto-server/config.conf"
+PROTO_DATA_DIR="/var/lib/proto-server"
+PROTO_CREDENTIALS_FILE="${PROTO_DATA_DIR}/credentials.json"
+PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
+PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
+PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
+INSTALLER_REV="2026-07-14-svc"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
 LEGACY_BINARY_NAME="proxy"
 LEGACY_VERSION_FILE="/etc/proxyvt-version"
 BOX_WIDTH=51
 TMP_DIR=""
+ACTIVE_PROXY_SERVICES=()
+ACTIVE_PROTO=false
 
 MODE="install"
 VERSION=""
@@ -78,7 +86,7 @@ usage() {
 Uso: $0 [opções]
 
 Modos:
-  (padrão)        Instalação interativa com escolha de versão
+  (padrão)        Instalação interativa (detecta e atualiza serviços existentes)
   --install       Mesmo que o padrão
   --update        Atualiza para a versão mais recente (reinicia serviços ativos)
   --reinstall     Reinstala binários e menu vt (interativo ou com --latest)
@@ -186,6 +194,7 @@ print_header() {
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Binário proxy: ${INSTALL_DIR}/${BINARY_NAME}"
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Binário proto: ${INSTALL_DIR}/${PROTO_BINARY_NAME}"
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Menu:          ${INSTALL_DIR}/${MENU_NAME}"
+  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Revisão:       ${INSTALLER_REV}"
   echo -e "${BLUE}╚═══════════════════════════════════════════════════╝${NC}"
   echo
 }
@@ -572,8 +581,70 @@ verify_checksum() {
   fi
 }
 
+get_proto_config_value() {
+  local key="$1"
+  if [[ -f "$PROTO_CONFIG_FILE" ]]; then
+    grep "^${key}=" "$PROTO_CONFIG_FILE" | cut -d'=' -f2- | head -n1
+  fi
+}
+
+find_service_files_by_exec() {
+  local pattern="$1"
+  local dir service_file
+
+  for dir in /etc/systemd/system /lib/systemd/system; do
+    [[ -d "$dir" ]] || continue
+    for service_file in "$dir"/*.service; do
+      [[ -f "$service_file" ]] || continue
+      grep -qE "$pattern" "$service_file" 2>/dev/null && echo "$service_file"
+    done
+  done | sort -u
+}
+
+has_active_proxy_process() {
+  if has_command pgrep; then
+    pgrep -f '/usr/local/bin/proxy-server' >/dev/null 2>&1 && return 0
+    pgrep -f '/usr/local/bin/proxy ' >/dev/null 2>&1 && return 0
+  fi
+  return 1
+}
+
+has_active_proto_process() {
+  if has_command pgrep; then
+    pgrep -f '/usr/local/bin/proto-server' >/dev/null 2>&1 && return 0
+    pgrep -f 'proto-server.*--token=' >/dev/null 2>&1 && return 0
+  fi
+  return 1
+}
+
+has_active_vtproxy_processes() {
+  has_active_proxy_process || has_active_proto_process
+}
+
+has_prior_installation() {
+  local current current_proto
+
+  current=$(get_installed_version 2>/dev/null || true)
+  current_proto=$(get_installed_proto_version 2>/dev/null || true)
+  [[ -n "$current" || -n "$current_proto" ]] && return 0
+  [[ -f /etc/proxy/token || -f /etc/vtproxy/proxy.token ]] && return 0
+  [[ -f /etc/proto-server/token || -f "$PROTO_CONFIG_FILE" ]] && return 0
+  [[ -d /etc/proxy/conf.d ]] && return 0
+  has_existing_services && return 0
+  has_active_vtproxy_processes && return 0
+  return 1
+}
+
+escape_sed_replacement() {
+  printf '%s' "$1" | sed 's/[\\/&|]/\\&/g'
+}
+
+has_systemd() {
+  command -v systemctl >/dev/null 2>&1
+}
+
 list_proxy_services() {
-  if ! command -v systemctl >/dev/null 2>&1; then
+  if ! has_systemd; then
     return 0
   fi
 
@@ -582,39 +653,346 @@ list_proxy_services() {
     | grep -E '^proxy-[0-9]+\.service$' || true
 }
 
+list_all_proxy_services() {
+  local services=() service_file service_name
+
+  if ! has_systemd; then
+    return 0
+  fi
+
+  while IFS= read -r service_file; do
+    service_name="$(basename "$service_file")"
+    [[ " ${services[*]} " == *" $service_name "* ]] || services+=("$service_name")
+  done < <(find_service_files_by_exec 'ExecStart=.*(/usr/local/bin/proxy-server|/usr/local/bin/proxy)( |$)')
+
+  while IFS= read -r service_name; do
+    service_name="${service_name//$'\r'/}"
+    [[ -n "$service_name" ]] && [[ " ${services[*]} " != *" $service_name "* ]] && services+=("$service_name")
+  done < <(
+    systemctl list-unit-files --type=service --no-legend 'proxy-*.service' 2>/dev/null \
+      | awk '{print $1}' \
+      | grep -E '^proxy-[0-9]+\.service$' || true
+  )
+
+  for service_file in /etc/systemd/system/proxy-*.service; do
+    [[ -f "$service_file" ]] || continue
+    service_name="$(basename "$service_file")"
+    [[ " ${services[*]} " == *" $service_name "* ]] || services+=("$service_name")
+  done
+
+  if [[ ${#services[@]} -gt 0 ]]; then
+    printf '%s\n' "${services[@]}"
+  fi
+}
+
+find_proto_service_file() {
+  if [[ -f /etc/systemd/system/proto-server.service ]]; then
+    echo /etc/systemd/system/proto-server.service
+    return 0
+  fi
+
+  find_service_files_by_exec 'ExecStart=.*proto-server' | head -n1
+}
+
+has_proto_service() {
+  has_systemd || return 1
+  [[ -n "$(find_proto_service_file || true)" ]]
+}
+
+has_proxy_services() {
+  local services=()
+  read_nonempty_lines services < <(list_all_proxy_services)
+  [[ ${#services[@]} -gt 0 ]]
+}
+
+has_existing_services() {
+  has_proto_service || has_proxy_services
+}
+
+capture_active_services() {
+  ACTIVE_PROXY_SERVICES=()
+  ACTIVE_PROTO=false
+
+  if ! has_systemd; then
+    return 0
+  fi
+
+  local services=() service
+  read_nonempty_lines services < <(list_all_proxy_services)
+  for service in "${services[@]}"; do
+    if systemctl is-active --quiet "$service" 2>/dev/null; then
+      ACTIVE_PROXY_SERVICES+=("$service")
+    fi
+  done
+
+  if systemctl is-active --quiet proto-server 2>/dev/null; then
+    ACTIVE_PROTO=true
+  elif has_active_proto_process; then
+    ACTIVE_PROTO=true
+  fi
+
+  if [[ ${#ACTIVE_PROXY_SERVICES[@]} -eq 0 ]] && has_active_proxy_process; then
+    log_warn "Processo proxy em execução detectado sem unit systemd conhecido."
+  fi
+}
+
 stop_proxy_services() {
   local services=() service
-  read_nonempty_lines services < <(list_proxy_services)
+  read_nonempty_lines services < <(list_all_proxy_services)
   [[ ${#services[@]} -eq 0 ]] && return 0
 
   log_info "Parando ${#services[@]} serviço(s) do proxy..."
   for service in "${services[@]}"; do
-    sudo systemctl stop "$service" || log_warn "Não foi possível parar $service"
+    run_privileged systemctl stop "$service" || log_warn "Não foi possível parar $service"
   done
 }
 
 restart_proxy_services() {
   local services=() service
-  read_nonempty_lines services < <(list_proxy_services)
+
+  if [[ "$MODE" == "update" || "$MODE" == "reinstall" ]]; then
+    read_nonempty_lines services < <(list_all_proxy_services)
+  elif [[ ${#ACTIVE_PROXY_SERVICES[@]} -gt 0 ]]; then
+    services=("${ACTIVE_PROXY_SERVICES[@]}")
+  else
+    return 0
+  fi
   [[ ${#services[@]} -eq 0 ]] && return 0
 
   log_info "Reiniciando ${#services[@]} serviço(s) do proxy..."
   for service in "${services[@]}"; do
-    sudo systemctl restart "$service" || log_warn "Não foi possível reiniciar $service"
+    run_privileged systemctl restart "$service" || log_warn "Não foi possível reiniciar $service"
   done
 }
 
 stop_proto_server() {
   if systemctl is-active --quiet proto-server 2>/dev/null; then
     log_info "Parando serviço proto-server..."
-    sudo systemctl stop proto-server || log_warn "Não foi possível parar proto-server"
+    run_privileged systemctl stop proto-server || log_warn "Não foi possível parar proto-server"
   fi
 }
 
 restart_proto_server() {
-  if systemctl list-unit-files --no-legend proto-server.service 2>/dev/null | grep -q proto-server; then
+  if ! has_proto_service; then
+    return 0
+  fi
+
+  if [[ "$MODE" == "update" || "$MODE" == "reinstall" || "$ACTIVE_PROTO" == true ]]; then
     log_info "Reiniciando serviço proto-server..."
-    sudo systemctl restart proto-server || log_warn "Não foi possível reiniciar proto-server"
+    run_privileged systemctl restart proto-server || log_warn "Não foi possível reiniciar proto-server"
+  fi
+}
+
+load_saved_proxy_token() {
+  local file
+  for file in /etc/vtproxy/proxy.token /etc/proxy/token "${HOME:-/root}/.proxy_token"; do
+    if [[ -f "$file" ]]; then
+      tr -d '\r\n' <"$file"
+      return 0
+    fi
+  done
+}
+
+load_saved_proto_token() {
+  if [[ -f /etc/proto-server/token ]]; then
+    tr -d '\r\n' </etc/proto-server/token
+  fi
+}
+
+sync_proxy_service_executables() {
+  local service_file new_bin="${INSTALL_DIR}/${BINARY_NAME}"
+
+  while IFS= read -r service_file; do
+    [[ -f "$service_file" ]] || continue
+    run_privileged sed -Ei \
+      -e "s|ExecStart=${INSTALL_DIR}/${LEGACY_BINARY_NAME}([^-a-zA-Z]|ExecStart=${new_bin}\1|g" \
+      -e "s|ExecStart=${INSTALL_DIR}/${BINARY_NAME}|ExecStart=${new_bin}|g" \
+      "$service_file"
+  done < <(find_service_files_by_exec 'ExecStart=.*(/usr/local/bin/proxy-server|/usr/local/bin/proxy)( |$)')
+
+  for service_file in /etc/systemd/system/proxy-*.service; do
+    [[ -f "$service_file" ]] || continue
+    run_privileged sed -Ei \
+      -e "s|ExecStart=${INSTALL_DIR}/${LEGACY_BINARY_NAME}([^-a-zA-Z]|ExecStart=${new_bin}\1|g" \
+      -e "s|ExecStart=${INSTALL_DIR}/${BINARY_NAME}|ExecStart=${new_bin}|g" \
+      "$service_file"
+  done
+}
+
+sync_proxy_service_tokens() {
+  local token="$1"
+  local service_file safe_token
+
+  [[ -n "$token" ]] || return 0
+  safe_token=$(escape_sed_replacement "$token")
+
+  while IFS= read -r service_file; do
+    [[ -f "$service_file" ]] || continue
+    if grep -q -- '--token=' "$service_file"; then
+      run_privileged sed -Ei "s|--token=[^ ]+|--token=${safe_token}|g" "$service_file"
+    fi
+  done < <(find_service_files_by_exec 'ExecStart=.*(/usr/local/bin/proxy-server|/usr/local/bin/proxy)( |$)')
+
+  for service_file in /etc/systemd/system/proxy-*.service; do
+    [[ -f "$service_file" ]] || continue
+    if grep -q -- '--token=' "$service_file"; then
+      run_privileged sed -Ei "s|--token=[^ ]+|--token=${safe_token}|g" "$service_file"
+    fi
+  done
+}
+
+normalize_protocol_config() {
+  local input="$1"
+  local output="" part
+
+  IFS=',' read -ra parts <<<"$input"
+  for part in "${parts[@]}"; do
+    case "$part" in
+    tcp:* | udp:* | quic:*)
+      if [[ -n "$output" ]]; then
+        output="$output,$part"
+      else
+        output="$part"
+      fi
+      ;;
+    esac
+  done
+
+  echo "$output"
+}
+
+ensure_proto_systemd_service() {
+  local token port subnet tun protocol_config proto_bin service_command service_file auth_flag
+
+  service_file="$(find_proto_service_file || true)"
+  [[ -n "$service_file" ]] && return 0
+
+  token="$PROTO_TOKEN"
+  if [[ -z "$token" ]]; then
+    token=$(load_saved_proto_token || true)
+  fi
+  [[ -n "$token" ]] || return 0
+
+  port=$(get_proto_config_value "PORT")
+  subnet=$(get_proto_config_value "VIRTUAL_SUBNET_CIDR")
+  tun=$(get_proto_config_value "TUN_INTERFACE")
+  protocol_config=$(get_proto_config_value "PROTOCOL_CONFIG")
+
+  port=${port:-8000}
+  subnet=${subnet:-10.10.0.0/16}
+  tun=${tun:-tun0}
+  protocol_config=$(normalize_protocol_config "${protocol_config:-tcp:$port}")
+  [[ -n "$protocol_config" ]] || protocol_config="tcp:$port"
+  proto_bin="${INSTALL_DIR}/${PROTO_BINARY_NAME}"
+  auth_flag="--auth-file=${PROTO_CREDENTIALS_FILE}"
+
+  run_privileged mkdir -p "$(dirname "$PROTO_CONFIG_FILE")" "$PROTO_DATA_DIR"
+
+  service_command="${proto_bin} \\
+    --token=${token} \\
+    --virtual-subnet-cidr=${subnet} \\
+    --tun=${tun} \\
+    --quic-cert=${PROTO_CERT_FILE} \\
+    --quic-key=${PROTO_KEY_FILE} \\
+    --stats-file=${PROTO_STATS_FILE} \\
+    --protocol=${protocol_config} \\
+    ${auth_flag}"
+
+  log_info "Criando proto-server.service a partir da configuração existente..."
+
+  run_privileged tee /etc/systemd/system/proto-server.service >/dev/null <<EOF
+[Unit]
+Description=${PROJECT_NAME} Proto Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=${service_command}
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+sync_proto_service() {
+  local token="$1"
+  local service_file safe_token proto_bin="${INSTALL_DIR}/${PROTO_BINARY_NAME}"
+
+  ensure_proto_systemd_service
+  service_file="$(find_proto_service_file || true)"
+  [[ -n "$service_file" && -f "$service_file" ]] || return 0
+
+  run_privileged sed -Ei "s|/usr/local/bin/proto-server|${proto_bin}|g" "$service_file"
+
+  [[ -n "$token" ]] || return 0
+  safe_token=$(escape_sed_replacement "$token")
+  run_privileged sed -Ei "s|--token=[^ ]+|--token=${safe_token}|g" "$service_file"
+}
+
+refresh_existing_services() {
+  local proxy_token proto_token
+
+  if ! should_manage_services; then
+    return 0
+  fi
+
+  log_info "Atualizando serviços systemd existentes..."
+
+  proxy_token="$PROXY_TOKEN"
+  if [[ -z "$proxy_token" ]]; then
+    proxy_token=$(load_saved_proxy_token || true)
+  fi
+
+  proto_token="$PROTO_TOKEN"
+  if [[ -z "$proto_token" ]]; then
+    proto_token=$(load_saved_proto_token || true)
+  fi
+
+  sync_proxy_service_executables
+  [[ -n "$proxy_token" ]] && sync_proxy_service_tokens "$proxy_token"
+  [[ -n "$proto_token" ]] && sync_proto_service "$proto_token"
+
+  if has_systemd; then
+    run_privileged systemctl daemon-reload || log_warn "Falha ao recarregar systemd"
+  fi
+}
+
+should_manage_services() {
+  [[ "$MODE" == "update" || "$MODE" == "reinstall" ]] && return 0
+  has_prior_installation
+}
+
+report_existing_services() {
+  local proxy_services=() count=0
+
+  if ! should_manage_services; then
+    return 0
+  fi
+
+  log_info "Instalação prévia detectada — serviços serão sincronizados após a atualização."
+
+  read_nonempty_lines proxy_services < <(list_all_proxy_services)
+  count=${#proxy_services[@]}
+
+  if has_proto_service || has_active_proto_process || [[ -f "$PROTO_CONFIG_FILE" ]]; then
+    if [[ "$ACTIVE_PROTO" == true ]]; then
+      log_warn "Proto ativo detectado — unit file/token será atualizado e o serviço reiniciado."
+    else
+      log_warn "Configuração proto detectada — unit file será criado/atualizado se necessário."
+    fi
+  fi
+
+  if [[ $count -gt 0 ]]; then
+    if [[ ${#ACTIVE_PROXY_SERVICES[@]} -gt 0 ]]; then
+      log_warn "${#ACTIVE_PROXY_SERVICES[@]} serviço(s) proxy ativo(s): ${ACTIVE_PROXY_SERVICES[*]//.service/}"
+    else
+      log_warn "${count} serviço(s) proxy configurado(s) — unit files serão atualizados."
+    fi
+  elif has_active_proxy_process; then
+    log_warn "Processo proxy ativo detectado — reinicie manualmente se não houver unit systemd."
   fi
 }
 
@@ -745,6 +1123,9 @@ print_finish_message() {
       log_info "Token proxy já configurado — não será solicitado na primeira execução."
     fi
   fi
+  if should_manage_services; then
+    log_info "Serviços existentes foram sincronizados (tokens/binários) e reiniciados quando ativos."
+  fi
   echo ""
   log_info "Para reinstalar/atualizar depois:"
   echo -e "  ${CYAN}curl -fsSL ${INSTALL_URL} | bash -s -- --update --yes${NC}"
@@ -756,12 +1137,14 @@ main() {
   ensure_dependencies
   detect_platform
   show_current_installation
+  capture_active_services
+  report_existing_services
   fetch_releases
   fetch_proto_releases
   show_versions_and_select
   confirm_installation
 
-  if [[ "$MODE" == "update" || "$MODE" == "reinstall" ]]; then
+  if should_manage_services; then
     stop_proxy_services
     stop_proto_server
   fi
@@ -771,8 +1154,9 @@ main() {
   configure_sysctl
   install_menu_script
   install_provided_tokens
+  refresh_existing_services
 
-  if [[ "$MODE" == "update" || "$MODE" == "reinstall" ]]; then
+  if should_manage_services; then
     restart_proxy_services
     restart_proto_server
   fi
