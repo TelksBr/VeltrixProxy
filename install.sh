@@ -22,7 +22,7 @@ PROTO_CREDENTIALS_FILE="${PROTO_DATA_DIR}/credentials.json"
 PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
-INSTALLER_REV="2026-07-14-svc"
+INSTALLER_REV="2026-07-14-svc2"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
 LEGACY_BINARY_NAME="proxy"
@@ -806,7 +806,7 @@ sync_proxy_service_executables() {
   while IFS= read -r service_file; do
     [[ -f "$service_file" ]] || continue
     run_privileged sed -Ei \
-      -e "s|ExecStart=${INSTALL_DIR}/${LEGACY_BINARY_NAME}([^-a-zA-Z]|ExecStart=${new_bin}\1|g" \
+      -e "s|ExecStart=${INSTALL_DIR}/${LEGACY_BINARY_NAME}([^-a-zA-Z])|ExecStart=${new_bin}\1|g" \
       -e "s|ExecStart=${INSTALL_DIR}/${BINARY_NAME}|ExecStart=${new_bin}|g" \
       "$service_file"
   done < <(find_service_files_by_exec 'ExecStart=.*(/usr/local/bin/proxy-server|/usr/local/bin/proxy)( |$)')
@@ -814,7 +814,7 @@ sync_proxy_service_executables() {
   for service_file in /etc/systemd/system/proxy-*.service; do
     [[ -f "$service_file" ]] || continue
     run_privileged sed -Ei \
-      -e "s|ExecStart=${INSTALL_DIR}/${LEGACY_BINARY_NAME}([^-a-zA-Z]|ExecStart=${new_bin}\1|g" \
+      -e "s|ExecStart=${INSTALL_DIR}/${LEGACY_BINARY_NAME}([^-a-zA-Z])|ExecStart=${new_bin}\1|g" \
       -e "s|ExecStart=${INSTALL_DIR}/${BINARY_NAME}|ExecStart=${new_bin}|g" \
       "$service_file"
   done
