@@ -63,12 +63,74 @@ BG_GRAY='\033[100m'
 RESET='\033[0m'
 BOLD='\033[1m'
 
+strip_ansi() {
+    printf '%s' "$1" | sed -u 's/\x1b\[[0-9;]*m//g'
+}
+
+visible_len() {
+    python3 - <<'PY' "$1"
+import re
+import sys
+
+text = re.sub(r'\x1b\[[0-9;]*m', '', sys.argv[1])
+print(len(text))
+PY
+}
+
+print_box_open() {
+    echo -e "${BLUE}╔$(printf '═%.0s' {1..62})╗${RESET}"
+}
+
+print_box_divider() {
+    echo -e "${BLUE}╠$(printf '═%.0s' {1..62})╣${RESET}"
+}
+
+print_box_close() {
+    echo -e "${BLUE}╚$(printf '═%.0s' {1..62})╝${RESET}"
+}
+
+print_box_line() {
+    local content="$1"
+    local inner_width="${2:-$MENU_BOX_WIDTH}"
+    local pad=$((inner_width - $(visible_len "$content")))
+    ((pad < 0)) && pad=0
+    printf "${BLUE}║${RESET}%s%*s${BLUE}║${RESET}\n" "$content" "$pad" ""
+}
+
+print_box_heading() {
+    local text="$1"
+    local color="${2:-$WHITE}"
+    local len=${#text}
+    local left=$(( (MENU_BOX_WIDTH - len) / 2 ))
+    local right=$((MENU_BOX_WIDTH - len - left))
+    print_box_line "${color}$(printf '%*s%s%*s' "$left" "" "$text" "$right")${RESET}"
+}
+
+render_menu_option() {
+    local item="$1"
+    local emphasis="${2:-normal}"
+    local num="${item%% *}"
+    local label="${item#* • }"
+    local content
+
+    if [[ "$emphasis" == "red" ]]; then
+        content="${RED}  [${num}] ${label}${RESET}"
+    else
+        content="${WHITE}  [${CYAN}${num}${WHITE}] ${BLUE}${label}${RESET}"
+    fi
+    print_box_line "$content"
+}
+
 print_header() {
     clear
-    echo -e "${BLUE}╔$(printf '═%.0s' {1..62})╗${RESET}"
-    printf "${BLUE}║${BG_BLUE}${WHITE}%-${MENU_BOX_WIDTH}s${RESET}${BLUE}║${RESET}\n" "                    ${PROJECT_NAME} Manager                    "
-    echo -e "${BLUE}║${WHITE}           Proxy + Protocolo integrados                     ${BLUE}║${RESET}"
-    echo -e "${BLUE}╚$(printf '═%.0s' {1..62})╝${RESET}"
+    print_box_open
+    local title="${PROJECT_NAME} Manager"
+    local title_len=${#title}
+    local title_left=$(( (MENU_BOX_WIDTH - title_len) / 2 ))
+    local title_right=$((MENU_BOX_WIDTH - title_len - title_left))
+    print_box_line "${BG_BLUE}${WHITE}$(printf '%*s%s%*s' "$title_left" "" "$title" "$title_right")${RESET}"
+    print_box_heading "Proxy + Protocolo integrados"
+    print_box_close
     echo
 }
 
@@ -300,13 +362,14 @@ print_status() {
     bound_ip=""
     [[ -f /etc/vtproxy/ip ]] && bound_ip=$(cat /etc/vtproxy/ip)
 
-    echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${RESET}"
-    printf "${BLUE}║${WHITE} Proto: ${status_bg}${BOLD}${status_color}  ${proto_status}  ${RESET}${BLUE} | Proxy: ${CYAN}$(printf '%-18s' "$proxy_label")${BLUE}║${RESET}\n"
-    printf "${BLUE}║${WHITE} Tokens proxy: ${proxy_tok}  proto: ${proto_tok}"
+    print_box_open
+    local status_badge="${status_bg}${BOLD}${status_color} ${proto_status} ${RESET}"
+    print_box_line "${WHITE} Proto: ${status_badge}${BLUE} | Proxy: ${CYAN}${proxy_label}${RESET}"
+    local tokens_line="${WHITE} Tokens proxy: ${proxy_tok}  proto: ${proto_tok}"
     if [[ -n "$bound_ip" ]]; then
-        printf " | IP: ${CYAN}%-15s" "$bound_ip"
+        tokens_line+="${WHITE} | IP: ${CYAN}${bound_ip}${RESET}"
     fi
-    printf " %*s${BLUE}║${RESET}\n" 1 ""
+    print_box_line "$tokens_line"
 
     local port subnet tun
     port=$(get_config_value "PORT")
@@ -316,16 +379,15 @@ print_status() {
     subnet=${subnet:-10.10.0.0/16}
     tun=${tun:-tun0}
 
-    local line="${WHITE} Porta proto: ${CYAN}$(printf '%-5s' "$port")${WHITE} | Sub-rede: ${CYAN}$(printf '%-13s' "$subnet")${WHITE} | TUN: ${CYAN}$(printf '%-6s' "$tun")"
-    printf "${BLUE}║${line}%*s${BLUE}║${RESET}\n" 3 ""
-    echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${RESET}"
+    print_box_line "${WHITE} Porta proto: ${CYAN}${port}${WHITE} | Sub-rede: ${CYAN}${subnet}${WHITE} | TUN: ${CYAN}${tun}${RESET}"
+    print_box_close
     echo
 }
 
 print_main_menu() {
-    echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${BLUE}║${WHITE}                        MENU PRINCIPAL                        ${BLUE}║${RESET}"
-    echo -e "${BLUE}╠══════════════════════════════════════════════════════════════╣${RESET}"
+    print_box_open
+    print_box_heading "MENU PRINCIPAL"
+    print_box_divider
     
     local menu_items=(
         "1 • Iniciar Servidor"
@@ -340,22 +402,21 @@ print_main_menu() {
     )
     
     for item in "${menu_items[@]}"; do
-        local padding=$((60 - ${#item}))
         if [[ $item == *"Voltar"* ]]; then
-            printf "${BLUE}║${RED}  [${item%% *}] ${item#* • }%${padding}s${BLUE}║${RESET}\n" ""
+            render_menu_option "$item" "red"
         else
-            printf "${BLUE}║${WHITE}  [${CYAN}${item%% *}${WHITE}] ${BLUE}${item#* • }%${padding}s${BLUE}║${RESET}\n" ""
+            render_menu_option "$item"
         fi
     done
     
-    echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${RESET}"
+    print_box_close
     echo
 }
 
 print_initial_menu() {
-    echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${BLUE}║${WHITE}                        MENU INICIAL                          ${BLUE}║${RESET}"
-    echo -e "${BLUE}╠══════════════════════════════════════════════════════════════╣${RESET}"
+    print_box_open
+    print_box_heading "MENU INICIAL"
+    print_box_divider
     
     local menu_items=(
         "1 • Servidor Protocolo"
@@ -367,17 +428,14 @@ print_initial_menu() {
     )
     
     for item in "${menu_items[@]}"; do
-        local padding=$((60 - ${#item}))
-        if [[ $item == *"Remover"* ]]; then
-            printf "${BLUE}║${RED}  [${item%% *}] ${item#* • }%${padding}s${BLUE}║${RESET}\n" ""
-        elif [[ $item == *"Sair"* ]]; then
-            printf "${BLUE}║${RED}  [${item%% *}] ${item#* • }%${padding}s${BLUE}║${RESET}\n" ""
+        if [[ $item == *"Remover"* || $item == *"Sair"* ]]; then
+            render_menu_option "$item" "red"
         else
-            printf "${BLUE}║${WHITE}  [${CYAN}${item%% *}${WHITE}] ${BLUE}${item#* • }%${padding}s${BLUE}║${RESET}\n" ""
+            render_menu_option "$item"
         fi
     done
     
-    echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${RESET}"
+    print_box_close
     echo
 }
 
@@ -958,13 +1016,12 @@ connection_menu() {
         local configured_ports
         configured_ports=$(list_configured_proxy_ports)
         
-        echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${RESET}"
-        echo -e "${BLUE}║${CYAN}                    ${PROJECT_NAME} — PROXY                         ${BLUE}║${RESET}"
-        echo -e "${BLUE}╠══════════════════════════════════════════════════════════════╣${RESET}"
+        print_box_open
+        print_box_heading "${PROJECT_NAME} — PROXY" "$CYAN"
         
         if [[ -n "$configured_ports" ]]; then
-            echo -e "${BLUE}║${WHITE}  Portas configuradas: ${GREEN}$(printf '%-38s' "$configured_ports")${BLUE}║${RESET}"
-            echo -e "${BLUE}╠══════════════════════════════════════════════════════════════╣${RESET}"
+            print_box_line "${WHITE}  Portas configuradas: ${GREEN}${configured_ports}${RESET}"
+            print_box_divider
         fi
         
         local menu_items=(
@@ -977,15 +1034,14 @@ connection_menu() {
         )
         
         for item in "${menu_items[@]}"; do
-            local padding=$((60 - ${#item}))
             if [[ $item == *"Voltar"* ]]; then
-                printf "${BLUE}║${RED}  [${item%% *}] ${item#* • }%${padding}s${BLUE}║${RESET}\n" ""
+                render_menu_option "$item" "red"
             else
-                printf "${BLUE}║${WHITE}  [${CYAN}${item%% *}${WHITE}] ${BLUE}${item#* • }%${padding}s${BLUE}║${RESET}\n" ""
+                render_menu_option "$item"
             fi
         done
         
-        echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${RESET}"
+        print_box_close
         echo
         
         local choice
@@ -1217,16 +1273,16 @@ start_server() {
     subnet=${subnet:-10.10.0.0/16}
     tun=${tun:-tun0}
 
-    echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${BLUE}║${CYAN}  📋 CONFIGURAÇÕES ATUAIS ${BLUE}                                    ║${RESET}"
-    echo -e "${BLUE}╠══════════════════════════════════════════════════════════════╣${RESET}"
-    echo -e "${BLUE}║${WHITE}  ┣ Porta: ${BLUE}$(printf '%-51s' "$port")${BLUE}║${RESET}"
-    echo -e "${BLUE}║${WHITE}  ┣ Sub-rede: ${BLUE}$(printf '%-48s' "$subnet")${BLUE}║${RESET}"
-    echo -e "${BLUE}║${WHITE}  ┣ Interface TUN: ${BLUE}$(printf '%-43s' "$tun")${BLUE}║${RESET}"
+    print_box_open
+    print_box_line "${CYAN}  📋 CONFIGURAÇÕES ATUAIS${RESET}"
+    print_box_divider
+    print_box_line "${WHITE}  ┣ Porta: ${BLUE}${port}${RESET}"
+    print_box_line "${WHITE}  ┣ Sub-rede: ${BLUE}${subnet}${RESET}"
+    print_box_line "${WHITE}  ┣ Interface TUN: ${BLUE}${tun}${RESET}"
     if [[ -n "$protocol_config" ]]; then
-        echo -e "${BLUE}║${WHITE}  ┣ Protocolos: ${BLUE}$(printf '%-46s' "$protocol_config")${BLUE}║${RESET}"
+        print_box_line "${WHITE}  ┣ Protocolos: ${BLUE}${protocol_config}${RESET}"
     fi
-    echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${RESET}"
+    print_box_close
     echo
 
     while true; do
@@ -1344,9 +1400,9 @@ restart_server() {
 show_server_status() {
     print_header
     
-    echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${BLUE}║${CYAN}  📊 STATUS DO SISTEMA${BLUE}                                        ║${RESET}"
-    echo -e "${BLUE}╠══════════════════════════════════════════════════════════════╣${RESET}"
+    print_box_open
+    print_box_line "${CYAN}  📊 STATUS DO SISTEMA${RESET}"
+    print_box_divider
     
     local port=$(get_config_value 'PORT')
     local subnet=$(get_config_value 'VIRTUAL_SUBNET_CIDR')
@@ -1358,18 +1414,18 @@ show_server_status() {
     local token_status=$([ -f "$TOKEN_FILE" ] && echo '✅' || echo '❌')
     
     if is_server_active; then
-        echo -e "${BLUE}║${WHITE}  ┣ Status: ${GREEN}🟢              ${BLUE}                                  ║${RESET}"
+        print_box_line "${WHITE}  ┣ Status: ${GREEN}🟢 ONLINE${RESET}"
     else
-        echo -e "${BLUE}║${WHITE}  ┣ Status: ${RED}🔴         ${BLUE}                                       ║${RESET}"
+        print_box_line "${WHITE}  ┣ Status: ${RED}🔴 OFFLINE${RESET}"
     fi
     
-    echo -e "${BLUE}║${WHITE}  ┣ Porta: ${BLUE}$(printf '%-51s' "${port:-8000}")${BLUE}║${RESET}"
-    echo -e "${BLUE}║${WHITE}  ┣ Sub-rede Virtual: ${BLUE}$(printf '%-40s' "${subnet:-10.10.0.0/16}")${BLUE}║${RESET}"
-    echo -e "${BLUE}║${WHITE}  ┣ Interface TUN: ${BLUE}$(printf '%-43s' "${tun:-tun0}")${BLUE}║${RESET}"
+    print_box_line "${WHITE}  ┣ Porta: ${BLUE}${port:-8000}${RESET}"
+    print_box_line "${WHITE}  ┣ Sub-rede Virtual: ${BLUE}${subnet:-10.10.0.0/16}${RESET}"
+    print_box_line "${WHITE}  ┣ Interface TUN: ${BLUE}${tun:-tun0}${RESET}"
     if [[ -n "$protocol_config" ]]; then
-        echo -e "${BLUE}║${WHITE}  ┣ Protocolos: ${BLUE}$(printf '%-46s' "$protocol_config")${BLUE}║${RESET}"
+        print_box_line "${WHITE}  ┣ Protocolos: ${BLUE}${protocol_config}${RESET}"
     fi
-    echo -e "${BLUE}║${WHITE}  ┣ Token Configurado: ${BLUE}$(printf '%-40s' "$token_status")${BLUE}║${RESET}"
+    print_box_line "${WHITE}  ┣ Token Configurado: ${BLUE}${token_status}${RESET}"
     
     local auth_display=""
     case "$auth_mode" in
@@ -1379,9 +1435,9 @@ show_server_status() {
         $AUTH_MODE_NONE) auth_display="Nenhuma" ;;
         *) auth_display="Arquivo" ;;
     esac
-    echo -e "${BLUE}║${WHITE}  ┗ Autenticação: ${BLUE}$(printf '%-44s' "$auth_display")${BLUE}║${RESET}"
+    print_box_line "${WHITE}  ┗ Autenticação: ${BLUE}${auth_display}${RESET}"
     
-    echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${RESET}"
+    print_box_close
     echo
 
     pause
@@ -1539,21 +1595,17 @@ change_auth_mode() {
     current_mode=${current_mode:-$AUTH_MODE_FILE}
     local current_url=$(get_config_value "AUTH_URL")
     
-    echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${BLUE}║${CYAN}                 ALTERAR MODO DE AUTENTICAÇÃO                 ${BLUE}║${RESET}"
-    echo -e "${BLUE}╠══════════════════════════════════════════════════════════════╣${RESET}"
+    print_box_open
+    print_box_heading "ALTERAR MODO DE AUTENTICAÇÃO" "$CYAN"
+    print_box_divider
     
-    local mode_line="${WHITE}  Modo atual: ${GREEN}$current_mode"
-    local mode_padding=$((60 - ${#mode_line} + 22)) 
-    printf "${BLUE}║${mode_line}%${mode_padding}s${BLUE}║${RESET}\n" ""
+    print_box_line "${WHITE}  Modo atual: ${GREEN}${current_mode}${RESET}"
     
     if [[ "$current_mode" == "$AUTH_MODE_URL" && -n "$current_url" ]]; then
-        local url_line="${WHITE}  URL atual: ${CYAN}$current_url"
-        local url_padding=$((60 - ${#url_line} + 22)) 
-        printf "${BLUE}║${url_line}%${url_padding}s${BLUE}║${RESET}\n" ""
+        print_box_line "${WHITE}  URL atual: ${CYAN}${current_url}${RESET}"
     fi
     
-    echo -e "${BLUE}╠══════════════════════════════════════════════════════════════╣${RESET}"
+    print_box_divider
     
     local menu_items=(
         "1 • Arquivo ($CREDENTIALS_FILE)"
@@ -1564,15 +1616,14 @@ change_auth_mode() {
     )
     
     for item in "${menu_items[@]}"; do
-        local padding=$((60 - ${#item}))
         if [[ $item == *"Voltar"* ]]; then
-            printf "${BLUE}║${RED}  [${item%% *}] ${item#* • }%${padding}s${BLUE}║${RESET}\n" ""
+            render_menu_option "$item" "red"
         else
-            printf "${BLUE}║${WHITE}  [${CYAN}${item%% *}${WHITE}] ${BLUE}${item#* • }%${padding}s${BLUE}║${RESET}\n" ""
+            render_menu_option "$item"
         fi
     done
     
-    echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${RESET}"
+    print_box_close
     echo
     
     local option
@@ -1957,11 +2008,9 @@ show_online_users_details() {
         local online_count
         online_count=$(get_online_users_count)
 
-        echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${RESET}"
-        local online_title="USUARIOS ONLINE (${online_count})"
-        local online_title_padding=$((60 - ${#online_title}))
-        printf "${BLUE}║${CYAN}  ${online_title}%${online_title_padding}s${BLUE}║${RESET}\n" ""
-        echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${RESET}"
+        print_box_open
+        print_box_heading "USUARIOS ONLINE (${online_count})" "$CYAN"
+        print_box_close
         echo
 
         python3 - "$STATS_FILE" <<'PY'
@@ -2046,26 +2095,20 @@ online_users_menu() {
             api_status="ONLINE"
         fi
 
-        echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${RESET}"
-        echo -e "${BLUE}║${WHITE}                     PAINEL DE ONLINES                        ${BLUE}║${RESET}"
-        echo -e "${BLUE}╠══════════════════════════════════════════════════════════════╣${RESET}"
-        local status_line=" Api status: $api_status"
-        local status_fill=$((62 - ${#status_line}))
-        printf "${BLUE}║${WHITE}%s%${status_fill}s${BLUE}║${RESET}\n" "$status_line" ""
+        print_box_open
+        print_box_heading "PAINEL DE ONLINES"
+        print_box_divider
+        print_box_line "${WHITE} Api status: ${api_status}${RESET}"
         if [[ -n "$api_port" ]]; then
-            local port_line=" Api porta: $api_port"
-            local port_fill=$((62 - ${#port_line}))
-            printf "${BLUE}║${WHITE}%s%${port_fill}s${BLUE}║${RESET}\n" "$port_line" ""
+            print_box_line "${WHITE} Api porta: ${api_port}${RESET}"
         fi
-        local online_line=" Usuarios online: $online_count"
-        local online_fill=$((62 - ${#online_line}))
-        printf "${BLUE}║${WHITE}%s%${online_fill}s${BLUE}║${RESET}\n" "$online_line" ""
-        echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${RESET}"
+        print_box_line "${WHITE} Usuarios online: ${online_count}${RESET}"
+        print_box_close
         echo
 
-        echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${RESET}"
-        echo -e "${BLUE}║${WHITE}                           MENU                               ${BLUE}║${RESET}"
-        echo -e "${BLUE}╠══════════════════════════════════════════════════════════════╣${RESET}"
+        print_box_open
+        print_box_heading "MENU"
+        print_box_divider
         local menu_items=("1 • Listar Onlines")
         if is_online_api_active; then
             menu_items+=("2 • Desativar API")
@@ -2074,14 +2117,13 @@ online_users_menu() {
         fi
         menu_items+=("0 • Voltar")
         for item in "${menu_items[@]}"; do
-            local padding=$((60 - ${#item}))
             if [[ $item == 0* ]]; then
-                printf "${BLUE}║${RED}  [${item%% *}] ${item#* • }%${padding}s${BLUE}║${RESET}\n" ""
+                render_menu_option "$item" "red"
             else
-                printf "${BLUE}║${WHITE}  [${CYAN}${item%% *}${WHITE}] ${BLUE}${item#* • }%${padding}s${BLUE}║${RESET}\n" ""
+                render_menu_option "$item"
             fi
         done
-        echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${RESET}"
+        print_box_close
         echo
 
         local option
@@ -2230,16 +2272,16 @@ tokens_menu() {
         [[ -n "$(load_proxy_token)" ]] && proxy_status="✅"
         [[ -n "$(load_proto_token)" ]] && proto_status="✅"
 
-        echo -e "${BLUE}╔$(printf '═%.0s' {1..62})╗${RESET}"
-        echo -e "${BLUE}║${WHITE}                      GERENCIAR TOKENS                        ${BLUE}║${RESET}"
-        echo -e "${BLUE}╠$(printf '═%.0s' {1..62})╣${RESET}"
-        printf "${BLUE}║${WHITE}  Proxy (licença): %-43s${BLUE}║${RESET}\n" "$proxy_status"
-        printf "${BLUE}║${WHITE}  Proto (protocolo): %-41s${BLUE}║${RESET}\n" "$proto_status"
-        echo -e "${BLUE}╠$(printf '═%.0s' {1..62})╣${RESET}"
-        echo -e "${BLUE}║${WHITE}  [1] Configurar token Proxy                                   ${BLUE}║${RESET}"
-        echo -e "${BLUE}║${WHITE}  [2] Configurar token Proto                                   ${BLUE}║${RESET}"
-        echo -e "${BLUE}║${RED}  [0] Voltar                                                   ${BLUE}║${RESET}"
-        echo -e "${BLUE}╚$(printf '═%.0s' {1..62})╝${RESET}"
+        print_box_open
+        print_box_heading "GERENCIAR TOKENS"
+        print_box_divider
+        print_box_line "${WHITE}  Proxy (licença): ${proxy_status}${RESET}"
+        print_box_line "${WHITE}  Proto (protocolo): ${proto_status}${RESET}"
+        print_box_divider
+        render_menu_option "1 • Configurar token Proxy"
+        render_menu_option "2 • Configurar token Proto"
+        render_menu_option "0 • Voltar" "red"
+        print_box_close
         echo
 
         local option
