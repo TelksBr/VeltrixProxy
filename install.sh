@@ -84,9 +84,9 @@ Modos:
   --reinstall     Reinstala binários e menu vt (interativo ou com --latest)
 
 Opções:
-  --latest, -L    Usa a versão mais recente sem menu
-  --version TAG   Instala uma versão específica do proxy (ex: v2.1.0)
-  --proto-version TAG  Versão do binário proto (padrão: mesma do proxy ou latest do fallback)
+  --latest, -L    Usa a versão mais recente do proxy e do proto (sem menu)
+  --version TAG   Versão específica do proxy (ex: v2.1.0)
+  --proto-version TAG  Versão específica do proto (ex: v2.0.1)
   --binary-only   Instala/atualiza apenas os binários (não baixa vt.sh)
   --proxy-token T Token da licença proxy (VT)
   --proto-token T Token do servidor de protocolo
@@ -99,7 +99,7 @@ Exemplos:
   $0
   $0 --update --yes
   $0 --reinstall --latest --yes
-  $0 --version v2.1.0 --binary-only -y
+  $0 --version v2.1.0 --proto-version v2.0.1 --yes
   $0 -- --proxy-token 'VT-XXXX' --proto-token 'abc123' --ip '1.2.3.4' --yes
 EOF
 }
@@ -115,7 +115,10 @@ parse_args() {
     --install) MODE="install" ;;
     --update) MODE="update" ;;
     --reinstall) MODE="reinstall" ;;
-    --latest | -L) VERSION="latest" ;;
+    --latest | -L)
+      VERSION="latest"
+      PROTO_VERSION="latest"
+      ;;
     --version)
       shift
       VERSION="${1:-}"
@@ -162,6 +165,7 @@ parse_args() {
   case "$MODE" in
   update)
     [[ -z "$VERSION" ]] && VERSION="latest"
+    [[ -z "$PROTO_VERSION" ]] && PROTO_VERSION="latest"
     ASSUME_YES=true
     ;;
   reinstall)
@@ -374,34 +378,54 @@ get_installed_version() {
   fi
 }
 
+get_installed_proto_version() {
+  if [[ -x "${INSTALL_DIR}/${PROTO_BINARY_NAME}" ]]; then
+    "${INSTALL_DIR}/${PROTO_BINARY_NAME}" --version 2>/dev/null | awk '{print $2}' | tr -d 'v' || true
+    return
+  fi
+
+  if [[ -f "$PROTO_VERSION_FILE" ]]; then
+    tr -d 'v' <"$PROTO_VERSION_FILE"
+  fi
+}
+
 show_current_installation() {
-  local current
+  local current current_proto
   current=$(get_installed_version || true)
+  current_proto=$(get_installed_proto_version || true)
   if [[ -n "$current" ]]; then
-    log_info "Versão instalada atualmente: v${current}"
+    log_info "Versão proxy instalada: v${current}"
     if [[ -x "${INSTALL_DIR}/${LEGACY_BINARY_NAME}" && ! -x "${INSTALL_DIR}/${BINARY_NAME}" ]]; then
       log_warn "Instalação legada detectada em ${INSTALL_DIR}/${LEGACY_BINARY_NAME}"
     fi
   else
-    log_warn "Nenhuma instalação detectada em ${INSTALL_DIR}/${BINARY_NAME}"
+    log_warn "Nenhuma instalação proxy detectada em ${INSTALL_DIR}/${BINARY_NAME}"
+  fi
+
+  if [[ -n "$current_proto" ]]; then
+    log_info "Versão proto instalada: v${current_proto}"
+  else
+    log_warn "Nenhuma instalação proto detectada em ${INSTALL_DIR}/${PROTO_BINARY_NAME}"
   fi
 }
 
-fetch_releases() {
+fetch_release_tags() {
+  local repo="$1"
+  local -n out_array=$2
   local releases_json line
-  RELEASES=()
 
-  releases_json=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=${MAX_VERSIONS}")
+  out_array=()
+  releases_json=$(curl -fsSL "https://api.github.com/repos/${repo}/releases?per_page=${MAX_VERSIONS}")
 
   if [[ -z "$releases_json" || "$releases_json" != \[* ]]; then
-    log_error "Erro ao buscar releases no GitHub."
+    log_error "Erro ao buscar releases em ${repo}."
     echo "$releases_json"
     exit 1
   fi
 
   while IFS= read -r line; do
     line="${line//$'\r'/}"
-    [[ -n "$line" ]] && RELEASES+=("$line")
+    [[ -n "$line" ]] && out_array+=("$line")
   done < <(
     echo "$releases_json" \
       | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' \
@@ -409,65 +433,106 @@ fetch_releases() {
       | head -n "$MAX_VERSIONS"
   )
 
-  if [[ ${#RELEASES[@]} -eq 0 ]]; then
-    log_error "Nenhuma release encontrada em ${REPO}."
+  if [[ ${#out_array[@]} -eq 0 ]]; then
+    log_error "Nenhuma release encontrada em ${repo}."
     exit 1
   fi
 }
 
-resolve_version() {
-  if [[ "$VERSION" == "latest" || -z "$VERSION" ]]; then
-    VERSION="${RELEASES[0]}"
-    log_success "Versão selecionada (mais recente): $VERSION"
-    return
+fetch_releases() {
+  fetch_release_tags "$REPO" RELEASES
+}
+
+fetch_proto_releases() {
+  fetch_release_tags "$PROTO_FALLBACK_REPO" PROTO_RELEASES
+}
+
+normalize_version_tag() {
+  local value="$1"
+  [[ -z "$value" || "$value" == "latest" ]] && return 1
+  [[ "$value" == v* ]] || value="v${value}"
+  echo "$value"
+}
+
+resolve_version_in_list() {
+  local requested="$1"
+  local -n available=$2
+  local -n resolved=$3
+  local label="$4"
+  local tag normalized
+
+  if [[ "$requested" == "latest" || -z "$requested" ]]; then
+    resolved="${available[0]}"
+    log_success "Versão ${label} selecionada (mais recente): ${resolved}"
+    return 0
   fi
 
-  if [[ "$VERSION" != v* ]]; then
-    VERSION="v${VERSION}"
-  fi
+  normalized=$(normalize_version_tag "$requested" || true)
+  [[ -n "$normalized" ]] || normalized="$requested"
 
-  local tag
-  for tag in "${RELEASES[@]}"; do
-    if [[ "$tag" == "$VERSION" ]]; then
-      log_success "Versão selecionada: $VERSION"
-      return
+  for tag in "${available[@]}"; do
+    if [[ "$tag" == "$normalized" ]]; then
+      resolved="$tag"
+      log_success "Versão ${label} selecionada: ${resolved}"
+      return 0
     fi
   done
 
-  log_error "Versão $VERSION não encontrada nas últimas ${MAX_VERSIONS} releases."
+  log_error "Versão ${label} ${requested} não encontrada nas últimas ${MAX_VERSIONS} releases."
   exit 1
 }
 
-show_versions_and_select() {
-  if [[ -n "$VERSION" ]]; then
-    resolve_version
-    return
-  fi
+prompt_version_selection() {
+  local label="$1"
+  local repo="$2"
+  local -n available=$3
+  local -n resolved=$4
+  local choice
 
   echo ""
-  echo -e "${BLUE}📦 Versões disponíveis:${NC}"
-  for i in "${!RELEASES[@]}"; do
-    printf " %d) %s\n" $((i + 1)) "${RELEASES[$i]}"
+  echo -e "${BLUE}📦 Versões disponíveis (${label} — ${repo}):${NC}"
+  for i in "${!available[@]}"; do
+    printf " %d) %s\n" $((i + 1)) "${available[$i]}"
   done
 
   echo ""
   while true; do
-    read -rp "Escolha uma versão [1]: " choice
+    read -rp "Escolha a versão do ${label} [1]: " choice
     choice="${choice:-1}"
-    if [[ "$choice" =~ ^[1-9][0-9]*$ ]] && ((choice >= 1 && choice <= ${#RELEASES[@]})); then
-      VERSION="${RELEASES[$((choice - 1))]}"
-      log_success "Versão selecionada: $VERSION"
+    if [[ "$choice" =~ ^[1-9][0-9]*$ ]] && ((choice >= 1 && choice <= ${#available[@]})); then
+      resolved="${available[$((choice - 1))]}"
+      log_success "Versão ${label} selecionada: ${resolved}"
       break
     fi
     log_error "Escolha inválida. Tente novamente."
   done
 }
 
+show_versions_and_select() {
+  if [[ -n "$VERSION" ]]; then
+    resolve_version_in_list "$VERSION" RELEASES VERSION "proxy"
+  elif [[ "$ASSUME_YES" == true ]]; then
+    VERSION="${RELEASES[0]}"
+    log_success "Versão proxy (automática): ${VERSION}"
+  else
+    prompt_version_selection "proxy" "$REPO" RELEASES VERSION
+  fi
+
+  if [[ -n "$PROTO_VERSION" ]]; then
+    resolve_version_in_list "$PROTO_VERSION" PROTO_RELEASES PROTO_VERSION "proto"
+  elif [[ "$ASSUME_YES" == true ]]; then
+    PROTO_VERSION="${PROTO_RELEASES[0]}"
+    log_success "Versão proto (automática): ${PROTO_VERSION}"
+  else
+    prompt_version_selection "proto" "$PROTO_FALLBACK_REPO" PROTO_RELEASES PROTO_VERSION
+  fi
+}
+
 confirm_installation() {
   [[ "$ASSUME_YES" == true ]] && return 0
 
   echo ""
-  read -rp "Continuar com a instalação de ${VERSION}? (s/N): " answer
+  read -rp "Continuar com proxy ${VERSION} e proto ${PROTO_VERSION}? (s/N): " answer
   case "${answer,,}" in
   s | sim) ;;
   *)
@@ -583,75 +648,27 @@ download_and_install_proto_binary() {
   local filename="${PROTO_RELEASE_BINARY_PREFIX}-${OS_NAME}-${ARCH_NAME}"
   local fallback_repo="${PROTO_FALLBACK_REPO:-DTunnel0/DTProto-Server-Releases}"
   local repos=("$PROTO_REPO")
-  local candidate_tags=() tag repo url http_status used_url="" proto_tag=""
-  local latest_fallback_tag=""
-
-  normalize_version_tag() {
-    local value="$1"
-    [[ -z "$value" || "$value" == "latest" ]] && return 1
-    [[ "$value" == v* ]] || value="v${value}"
-    echo "$value"
-  }
-
-  fetch_latest_release_tag() {
-    local repo="$1"
-    local json extracted
-    json=$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null) || return 1
-    extracted=$(printf '%s' "$json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
-    [[ -n "$extracted" ]] || return 1
-    normalize_version_tag "$extracted"
-  }
-
-  append_unique_tag() {
-    local candidate normalized existing
-    candidate=$(normalize_version_tag "$1" || true)
-    [[ -n "$candidate" ]] || return 0
-    for existing in "${candidate_tags[@]}"; do
-      [[ "$existing" == "$candidate" ]] && return 0
-    done
-    candidate_tags+=("$candidate")
-  }
-
-  if [[ -n "$PROTO_VERSION" ]]; then
-    append_unique_tag "$PROTO_VERSION"
-  fi
-  append_unique_tag "$VERSION"
-  latest_fallback_tag=$(fetch_latest_release_tag "$fallback_repo" || true)
-  [[ -n "$latest_fallback_tag" ]] && append_unique_tag "$latest_fallback_tag"
+  local repo url http_status used_url=""
 
   [[ "$PROTO_REPO" != "$fallback_repo" ]] && repos+=("$fallback_repo")
 
-  log_info "Baixando binário proto: $filename"
+  log_info "Baixando binário proto: $filename (${PROTO_VERSION})"
 
   for repo in "${repos[@]}"; do
-    for tag in "${candidate_tags[@]}"; do
-      url="https://github.com/${repo}/releases/download/${tag}/${filename}"
-      log_info "Tentativa: ${repo} (${tag})"
-      http_status=$(curl -fsSL -w "%{http_code}" -o "$filename" "$url" 2>/dev/null || true)
-      if [[ "$http_status" == "200" ]]; then
-        used_url="$url"
-        proto_tag="$tag"
-        break 2
-      fi
-      if [[ "$repo" == "$PROTO_REPO" && "$tag" == "$VERSION" && "$http_status" != "200" ]]; then
-        log_warn "Binário proto não encontrado em ${PROTO_REPO} (${tag})."
-      fi
-    done
-  done
-
-  if [[ -z "$used_url" ]]; then
-    url="https://github.com/${fallback_repo}/releases/latest/download/${filename}"
-    log_warn "Usando release latest de ${fallback_repo}..."
-    log_info "Tentativa: ${fallback_repo} (latest)"
+    url="https://github.com/${repo}/releases/download/${PROTO_VERSION}/${filename}"
+    log_info "Tentativa: ${repo} (${PROTO_VERSION})"
     http_status=$(curl -fsSL -w "%{http_code}" -o "$filename" "$url" 2>/dev/null || true)
     if [[ "$http_status" == "200" ]]; then
       used_url="$url"
-      proto_tag="${latest_fallback_tag:-latest}"
+      break
     fi
-  fi
+    if [[ "$repo" == "$PROTO_REPO" ]]; then
+      log_warn "Binário proto não encontrado em ${PROTO_REPO} (${PROTO_VERSION})."
+    fi
+  done
 
   if [[ -z "$used_url" ]]; then
-    log_error "Falha ao baixar binário proto (HTTP ${http_status:-404})"
+    log_error "Falha ao baixar binário proto ${PROTO_VERSION} (HTTP ${http_status:-404})"
     log_info "Verifique releases em: ${PROTO_REPO} e ${fallback_repo}"
     exit 1
   fi
@@ -661,10 +678,10 @@ download_and_install_proto_binary() {
 
   log_info "Instalando binário em ${INSTALL_DIR}/${PROTO_BINARY_NAME}..."
   run_privileged install -m 755 "$filename" "${INSTALL_DIR}/${PROTO_BINARY_NAME}"
-  INSTALLED_PROTO_VERSION="${proto_tag#v}"
+  INSTALLED_PROTO_VERSION="${PROTO_VERSION#v}"
   echo "$INSTALLED_PROTO_VERSION" | run_privileged tee "$PROTO_VERSION_FILE" >/dev/null
 
-  log_success "Binário proto instalado: ${INSTALL_DIR}/${PROTO_BINARY_NAME} (${proto_tag})"
+  log_success "Binário proto instalado: ${INSTALL_DIR}/${PROTO_BINARY_NAME} (${PROTO_VERSION})"
 }
 
 install_menu_script() {
@@ -740,6 +757,7 @@ main() {
   detect_platform
   show_current_installation
   fetch_releases
+  fetch_proto_releases
   show_versions_and_select
   confirm_installation
 
