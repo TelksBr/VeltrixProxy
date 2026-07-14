@@ -39,7 +39,7 @@ resolve_proxy_executable() {
 
 readonly PROXY_EXECUTABLE="$(resolve_proxy_executable)"
 readonly PROJECT_NAME="VTProxy"
-readonly LOG_PATH="/var/log"
+readonly LOG_PATH="/var/log/proxy"
 readonly SYSTEMD_SERVICE_PATH="/etc/systemd/system"
 readonly DEFAULT_BUFFER_SIZE=32768
 readonly DEFAULT_HTTP_RESPONSE="$PROJECT_NAME"
@@ -119,6 +119,33 @@ is_service_running() {
     systemctl is-active --quiet "$service_name"
 }
 
+is_service_configured() {
+    local service_name service_file_path
+    service_name=$(get_service_name "$1")
+    service_file_path=$(get_service_file_path "$1")
+
+    [[ -f "$service_file_path" ]] && return 0
+    systemctl cat "$service_name" &>/dev/null
+}
+
+resolve_log_file_path() {
+    local port="$1"
+    local default_path service_name exec_start resolved
+
+    default_path=$(get_log_file_path "$port")
+    [[ -f "$default_path" ]] && echo "$default_path" && return 0
+
+    service_name=$(get_service_name "$port")
+    exec_start=$(systemctl show "$service_name" -p ExecStart --value 2>/dev/null || true)
+    if [[ "$exec_start" == *"--log-file="* ]]; then
+        resolved="${exec_start#*--log-file=}"
+        resolved="${resolved%% *}"
+        [[ -n "$resolved" ]] && echo "$resolved" && return 0
+    fi
+
+    echo "$default_path"
+}
+
 read_token_from_file() {
     [[ -f "$TOKEN_PATH" ]] && cat "$TOKEN_PATH" || echo ""
 }
@@ -164,9 +191,13 @@ ask_for_port() {
             continue
         fi
 
-        if [[ "$operation" != "start" ]] && ! is_service_running "$port"; then
-            print_message "ERROR" "Nenhum serviço ativo na porta $port."
+        if [[ "$operation" != "start" ]] && ! is_service_configured "$port"; then
+            print_message "ERROR" "Nenhum serviço configurado na porta $port."
             continue
+        fi
+
+        if [[ "$operation" == "restart" ]] && ! is_service_running "$port"; then
+            print_message "WARN" "Serviço na porta $port existe, mas não está em execução (pode estar falhando)."
         fi
 
         echo "$port"
@@ -220,6 +251,7 @@ start_proxy_service() {
 
     build_service_file "$port" "$token" "$ssl_enabled" "$ssl_cert_path" "$ssh_only_flag" "$http_response"
 
+    mkdir -p "$LOG_PATH"
     systemctl daemon-reload
     systemctl start "$(get_service_name "$port")"
     systemctl enable "$(get_service_name "$port")"
@@ -230,7 +262,7 @@ start_proxy_service() {
 
 restart_proxy_service() {
     local port service_name
-    port=$(ask_for_port) || return
+    port=$(ask_for_port "restart") || return
     service_name=$(get_service_name "$port")
     systemctl restart "$service_name"
 
@@ -240,7 +272,7 @@ restart_proxy_service() {
 
 stop_proxy_service() {
     local port service_name service_file_path
-    port=$(ask_for_port) || return
+    port=$(ask_for_port "stop") || return
     service_name=$(get_service_name "$port")
     service_file_path=$(get_service_file_path "$port")
 
@@ -255,11 +287,12 @@ stop_proxy_service() {
 
 show_proxy_logs() {
     local port proxy_log_file
-    port=$(ask_for_port) || return
-    proxy_log_file=$(get_log_file_path "$port")
+    port=$(ask_for_port "logs") || return
+    proxy_log_file=$(resolve_log_file_path "$port")
 
     if [[ ! -f "$proxy_log_file" ]]; then
-        print_message "ERROR" "Arquivo de log não encontrado."
+        print_message "ERROR" "Arquivo de log não encontrado: $proxy_log_file"
+        print_message "INFO" "Verifique: systemctl status $(get_service_name "$port")"
         wait_for_enter
         return
     fi
@@ -275,7 +308,12 @@ show_proxy_logs() {
 }
 
 list_active_proxies() {
-    systemctl list-units --type=service --state=running | grep -oE 'proxy-[0-9]+' | cut -d'-' -f2 | tr '\n' ' '
+    systemctl list-units --type=service --all --no-legend 'proxy-*.service' 2>/dev/null \
+        | awk '{print $1}' \
+        | grep -oE 'proxy-[0-9]+' \
+        | cut -d'-' -f2 \
+        | sort -nu \
+        | tr '\n' ' '
 }
 
 menu_box_title() {
