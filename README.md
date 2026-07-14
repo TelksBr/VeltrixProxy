@@ -27,5 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.s
 Após instalar, execute:
 
 ```bash
-main
+vt
 ```
+
+(`main` e `proto` são symlinks para `vt` na instalação padrão.)

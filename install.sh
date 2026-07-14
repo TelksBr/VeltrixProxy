@@ -4,14 +4,19 @@ set -euo pipefail
 REPO="TelksBr/VeltrixProxy"
 PROJECT_NAME="VTProxy"
 INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
-MAIN_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/main.sh"
-# Artefato no GitHub (padrão original): proxy-linux-amd64
+MENU_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/vt.sh"
+# Artefato proxy no GitHub (padrão original): proxy-linux-amd64
 RELEASE_BINARY_PREFIX="proxy"
+# Artefato proto: proto-server-linux-amd64
+PROTO_RELEASE_BINARY_PREFIX="proto-server"
+PROTO_REPO="${PROTO_REPO:-TelksBr/VeltrixProxy}"
 # Binário instalado (novo nome — não sobrescreve /usr/local/bin/proxy legado)
 BINARY_NAME="proxy-server"
-MAIN_NAME="main"
+PROTO_BINARY_NAME="proto-server"
+MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
 VERSION_FILE="/etc/proxy-version"
+PROTO_VERSION_FILE="/etc/proto-server-version"
 LEGACY_BINARY_NAME="proxy"
 LEGACY_VERSION_FILE="/etc/proxyvt-version"
 BOX_WIDTH=51
@@ -23,6 +28,9 @@ ASSUME_YES=false
 BINARY_ONLY=false
 SKIP_HEADER=false
 MAX_VERSIONS=10
+PROXY_TOKEN=""
+PROTO_TOKEN=""
+INSTALL_IP=""
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -70,12 +78,15 @@ Modos:
   (padrão)        Instalação interativa com escolha de versão
   --install       Mesmo que o padrão
   --update        Atualiza para a versão mais recente (reinicia serviços ativos)
-  --reinstall     Reinstala binário e main.sh (interativo ou com --latest)
+  --reinstall     Reinstala binários e menu vt (interativo ou com --latest)
 
 Opções:
   --latest, -L    Usa a versão mais recente sem menu
   --version TAG   Instala uma versão específica (ex: v2.1.0)
-  --binary-only   Instala/atualiza apenas o binário (não baixa main.sh)
+  --binary-only   Instala/atualiza apenas os binários (não baixa vt.sh)
+  --proxy-token T Token da licença proxy (VT)
+  --proto-token T Token do servidor de protocolo
+  --ip IP         IP da VPS vinculado à licença
   --yes, -y       Sem confirmações interativas
   --quiet, -q     Menos saída visual (não limpa a tela)
   -h, --help      Exibe esta ajuda
@@ -85,6 +96,7 @@ Exemplos:
   $0 --update --yes
   $0 --reinstall --latest --yes
   $0 --version v2.1.0 --binary-only -y
+  $0 -- --proxy-token 'VT-XXXX' --proto-token 'abc123' --ip '1.2.3.4' --yes
 EOF
 }
 
@@ -106,6 +118,21 @@ parse_args() {
       [[ -n "$VERSION" ]] || { log_error "Use --version TAG"; exit 1; }
       ;;
     --binary-only) BINARY_ONLY=true ;;
+    --proxy-token)
+      shift
+      PROXY_TOKEN="${1:-}"
+      [[ -n "$PROXY_TOKEN" ]] || { log_error "Use --proxy-token TOKEN"; exit 1; }
+      ;;
+    --proto-token)
+      shift
+      PROTO_TOKEN="${1:-}"
+      [[ -n "$PROTO_TOKEN" ]] || { log_error "Use --proto-token TOKEN"; exit 1; }
+      ;;
+    --ip)
+      shift
+      INSTALL_IP="${1:-}"
+      [[ -n "$INSTALL_IP" ]] || { log_error "Use --ip IP"; exit 1; }
+      ;;
     --yes | -y) ASSUME_YES=true ;;
     --quiet | -q) SKIP_HEADER=true ;;
     -h | --help)
@@ -141,7 +168,9 @@ print_header() {
   echo -e "${BLUE}╠═══════════════════════════════════════════════════╣${NC}"
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Repositório: ${REPO}"
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Modo:        ${MODE}"
-  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Binário:     ${INSTALL_DIR}/${BINARY_NAME}"
+  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Binário proxy: ${INSTALL_DIR}/${BINARY_NAME}"
+  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Binário proto: ${INSTALL_DIR}/${PROTO_BINARY_NAME}"
+  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Menu:          ${INSTALL_DIR}/${MENU_NAME}"
   echo -e "${BLUE}╚═══════════════════════════════════════════════════╝${NC}"
   echo
 }
@@ -499,6 +528,28 @@ restart_proxy_services() {
   done
 }
 
+stop_proto_server() {
+  if systemctl is-active --quiet proto-server 2>/dev/null; then
+    log_info "Parando serviço proto-server..."
+    sudo systemctl stop proto-server || log_warn "Não foi possível parar proto-server"
+  fi
+}
+
+restart_proto_server() {
+  if systemctl list-unit-files --no-legend proto-server.service 2>/dev/null | grep -q proto-server; then
+    log_info "Reiniciando serviço proto-server..."
+    sudo systemctl restart proto-server || log_warn "Não foi possível reiniciar proto-server"
+  fi
+}
+
+configure_sysctl() {
+  log_info "Configurando ip_forward (sysctl)..."
+  local sysctl_conf="/etc/sysctl.d/99-vtproxy.conf"
+  echo 'net.ipv4.ip_forward=1' | run_privileged tee "$sysctl_conf" >/dev/null
+  run_privileged sysctl --system >/dev/null 2>&1 || run_privileged sysctl -p "$sysctl_conf" >/dev/null 2>&1 || true
+  log_success "Regras sysctl aplicadas."
+}
+
 download_and_install_binary() {
   local filename="${RELEASE_BINARY_PREFIX}-${OS_NAME}-${ARCH_NAME}"
   DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${filename}"
@@ -506,28 +557,97 @@ download_and_install_binary() {
   TMP_DIR=$(mktemp -d)
   cd "$TMP_DIR"
 
-  log_info "Baixando binário: $filename ($VERSION)"
+  log_info "Baixando binário proxy: $filename ($VERSION)"
   download_file "$DOWNLOAD_URL" "$filename"
   verify_checksum "$filename"
 
   log_info "Instalando binário em ${INSTALL_DIR}/${BINARY_NAME}..."
-  sudo install -m 755 "$filename" "${INSTALL_DIR}/${BINARY_NAME}"
-  echo "${VERSION#v}" | sudo tee "$VERSION_FILE" >/dev/null
+  run_privileged install -m 755 "$filename" "${INSTALL_DIR}/${BINARY_NAME}"
+  echo "${VERSION#v}" | run_privileged tee "$VERSION_FILE" >/dev/null
 
-  log_success "Binário instalado: ${INSTALL_DIR}/${BINARY_NAME} ($VERSION)"
+  log_success "Binário proxy instalado: ${INSTALL_DIR}/${BINARY_NAME} ($VERSION)"
 }
 
-install_main_script() {
+download_and_install_proto_binary() {
+  local filename="${PROTO_RELEASE_BINARY_PREFIX}-${OS_NAME}-${ARCH_NAME}"
+  local primary_url="https://github.com/${PROTO_REPO}/releases/download/${VERSION}/${filename}"
+  local fallback_repo="DTunnel0/DTProto-Server-Releases"
+  local fallback_url="https://github.com/${fallback_repo}/releases/download/${VERSION}/${filename}"
+  local http_status
+  local used_url
+
+  log_info "Baixando binário proto: $filename ($VERSION)"
+
+  http_status=$(curl -fsSL -w "%{http_code}" -o "$filename" "$primary_url" || true)
+  if [[ "$http_status" == "200" ]]; then
+    used_url="$primary_url"
+  else
+    log_warn "Release proto não encontrada em ${PROTO_REPO}; tentando ${fallback_repo}..."
+    http_status=$(curl -fsSL -w "%{http_code}" -o "$filename" "$fallback_url" || true)
+    used_url="$fallback_url"
+  fi
+
+  if [[ "$http_status" != "200" ]]; then
+    log_error "Falha ao baixar binário proto (HTTP $http_status)"
+    exit 1
+  fi
+
+  DOWNLOAD_URL="$used_url"
+  verify_checksum "$filename"
+
+  log_info "Instalando binário em ${INSTALL_DIR}/${PROTO_BINARY_NAME}..."
+  run_privileged install -m 755 "$filename" "${INSTALL_DIR}/${PROTO_BINARY_NAME}"
+  echo "${VERSION#v}" | run_privileged tee "$PROTO_VERSION_FILE" >/dev/null
+
+  log_success "Binário proto instalado: ${INSTALL_DIR}/${PROTO_BINARY_NAME} ($VERSION)"
+}
+
+install_menu_script() {
   if [[ "$BINARY_ONLY" == true ]]; then
-    log_info "Pulando instalação do main.sh (--binary-only)."
+    log_info "Pulando instalação do menu (--binary-only)."
     return 0
   fi
 
-  log_info "Baixando script main.sh..."
-  local main_tmp="${TMP_DIR}/main.sh"
-  download_file "$MAIN_URL" "$main_tmp"
-  sudo install -m 755 "$main_tmp" "${INSTALL_DIR}/${MAIN_NAME}"
-  log_success "main.sh instalado em: ${INSTALL_DIR}/${MAIN_NAME}"
+  log_info "Baixando menu unificado (vt.sh)..."
+  local menu_tmp="${TMP_DIR}/vt.sh"
+  download_file "$MENU_URL" "$menu_tmp"
+  run_privileged install -m 755 "$menu_tmp" "${INSTALL_DIR}/${MENU_NAME}"
+  run_privileged ln -sf "${MENU_NAME}" "${INSTALL_DIR}/main"
+  run_privileged ln -sf "${MENU_NAME}" "${INSTALL_DIR}/proto"
+  log_success "Menu instalado: ${INSTALL_DIR}/${MENU_NAME} (symlinks: main, proto)"
+}
+
+install_provided_tokens() {
+  [[ -z "$PROXY_TOKEN" && -z "$PROTO_TOKEN" ]] && return 0
+
+  log_info "Configurando tokens fornecidos pelo instalador..."
+
+  if [[ -n "$PROXY_TOKEN" ]]; then
+    run_privileged mkdir -p /etc/vtproxy /etc/proxy
+    printf '%s' "$PROXY_TOKEN" | run_privileged tee /etc/vtproxy/proxy.token >/dev/null
+    printf '%s' "$PROXY_TOKEN" | run_privileged tee /etc/proxy/token >/dev/null
+    chmod 600 /etc/vtproxy/proxy.token /etc/proxy/token 2>/dev/null || true
+
+    if [[ -n "${HOME:-}" ]]; then
+      printf '%s' "$PROXY_TOKEN" >"$HOME/.proxy_token"
+      chmod 600 "$HOME/.proxy_token" 2>/dev/null || true
+    fi
+
+    log_success "Token proxy salvo."
+  fi
+
+  if [[ -n "$PROTO_TOKEN" ]]; then
+    run_privileged mkdir -p /etc/proto-server
+    printf '%s' "$PROTO_TOKEN" | run_privileged tee /etc/proto-server/token >/dev/null
+    chmod 600 /etc/proto-server/token 2>/dev/null || true
+    log_success "Token proto salvo."
+  fi
+
+  if [[ -n "$INSTALL_IP" ]]; then
+    run_privileged mkdir -p /etc/vtproxy
+    printf '%s' "$INSTALL_IP" | run_privileged tee /etc/vtproxy/ip >/dev/null
+    log_info "IP vinculado registrado: $INSTALL_IP"
+  fi
 }
 
 print_finish_message() {
@@ -535,7 +655,10 @@ print_finish_message() {
   log_success "Operação concluída com sucesso!"
   log_info "Versão instalada: $VERSION"
   if [[ "$BINARY_ONLY" == false ]]; then
-    log_info "Execute o menu com: ${MAIN_NAME}"
+    log_info "Execute o menu com: ${MENU_NAME}  (ou main / proto)"
+    if [[ -n "$PROXY_TOKEN" ]]; then
+      log_info "Token proxy já configurado — não será solicitado na primeira execução."
+    fi
   fi
   echo ""
   log_info "Para reinstalar/atualizar depois:"
@@ -554,13 +677,18 @@ main() {
 
   if [[ "$MODE" == "update" || "$MODE" == "reinstall" ]]; then
     stop_proxy_services
+    stop_proto_server
   fi
 
   download_and_install_binary
-  install_main_script
+  download_and_install_proto_binary
+  configure_sysctl
+  install_menu_script
+  install_provided_tokens
 
   if [[ "$MODE" == "update" || "$MODE" == "reinstall" ]]; then
     restart_proxy_services
+    restart_proto_server
   fi
 
   print_finish_message
