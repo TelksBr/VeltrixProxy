@@ -10,6 +10,7 @@ RELEASE_BINARY_PREFIX="proxy"
 # Artefato proto: proto-server-linux-amd64
 PROTO_RELEASE_BINARY_PREFIX="proto-server"
 PROTO_REPO="${PROTO_REPO:-TelksBr/VeltrixProxy}"
+PROTO_FALLBACK_REPO="${PROTO_FALLBACK_REPO:-DTunnel0/DTProto-Server-Releases}"
 # Binário instalado (novo nome — não sobrescreve /usr/local/bin/proxy legado)
 BINARY_NAME="proxy-server"
 PROTO_BINARY_NAME="proto-server"
@@ -24,6 +25,8 @@ TMP_DIR=""
 
 MODE="install"
 VERSION=""
+PROTO_VERSION=""
+INSTALLED_PROTO_VERSION=""
 ASSUME_YES=false
 BINARY_ONLY=false
 SKIP_HEADER=false
@@ -82,7 +85,8 @@ Modos:
 
 Opções:
   --latest, -L    Usa a versão mais recente sem menu
-  --version TAG   Instala uma versão específica (ex: v2.1.0)
+  --version TAG   Instala uma versão específica do proxy (ex: v2.1.0)
+  --proto-version TAG  Versão do binário proto (padrão: mesma do proxy ou latest do fallback)
   --binary-only   Instala/atualiza apenas os binários (não baixa vt.sh)
   --proxy-token T Token da licença proxy (VT)
   --proto-token T Token do servidor de protocolo
@@ -117,6 +121,11 @@ parse_args() {
       VERSION="${1:-}"
       [[ -n "$VERSION" ]] || { log_error "Use --version TAG"; exit 1; }
       ;;
+    --proto-version)
+      shift
+      PROTO_VERSION="${1:-}"
+      [[ -n "$PROTO_VERSION" ]] || { log_error "Use --proto-version TAG"; exit 1; }
+      ;;
     --binary-only) BINARY_ONLY=true ;;
     --proxy-token)
       shift
@@ -138,6 +147,8 @@ parse_args() {
     -h | --help)
       usage
       exit 0
+      ;;
+    --)
       ;;
     *)
       log_error "Opção desconhecida: $1"
@@ -570,25 +581,78 @@ download_and_install_binary() {
 
 download_and_install_proto_binary() {
   local filename="${PROTO_RELEASE_BINARY_PREFIX}-${OS_NAME}-${ARCH_NAME}"
-  local primary_url="https://github.com/${PROTO_REPO}/releases/download/${VERSION}/${filename}"
-  local fallback_repo="DTunnel0/DTProto-Server-Releases"
-  local fallback_url="https://github.com/${fallback_repo}/releases/download/${VERSION}/${filename}"
-  local http_status
-  local used_url
+  local fallback_repo="${PROTO_FALLBACK_REPO:-DTunnel0/DTProto-Server-Releases}"
+  local repos=("$PROTO_REPO")
+  local candidate_tags=() tag repo url http_status used_url="" proto_tag=""
+  local latest_fallback_tag=""
 
-  log_info "Baixando binário proto: $filename ($VERSION)"
+  normalize_version_tag() {
+    local value="$1"
+    [[ -z "$value" || "$value" == "latest" ]] && return 1
+    [[ "$value" == v* ]] || value="v${value}"
+    echo "$value"
+  }
 
-  http_status=$(curl -fsSL -w "%{http_code}" -o "$filename" "$primary_url" || true)
-  if [[ "$http_status" == "200" ]]; then
-    used_url="$primary_url"
-  else
-    log_warn "Release proto não encontrada em ${PROTO_REPO}; tentando ${fallback_repo}..."
-    http_status=$(curl -fsSL -w "%{http_code}" -o "$filename" "$fallback_url" || true)
-    used_url="$fallback_url"
+  fetch_latest_release_tag() {
+    local repo="$1"
+    local json extracted
+    json=$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null) || return 1
+    extracted=$(printf '%s' "$json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+    [[ -n "$extracted" ]] || return 1
+    normalize_version_tag "$extracted"
+  }
+
+  append_unique_tag() {
+    local candidate normalized existing
+    candidate=$(normalize_version_tag "$1" || true)
+    [[ -n "$candidate" ]] || return 0
+    for existing in "${candidate_tags[@]}"; do
+      [[ "$existing" == "$candidate" ]] && return 0
+    done
+    candidate_tags+=("$candidate")
+  }
+
+  if [[ -n "$PROTO_VERSION" ]]; then
+    append_unique_tag "$PROTO_VERSION"
+  fi
+  append_unique_tag "$VERSION"
+  latest_fallback_tag=$(fetch_latest_release_tag "$fallback_repo" || true)
+  [[ -n "$latest_fallback_tag" ]] && append_unique_tag "$latest_fallback_tag"
+
+  [[ "$PROTO_REPO" != "$fallback_repo" ]] && repos+=("$fallback_repo")
+
+  log_info "Baixando binário proto: $filename"
+
+  for repo in "${repos[@]}"; do
+    for tag in "${candidate_tags[@]}"; do
+      url="https://github.com/${repo}/releases/download/${tag}/${filename}"
+      log_info "Tentativa: ${repo} (${tag})"
+      http_status=$(curl -fsSL -w "%{http_code}" -o "$filename" "$url" 2>/dev/null || true)
+      if [[ "$http_status" == "200" ]]; then
+        used_url="$url"
+        proto_tag="$tag"
+        break 2
+      fi
+      if [[ "$repo" == "$PROTO_REPO" && "$tag" == "$VERSION" && "$http_status" != "200" ]]; then
+        log_warn "Binário proto não encontrado em ${PROTO_REPO} (${tag})."
+      fi
+    done
+  done
+
+  if [[ -z "$used_url" ]]; then
+    url="https://github.com/${fallback_repo}/releases/latest/download/${filename}"
+    log_warn "Usando release latest de ${fallback_repo}..."
+    log_info "Tentativa: ${fallback_repo} (latest)"
+    http_status=$(curl -fsSL -w "%{http_code}" -o "$filename" "$url" 2>/dev/null || true)
+    if [[ "$http_status" == "200" ]]; then
+      used_url="$url"
+      proto_tag="${latest_fallback_tag:-latest}"
+    fi
   fi
 
-  if [[ "$http_status" != "200" ]]; then
-    log_error "Falha ao baixar binário proto (HTTP $http_status)"
+  if [[ -z "$used_url" ]]; then
+    log_error "Falha ao baixar binário proto (HTTP ${http_status:-404})"
+    log_info "Verifique releases em: ${PROTO_REPO} e ${fallback_repo}"
     exit 1
   fi
 
@@ -597,9 +661,10 @@ download_and_install_proto_binary() {
 
   log_info "Instalando binário em ${INSTALL_DIR}/${PROTO_BINARY_NAME}..."
   run_privileged install -m 755 "$filename" "${INSTALL_DIR}/${PROTO_BINARY_NAME}"
-  echo "${VERSION#v}" | run_privileged tee "$PROTO_VERSION_FILE" >/dev/null
+  INSTALLED_PROTO_VERSION="${proto_tag#v}"
+  echo "$INSTALLED_PROTO_VERSION" | run_privileged tee "$PROTO_VERSION_FILE" >/dev/null
 
-  log_success "Binário proto instalado: ${INSTALL_DIR}/${PROTO_BINARY_NAME} ($VERSION)"
+  log_success "Binário proto instalado: ${INSTALL_DIR}/${PROTO_BINARY_NAME} (${proto_tag})"
 }
 
 install_menu_script() {
@@ -653,7 +718,10 @@ install_provided_tokens() {
 print_finish_message() {
   echo ""
   log_success "Operação concluída com sucesso!"
-  log_info "Versão instalada: $VERSION"
+  log_info "Versão proxy: $VERSION"
+  if [[ -n "$INSTALLED_PROTO_VERSION" ]]; then
+    log_info "Versão proto: v${INSTALLED_PROTO_VERSION}"
+  fi
   if [[ "$BINARY_ONLY" == false ]]; then
     log_info "Execute o menu com: ${MENU_NAME}  (ou main / proto)"
     if [[ -n "$PROXY_TOKEN" ]]; then
