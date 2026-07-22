@@ -359,7 +359,7 @@ print_status() {
     fi
 
     local proxy_ports proxy_label proxy_tok proto_tok bound_ip
-    proxy_ports=$(list_configured_proxy_ports)
+    proxy_ports=$(format_proxy_ports_status)
     proxy_label="${proxy_ports:-nenhuma}"
     [[ -n "$(load_proxy_token)" ]] && proxy_tok="✅" || proxy_tok="❌"
     [[ -n "$(load_proto_token)" ]] && proto_tok="✅" || proto_tok="❌"
@@ -400,7 +400,7 @@ print_main_menu() {
         "4 • Status & Configuração"
         "5 • Visualizar Logs"
         "6 • Alterar Porta"
-        "7 • Token Proto (menu [4])"
+        "7 • Gerenciar Tokens"
         "8 • Modo de Autenticação"
         "0 • Voltar ao Menu Inicial"
     )
@@ -523,16 +523,107 @@ validate_proxy_token() {
 }
 
 list_configured_proxy_ports() {
-    systemctl list-units --type=service --all --no-legend 'proxy-*.service' 2>/dev/null \
-        | awk '{print $1}' \
-        | grep -oE 'proxy-[0-9]+' \
-        | cut -d'-' -f2 \
-        | sort -nu \
-        | paste -sd, - 2>/dev/null || true
+    local ports=()
+    local f port service_file
+
+    ensure_proxy_dirs_quiet
+
+    for service_file in /etc/systemd/system/${PROXY_SERVICE_PREFIX}-*.service; do
+        [[ -f "$service_file" ]] || continue
+        port=$(basename "$service_file" .service | sed -n "s/^${PROXY_SERVICE_PREFIX}-\\([0-9]\\+\\)$/\\1/p")
+        [[ -n "$port" ]] && ports+=("$port")
+    done
+
+    for f in "$PROXY_CONFIG_DIR"/proxy-*.conf; do
+        [[ -f "$f" ]] || continue
+        port=$(basename "$f" .conf | sed -n 's/^proxy-\([0-9]\+\)$/\1/p')
+        [[ -n "$port" ]] && ports+=("$port")
+    done
+
+    if [[ ${#ports[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    printf '%s\n' "${ports[@]}" | sort -nu | paste -sd, - 2>/dev/null || true
+}
+
+ensure_proxy_dirs_quiet() {
+    sudo mkdir -p "$PROXY_DIR" "$PROXY_CONFIG_DIR" "$PROXY_LOG_DIR" 2>/dev/null || true
 }
 
 list_active_proxies() {
-    list_configured_proxy_ports
+    local ports port service_name active_list=""
+    ports=$(list_configured_proxy_ports)
+    [[ -z "$ports" ]] && return 0
+
+    IFS=',' read -ra port_array <<< "$ports"
+    for port in "${port_array[@]}"; do
+        [[ -z "$port" ]] && continue
+        service_name=$(get_proxy_service_name "$port")
+        if systemctl is-active --quiet "$service_name" 2>/dev/null; then
+            if [[ -n "$active_list" ]]; then
+                active_list+=","
+            fi
+            active_list+="$port"
+        fi
+    done
+    printf '%s' "$active_list"
+}
+
+format_proxy_port_flags() {
+    local port="$1"
+    local flags=()
+    local ssl cert_internal ssh_only
+
+    ssl=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
+    cert_internal=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
+    ssh_only=$(get_proxy_conf_value "$port" "SSH_ONLY" "false")
+
+    [[ "$ssl" == "true" ]] && flags+=("ssl")
+    if [[ "$ssl" == "true" && "$cert_internal" == "true" ]]; then
+        flags+=("cert-int")
+    elif [[ "$ssl" == "true" ]]; then
+        flags+=("cert-ext")
+    fi
+    [[ "$ssh_only" == "true" ]] && flags+=("ssh-only")
+
+    if [[ ${#flags[@]} -eq 0 ]]; then
+        echo ""
+        return 0
+    fi
+    local IFS=,
+    echo "${flags[*]}"
+}
+
+format_proxy_ports_status() {
+    local configured active port status_line="" mark extras
+    configured=$(list_configured_proxy_ports)
+    active=$(list_active_proxies)
+
+    if [[ -z "$configured" ]]; then
+        echo "nenhuma"
+        return 0
+    fi
+
+    IFS=',' read -ra port_array <<< "$configured"
+    for port in "${port_array[@]}"; do
+        [[ -z "$port" ]] && continue
+        if [[ ",${active}," == *",${port},"* ]]; then
+            mark="ON"
+        else
+            mark="OFF"
+        fi
+        extras=$(format_proxy_port_flags "$port")
+        if [[ -n "$status_line" ]]; then
+            status_line+=", "
+        fi
+        if [[ -n "$extras" ]]; then
+            status_line+="${port} ${mark} (${extras})"
+        else
+            status_line+="${port} ${mark}"
+        fi
+    done
+    echo "$status_line"
 }
 
 is_port_in_use() {
@@ -580,6 +671,7 @@ prompt_for_proxy_token_if_missing() {
 
 is_proxy_service_configured() {
     local port="$1"
+    [[ -f "$(get_proxy_config_file "$port")" ]] && return 0
     [[ -f "/etc/systemd/system/${PROXY_SERVICE_PREFIX}-${port}.service" ]] && return 0
     systemctl cat "${PROXY_SERVICE_PREFIX}-${port}" &>/dev/null
 }
@@ -597,6 +689,114 @@ get_proxy_log_file() {
 get_proxy_service_name() {
     local port="$1"
     echo "$PROXY_SERVICE_PREFIX-$port"
+}
+
+get_proxy_conf_value() {
+    local port="$1"
+    local key="$2"
+    local default="${3:-}"
+    local file val
+    file=$(get_proxy_config_file "$port")
+    if [[ -f "$file" ]]; then
+        val=$(grep -E "^${key}=" "$file" 2>/dev/null | head -n1 | cut -d= -f2-)
+        if [[ -n "$val" ]]; then
+            printf '%s' "$val"
+            return 0
+        fi
+    fi
+    printf '%s' "$default"
+}
+
+write_proxy_conf() {
+    local port="$1"
+    local ssl_enabled="$2"
+    local ssl_cert_path="$3"
+    local cert_internal="$4"
+    local ssh_only_flag="$5"
+    local http_response="$6"
+    local buffer_size="$7"
+    local domain_flag="$8"
+    local max_connections="$9"
+    local write_timeout="${10}"
+    local idle_timeout="${11}"
+    local log_level="${12}"
+    local ssh_port="${13}"
+    local openvpn_port="${14}"
+    local v2ray_port="${15}"
+    local display_banner="${16}"
+    local file
+
+    ensure_proxy_dirs_quiet
+    file=$(get_proxy_config_file "$port")
+
+    sudo tee "$file" > /dev/null <<EOF
+PORT=$port
+SSL_ENABLED=$ssl_enabled
+SSL_CERT_PATH=$ssl_cert_path
+CERT_INTERNAL=$cert_internal
+SSH_ONLY=$ssh_only_flag
+HTTP_RESPONSE=$http_response
+BUFFER_SIZE=$buffer_size
+DOMAIN=$domain_flag
+MAX_CONNECTIONS=$max_connections
+WRITE_TIMEOUT=$write_timeout
+IDLE_TIMEOUT=$idle_timeout
+LOG_LEVEL=$log_level
+SSH_PORT=$ssh_port
+OPENVPN_PORT=$openvpn_port
+V2RAY_PORT=$v2ray_port
+DISPLAY_BANNER=$display_banner
+EOF
+}
+
+set_proxy_conf_key() {
+    local port="$1"
+    local key="$2"
+    local value="$3"
+    local file temp_file
+    file=$(get_proxy_config_file "$port")
+    ensure_proxy_dirs_quiet
+    temp_file=$(mktemp)
+
+    if [[ -f "$file" ]]; then
+        grep -v "^${key}=" "$file" > "$temp_file" || true
+    fi
+    echo "${key}=${value}" >> "$temp_file"
+    sudo mv "$temp_file" "$file"
+    sudo chmod 644 "$file" 2>/dev/null || true
+}
+
+migrate_proxy_conf_from_unit_if_needed() {
+    local port="$1"
+    local file service_file exec_line
+    file=$(get_proxy_config_file "$port")
+    [[ -f "$file" ]] && return 0
+
+    service_file="/etc/systemd/system/$(get_proxy_service_name "$port").service"
+    [[ -f "$service_file" ]] || return 1
+
+    exec_line=$(grep -E '^ExecStart=' "$service_file" | head -n1 | sed 's/^ExecStart=//')
+
+    local ssl="false" cert="" cert_internal="true" ssh_only="false"
+    local response="$DEFAULT_HTTP_RESPONSE" buffer="$DEFAULT_BUFFER_SIZE"
+    local domain="true"
+
+    [[ "$exec_line" == *":ssl"* ]] && ssl="true"
+    if [[ "$exec_line" =~ --cert=([^ ]+) ]]; then
+        cert="${BASH_REMATCH[1]}"
+        cert_internal="false"
+    fi
+    [[ "$exec_line" == *"--ssh-only"* ]] && ssh_only="true"
+    if [[ "$exec_line" =~ --response=([^ ]+) ]]; then
+        response="${BASH_REMATCH[1]}"
+    fi
+    if [[ "$exec_line" =~ --buffer-size=([0-9]+) ]]; then
+        buffer="${BASH_REMATCH[1]}"
+    fi
+    [[ "$exec_line" != *"--domain"* ]] && domain="false"
+
+    write_proxy_conf "$port" "$ssl" "$cert" "$cert_internal" "$ssh_only" "$response" \
+        "$buffer" "$domain" "0" "0" "0" "info" "22" "1194" "1080" "true"
 }
 
 validate_port() {
@@ -648,6 +848,16 @@ confirm_action() {
     esac
 }
 
+prompt_with_default() {
+    local message="$1"
+    local default="$2"
+    local value
+    echo -e "${BLUE}${message} ${GRAY}[${default}]${RESET}"
+    read -rp "> " value
+    value=${value:-$default}
+    printf '%s' "$value"
+}
+
 get_proto_port() {
     local proto_port=$(get_config_value "PORT")
     echo "${proto_port:-8000}"
@@ -674,6 +884,65 @@ normalize_protocol_config() {
     echo "$output"
 }
 
+build_proxy_command_from_conf() {
+    local port="$1"
+    local token="$2"
+
+    migrate_proxy_conf_from_unit_if_needed "$port" || true
+
+    local ssl_enabled ssl_cert_path cert_internal ssh_only_flag http_response
+    local buffer_size domain_flag max_connections write_timeout idle_timeout
+    local log_level ssh_port openvpn_port v2ray_port display_banner proto_port
+
+    ssl_enabled=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
+    ssl_cert_path=$(get_proxy_conf_value "$port" "SSL_CERT_PATH" "")
+    cert_internal=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
+    ssh_only_flag=$(get_proxy_conf_value "$port" "SSH_ONLY" "false")
+    http_response=$(get_proxy_conf_value "$port" "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
+    buffer_size=$(get_proxy_conf_value "$port" "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
+    domain_flag=$(get_proxy_conf_value "$port" "DOMAIN" "true")
+    max_connections=$(get_proxy_conf_value "$port" "MAX_CONNECTIONS" "0")
+    write_timeout=$(get_proxy_conf_value "$port" "WRITE_TIMEOUT" "0")
+    idle_timeout=$(get_proxy_conf_value "$port" "IDLE_TIMEOUT" "0")
+    log_level=$(get_proxy_conf_value "$port" "LOG_LEVEL" "info")
+    ssh_port=$(get_proxy_conf_value "$port" "SSH_PORT" "22")
+    openvpn_port=$(get_proxy_conf_value "$port" "OPENVPN_PORT" "1194")
+    v2ray_port=$(get_proxy_conf_value "$port" "V2RAY_PORT" "1080")
+    display_banner=$(get_proxy_conf_value "$port" "DISPLAY_BANNER" "true")
+    proto_port=$(get_proto_port)
+
+    local command="$PROXY_EXECUTABLE --token=$token --buffer-size=$buffer_size --response=$http_response --log-file=$(get_proxy_log_file "$port") --log-level=$log_level --dt-proto-port=$proto_port --ssh-port=$ssh_port --openvpn-port=$openvpn_port --v2ray-port=$v2ray_port --max-connections=$max_connections --write-timeout=$write_timeout --idle-timeout=$idle_timeout"
+
+    if [[ "$domain_flag" == "true" ]]; then
+        command="$command --domain"
+    fi
+
+    if [[ "$display_banner" != "true" ]]; then
+        command="$command --display-banner=false"
+    fi
+
+    if [[ "$ssl_enabled" == "true" ]]; then
+        command="$command --port=$port:ssl"
+        if [[ "$cert_internal" == "true" ]]; then
+            command="$command --cert-internal=true"
+        else
+            command="$command --cert-internal=false"
+            if [[ -n "$ssl_cert_path" ]]; then
+                command="$command --cert=$ssl_cert_path"
+            fi
+        fi
+    else
+        command="$command --port=$port"
+    fi
+
+    if [[ "$ssh_only_flag" == "true" ]]; then
+        command="$command --ssh-only"
+    fi
+
+    echo "$command"
+}
+
+# Compatível com chamadas antigas (quick setup / start).
 build_proxy_command() {
     local port="$1"
     local token="$2"
@@ -681,58 +950,20 @@ build_proxy_command() {
     local ssl_cert_path="$4"
     local ssh_only_flag="$5"
     local http_response="$6"
-    
-    local command="$PROXY_EXECUTABLE --token=$token --buffer-size=$DEFAULT_BUFFER_SIZE --response=$http_response --domain --log-file=$(get_proxy_log_file "$port")"
-    
-    local proto_port=$(get_proto_port)
-    command="$command --dt-proto-port=$proto_port"
-    
-    if [[ "$ssl_enabled" == "true" ]]; then
-        command="$command --port=$port:ssl"
-        if [[ -n "$ssl_cert_path" ]]; then
-            command="$command --cert=$ssl_cert_path"
-        fi
-    else
-        command="$command --port=$port"
+    local cert_internal="true"
+
+    if [[ "$ssl_enabled" == "true" && -n "$ssl_cert_path" ]]; then
+        cert_internal="false"
     fi
-    
-    if [[ "$ssh_only_flag" == "true" ]]; then
-        command="$command --ssh-only"
-    fi
-    
-    echo "$command"
+
+    write_proxy_conf "$port" "$ssl_enabled" "$ssl_cert_path" "$cert_internal" "$ssh_only_flag" \
+        "$http_response" "$DEFAULT_BUFFER_SIZE" "true" "0" "0" "0" "info" "22" "1194" "1080" "true"
+    build_proxy_command_from_conf "$port" "$token"
 }
 
-start_proxy_for_port() {
+write_proxy_systemd_unit() {
     local port="$1"
-    local ssl_enabled="$2"
-    local ssl_cert_path="$3"
-    local ssh_only_flag="$4"
-    local http_response="$5"
-
-    if ! validate_port "$port"; then
-        return 1
-    fi
-
-    if ! check_port_available "$port"; then
-        return 1
-    fi
-
-    local token
-    token=$(load_proxy_token)
-    if [[ -z "$token" ]]; then
-        print_error "Token proxy não configurado. Use Gerenciar Tokens no menu inicial."
-        return 1
-    fi
-
-    ensure_proto_for_proxy || return 1
-
-    local proxy_command
-    proxy_command=$(build_proxy_command "$port" "$token" "$ssl_enabled" "$ssl_cert_path" "$ssh_only_flag" "$http_response")
-    if [[ "$proxy_command" != *"--dt-proto-port="* ]]; then
-        proxy_command="$proxy_command --dt-proto-port=$(get_proto_port)"
-    fi
-
+    local proxy_command="$2"
     local service_name
     service_name=$(get_proxy_service_name "$port")
 
@@ -750,17 +981,123 @@ RestartSec=3
 [Install]
 WantedBy=multi-user.target
 EOF
-
-    sudo systemctl daemon-reload
-    if sudo systemctl start "$service_name"; then
-        sudo systemctl enable "$service_name" > /dev/null 2>&1
-        return 0
-    fi
-
-    return 1
 }
 
-change_proxy_status() {
+apply_proxy_service() {
+    local port="$1"
+    local do_start="${2:-true}"
+    local token proxy_command service_name
+
+    token=$(load_proxy_token)
+    if [[ -z "$token" ]]; then
+        print_error "Token proxy não configurado. Use Gerenciar Tokens no menu inicial."
+        return 1
+    fi
+
+    migrate_proxy_conf_from_unit_if_needed "$port" || true
+    if [[ ! -f "$(get_proxy_config_file "$port")" ]]; then
+        print_error "Configuração da porta $port não encontrada."
+        return 1
+    fi
+
+    proxy_command=$(build_proxy_command_from_conf "$port" "$token")
+    write_proxy_systemd_unit "$port" "$proxy_command"
+    service_name=$(get_proxy_service_name "$port")
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable "$service_name" > /dev/null 2>&1 || true
+
+    if [[ "$do_start" == "true" ]]; then
+        if sudo systemctl restart "$service_name"; then
+            return 0
+        fi
+        return 1
+    fi
+    return 0
+}
+
+sync_all_proxy_tokens() {
+    local token="$1"
+    local port service_name updated=0
+
+    [[ -n "$token" ]] || return 0
+
+    for port in $(list_configured_proxy_ports | tr ',' ' '); do
+        [[ -z "$port" ]] && continue
+        migrate_proxy_conf_from_unit_if_needed "$port" || true
+        if [[ -f "$(get_proxy_config_file "$port")" ]] || is_proxy_service_configured "$port"; then
+            if apply_proxy_service "$port" "false"; then
+                service_name=$(get_proxy_service_name "$port")
+                if systemctl is-active --quiet "$service_name" 2>/dev/null; then
+                    sudo systemctl restart "$service_name" 2>/dev/null || true
+                fi
+                updated=$((updated + 1))
+            fi
+        fi
+    done
+
+    echo "$updated"
+}
+
+start_proxy_for_port() {
+    local port="$1"
+    local ssl_enabled="$2"
+    local ssl_cert_path="$3"
+    local ssh_only_flag="$4"
+    local http_response="$5"
+    local skip_listen_check="${6:-false}"
+
+    if ! validate_port "$port"; then
+        return 1
+    fi
+
+    if [[ "$skip_listen_check" != "true" ]]; then
+        if ! check_port_available "$port"; then
+            return 1
+        fi
+    fi
+
+    local token
+    token=$(load_proxy_token)
+    if [[ -z "$token" ]]; then
+        print_error "Token proxy não configurado. Use Gerenciar Tokens no menu inicial."
+        return 1
+    fi
+
+    ensure_proto_for_proxy || return 1
+
+    local cert_internal="true"
+    if [[ "$ssl_enabled" == "true" && -n "$ssl_cert_path" ]]; then
+        cert_internal="false"
+    fi
+
+    write_proxy_conf "$port" "$ssl_enabled" "$ssl_cert_path" "$cert_internal" "$ssh_only_flag" \
+        "$http_response" "$DEFAULT_BUFFER_SIZE" "true" "0" "0" "0" "info" "22" "1194" "1080" "true"
+
+    apply_proxy_service "$port" "true"
+}
+
+prompt_proxy_advanced_options() {
+    # Sets globals: ADV_*
+    ADV_BUFFER_SIZE=$(prompt_with_default "Buffer size (bytes)" "$DEFAULT_BUFFER_SIZE")
+    ADV_MAX_CONNECTIONS=$(prompt_with_default "Max connections (0=ilimitado)" "0")
+    ADV_WRITE_TIMEOUT=$(prompt_with_default "Write timeout segundos (0=off)" "0")
+    ADV_IDLE_TIMEOUT=$(prompt_with_default "Idle timeout segundos (0=off; evite em SSH ocioso)" "0")
+    ADV_LOG_LEVEL=$(prompt_with_default "Log level (debug|info|warn|error)" "info")
+    ADV_SSH_PORT=$(prompt_with_default "Porta backend SSH" "22")
+    ADV_OPENVPN_PORT=$(prompt_with_default "Porta backend OpenVPN" "1194")
+    ADV_V2RAY_PORT=$(prompt_with_default "Porta backend V2Ray" "1080")
+    ADV_DOMAIN="true"
+    if ! confirm_action "Gerar domínio automático (--domain)?" "s"; then
+        ADV_DOMAIN="false"
+    fi
+    ADV_DISPLAY_BANNER="true"
+    if ! confirm_action "Exibir banner no terminal do serviço?" "s"; then
+        ADV_DISPLAY_BANNER="false"
+    fi
+}
+
+change_proxy_http_response() {
     print_header
 
     local configured_ports
@@ -771,81 +1108,65 @@ change_proxy_status() {
         return
     fi
 
-    echo -e "${BLUE}Portas configuradas: ${GREEN}$configured_ports${RESET}"
-    echo -e "${BLUE}Digite a porta para alterar o status/resposta:${RESET}"
+    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
+    echo -e "${BLUE}Digite a porta para alterar a resposta HTTP (--response):${RESET}"
     read -rp "> " port
     port=$(echo "$port" | tr -d '[:space:]')
 
-    if ! validate_port "$port"; then
+    if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
+        print_error "Porta inválida ou não configurada."
         pause
         return
     fi
 
-    local service_name
-    service_name=$(get_proxy_service_name "$port")
-    local service_file="/etc/systemd/system/$service_name.service"
-    if [[ ! -f "$service_file" ]]; then
-        print_error "Serviço não encontrado para a porta $port."
-        pause
-        return
-    fi
-
+    migrate_proxy_conf_from_unit_if_needed "$port" || true
     local current_response
-    current_response=$(sudo grep -o -- '--response=[^ ]*' "$service_file" | head -n1 | cut -d= -f2)
-    current_response=${current_response:-$DEFAULT_HTTP_RESPONSE}
+    current_response=$(get_proxy_conf_value "$port" "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
 
-    echo -e "${BLUE}Status/Resposta atual: ${GREEN}$current_response${RESET}"
-    echo -e "${BLUE}Novo status/resposta (Enter para manter):${RESET}"
-    read -rp "> " new_response
-    new_response=${new_response:-$current_response}
+    echo -e "${BLUE}Resposta atual: ${GREEN}$current_response${RESET}"
+    local new_response
+    new_response=$(prompt_with_default "Nova resposta HTTP" "$current_response")
     new_response=$(echo "$new_response" | tr -d '[:space:]')
 
     if [[ -z "$new_response" ]]; then
-        print_error "Status/resposta não pode ser vazio."
+        print_error "Resposta não pode ser vazia."
         pause
         return
     fi
 
-    local safe_response
-    safe_response=$(escape_sed_replacement "$new_response")
-    sudo sed -Ei "s|--response=[^ ]+|--response=${safe_response}|g" "$service_file"
-    sudo systemctl daemon-reload
-
-    if sudo systemctl restart "$service_name"; then
-        print_success "Status/resposta da porta $port atualizado para '$new_response'."
+    set_proxy_conf_key "$port" "HTTP_RESPONSE" "$new_response"
+    if apply_proxy_service "$port" "true"; then
+        print_success "Resposta HTTP da porta $port atualizada para '$new_response'."
     else
-        print_error "Falha ao reiniciar proxy na porta $port."
+        print_error "Falha ao aplicar alteração na porta $port."
     fi
-
     pause
+}
+
+# Alias legado
+change_proxy_status() {
+    change_proxy_http_response
 }
 
 sync_proxy_dtproto_port() {
     local new_proto_port="$1"
-    local service_file
-    local updated_any="false"
+    local port updated_any="false"
 
-    for service_file in /etc/systemd/system/${PROXY_SERVICE_PREFIX}-*.service; do
-        if [[ ! -f "$service_file" ]]; then
-            continue
-        fi
-
-        if sudo grep -q -- "--dt-proto-port=" "$service_file"; then
-            sudo sed -Ei "s/--dt-proto-port=[0-9]+/--dt-proto-port=$new_proto_port/g" "$service_file"
-            updated_any="true"
+    for port in $(list_configured_proxy_ports | tr ',' ' '); do
+        [[ -z "$port" ]] && continue
+        migrate_proxy_conf_from_unit_if_needed "$port" || true
+        if [[ -f "$(get_proxy_config_file "$port")" ]]; then
+            if apply_proxy_service "$port" "false"; then
+                updated_any="true"
+                if systemctl is-active --quiet "$(get_proxy_service_name "$port")" 2>/dev/null; then
+                    sudo systemctl restart "$(get_proxy_service_name "$port")" 2>/dev/null || true
+                fi
+            fi
         fi
     done
 
-    if [[ "$updated_any" == "true" ]]; then
-        sudo systemctl daemon-reload
-
-        local service
-        for service in $(systemctl list-unit-files --type=service --no-legend | awk '{print $1}' | grep "^${PROXY_SERVICE_PREFIX}-.*\\.service$"); do
-            if systemctl is-active --quiet "$service"; then
-                sudo systemctl restart "$service"
-            fi
-        done
-    fi
+    [[ "$updated_any" == "true" ]] && sudo systemctl daemon-reload
+    _="$new_proto_port"
 }
 
 start_proxy_service() {
@@ -854,32 +1175,89 @@ start_proxy_service() {
     local port
     echo -e "${BLUE}Digite a porta para abrir:${RESET}"
     read -rp "> " port
-    
     port=$(echo "$port" | tr -d '[:space:]')
+
+    if ! validate_port "$port"; then
+        pause
+        return
+    fi
+
+    if is_proxy_service_configured "$port"; then
+        if ! confirm_action "Porta $port já configurada. Sobrescrever?" "n"; then
+            pause
+            return
+        fi
+    fi
     
     local ssl_enabled="false"
     local ssl_cert_path=""
+    local cert_internal="true"
     
     if confirm_action "Deseja habilitar SSL?" "n"; then
         ssl_enabled="true"
-        if ! confirm_action "Usar certificado interno?" "s"; then
+        if confirm_action "Usar certificado interno (--cert-internal)?" "s"; then
+            cert_internal="true"
+        else
+            cert_internal="false"
             echo -e "${BLUE}Caminho do certificado SSL:${RESET}"
             read -rp "> " ssl_cert_path
         fi
     fi
     
     local http_response
-    echo -e "${BLUE}Resposta HTTP padrão (Enter para '$DEFAULT_HTTP_RESPONSE'):${RESET}"
-    read -rp "> " http_response
-    http_response=${http_response:-$DEFAULT_HTTP_RESPONSE}
+    http_response=$(prompt_with_default "Resposta HTTP (--response)" "$DEFAULT_HTTP_RESPONSE")
     
     local ssh_only_flag="false"
-    if confirm_action "Habilitar modo somente SSH?" "n"; then
+    if confirm_action "Habilitar modo somente SSH (--ssh-only)?" "n"; then
         ssh_only_flag="true"
+    fi
+
+    local buffer_size="$DEFAULT_BUFFER_SIZE"
+    local domain_flag="true"
+    local max_connections="0"
+    local write_timeout="0"
+    local idle_timeout="0"
+    local log_level="info"
+    local ssh_port="22"
+    local openvpn_port="1194"
+    local v2ray_port="1080"
+    local display_banner="true"
+
+    if confirm_action "Configurar opções avançadas?" "n"; then
+        prompt_proxy_advanced_options
+        buffer_size="$ADV_BUFFER_SIZE"
+        max_connections="$ADV_MAX_CONNECTIONS"
+        write_timeout="$ADV_WRITE_TIMEOUT"
+        idle_timeout="$ADV_IDLE_TIMEOUT"
+        log_level="$ADV_LOG_LEVEL"
+        ssh_port="$ADV_SSH_PORT"
+        openvpn_port="$ADV_OPENVPN_PORT"
+        v2ray_port="$ADV_V2RAY_PORT"
+        domain_flag="$ADV_DOMAIN"
+        display_banner="$ADV_DISPLAY_BANNER"
     fi
     
     print_info "Iniciando proxy na porta $port..."
-    if start_proxy_for_port "$port" "$ssl_enabled" "$ssl_cert_path" "$ssh_only_flag" "$http_response"; then
+    ensure_proto_for_proxy || { pause; return; }
+
+    local token
+    token=$(load_proxy_token)
+    if [[ -z "$token" ]]; then
+        print_error "Token proxy não configurado."
+        pause
+        return
+    fi
+
+    if ! check_port_available "$port"; then
+        pause
+        return
+    fi
+
+    write_proxy_conf "$port" "$ssl_enabled" "$ssl_cert_path" "$cert_internal" "$ssh_only_flag" \
+        "$http_response" "$buffer_size" "$domain_flag" "$max_connections" "$write_timeout" \
+        "$idle_timeout" "$log_level" "$ssh_port" "$openvpn_port" "$v2ray_port" "$display_banner"
+
+    if apply_proxy_service "$port" "true"; then
         print_success "Proxy iniciado com sucesso na porta $port!"
     else
         print_error "Falha ao iniciar proxy na porta $port"
@@ -888,40 +1266,296 @@ start_proxy_service() {
     pause
 }
 
-stop_proxy_service() {
+pause_proxy_service() {
     print_header
 
     local configured_ports
     configured_ports=$(list_configured_proxy_ports)
-
-    echo -e "${BLUE}Portas configuradas: ${GREEN}${configured_ports:-nenhuma}${RESET}"
-    echo -e "${BLUE}Digite a porta para fechar:${RESET}"
+    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
+    echo -e "${BLUE}Digite a porta para PARAR (mantém configuração):${RESET}"
     read -rp "> " port
-
     port=$(echo "$port" | tr -d '[:space:]')
 
-    if ! validate_port "$port"; then
-        pause
-        return
-    fi
-
-    if ! is_proxy_service_configured "$port"; then
-        print_error "Nenhum serviço configurado na porta $port."
+    if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
+        print_error "Porta inválida ou não configurada."
         pause
         return
     fi
 
     local service_name
     service_name=$(get_proxy_service_name "$port")
+    print_info "Parando proxy na porta $port (config preservada)..."
+    sudo systemctl stop "$service_name" 2>/dev/null || true
+    print_success "Proxy na porta $port parado. Use 'Iniciar porta configurada' para religar."
+    pause
+}
 
-    print_info "Parando proxy na porta $port..."
+remove_proxy_service() {
+    print_header
 
+    local configured_ports
+    configured_ports=$(list_configured_proxy_ports)
+    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
+    echo -e "${BLUE}Digite a porta para REMOVER (apaga unit + conf):${RESET}"
+    read -rp "> " port
+    port=$(echo "$port" | tr -d '[:space:]')
+
+    if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
+        print_error "Porta inválida ou não configurada."
+        pause
+        return
+    fi
+
+    if ! confirm_action "Remover definitivamente a porta $port?" "n"; then
+        pause
+        return
+    fi
+
+    local service_name
+    service_name=$(get_proxy_service_name "$port")
+    print_info "Removendo proxy na porta $port..."
     sudo systemctl stop "$service_name" 2>/dev/null || true
     sudo systemctl disable "$service_name" 2>/dev/null || true
     sudo rm -f "/etc/systemd/system/$service_name.service"
+    sudo rm -f "$(get_proxy_config_file "$port")"
     sudo systemctl daemon-reload
-    print_success "Proxy na porta $port foi encerrado."
+    print_success "Proxy na porta $port removido."
+    pause
+}
 
+# Compat: "fechar" antigo = remover
+stop_proxy_service() {
+    remove_proxy_service
+}
+
+start_configured_proxy_service() {
+    print_header
+
+    local configured_ports
+    configured_ports=$(list_configured_proxy_ports)
+    if [[ -z "$configured_ports" ]]; then
+        print_error "Nenhuma porta configurada. Use 'Abrir / criar porta'."
+        pause
+        return
+    fi
+
+    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
+    echo -e "${BLUE}Digite a porta configurada para iniciar:${RESET}"
+    read -rp "> " port
+    port=$(echo "$port" | tr -d '[:space:]')
+
+    if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
+        print_error "Porta inválida ou não configurada."
+        pause
+        return
+    fi
+
+    migrate_proxy_conf_from_unit_if_needed "$port" || true
+    ensure_proto_for_proxy || { pause; return; }
+
+    local service_name
+    service_name=$(get_proxy_service_name "$port")
+    if systemctl is-active --quiet "$service_name" 2>/dev/null; then
+        print_warning "Porta $port já está ativa."
+        pause
+        return
+    fi
+
+    if ! check_port_available "$port"; then
+        pause
+        return
+    fi
+
+    print_info "Iniciando porta $port..."
+    if apply_proxy_service "$port" "true"; then
+        print_success "Porta $port iniciada."
+    else
+        print_error "Falha ao iniciar porta $port."
+    fi
+    pause
+}
+
+edit_proxy_service() {
+    print_header
+
+    local configured_ports
+    configured_ports=$(list_configured_proxy_ports)
+    if [[ -z "$configured_ports" ]]; then
+        print_error "Nenhuma porta configurada."
+        pause
+        return
+    fi
+
+    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
+    echo -e "${BLUE}Digite a porta para editar:${RESET}"
+    read -rp "> " port
+    port=$(echo "$port" | tr -d '[:space:]')
+
+    if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
+        print_error "Porta inválida ou não configurada."
+        pause
+        return
+    fi
+
+    migrate_proxy_conf_from_unit_if_needed "$port" || true
+
+    local ssl_enabled ssl_cert_path cert_internal ssh_only_flag http_response
+    local buffer_size domain_flag max_connections write_timeout idle_timeout
+    local log_level ssh_port openvpn_port v2ray_port display_banner
+
+    ssl_enabled=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
+    ssl_cert_path=$(get_proxy_conf_value "$port" "SSL_CERT_PATH" "")
+    cert_internal=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
+    ssh_only_flag=$(get_proxy_conf_value "$port" "SSH_ONLY" "false")
+    http_response=$(get_proxy_conf_value "$port" "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
+    buffer_size=$(get_proxy_conf_value "$port" "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
+    domain_flag=$(get_proxy_conf_value "$port" "DOMAIN" "true")
+    max_connections=$(get_proxy_conf_value "$port" "MAX_CONNECTIONS" "0")
+    write_timeout=$(get_proxy_conf_value "$port" "WRITE_TIMEOUT" "0")
+    idle_timeout=$(get_proxy_conf_value "$port" "IDLE_TIMEOUT" "0")
+    log_level=$(get_proxy_conf_value "$port" "LOG_LEVEL" "info")
+    ssh_port=$(get_proxy_conf_value "$port" "SSH_PORT" "22")
+    openvpn_port=$(get_proxy_conf_value "$port" "OPENVPN_PORT" "1194")
+    v2ray_port=$(get_proxy_conf_value "$port" "V2RAY_PORT" "1080")
+    display_banner=$(get_proxy_conf_value "$port" "DISPLAY_BANNER" "true")
+
+    echo
+    print_info "Editando porta $port (Enter mantém o valor atual)."
+    echo
+
+    if confirm_action "SSL habilitado? (atual: $ssl_enabled)" "$([[ "$ssl_enabled" == "true" ]] && echo s || echo n)"; then
+        ssl_enabled="true"
+        if confirm_action "Usar certificado interno? (atual: $cert_internal)" "$([[ "$cert_internal" == "true" ]] && echo s || echo n)"; then
+            cert_internal="true"
+            ssl_cert_path=""
+        else
+            cert_internal="false"
+            ssl_cert_path=$(prompt_with_default "Caminho do certificado" "${ssl_cert_path:-/path/cert.pem}")
+        fi
+    else
+        ssl_enabled="false"
+        cert_internal="true"
+        ssl_cert_path=""
+    fi
+
+    http_response=$(prompt_with_default "Resposta HTTP" "$http_response")
+    if confirm_action "Modo ssh-only? (atual: $ssh_only_flag)" "$([[ "$ssh_only_flag" == "true" ]] && echo s || echo n)"; then
+        ssh_only_flag="true"
+    else
+        ssh_only_flag="false"
+    fi
+
+    if confirm_action "Ajustar opções avançadas?" "n"; then
+        ADV_BUFFER_SIZE=$(prompt_with_default "Buffer size" "$buffer_size")
+        ADV_MAX_CONNECTIONS=$(prompt_with_default "Max connections" "$max_connections")
+        ADV_WRITE_TIMEOUT=$(prompt_with_default "Write timeout" "$write_timeout")
+        ADV_IDLE_TIMEOUT=$(prompt_with_default "Idle timeout" "$idle_timeout")
+        ADV_LOG_LEVEL=$(prompt_with_default "Log level" "$log_level")
+        ADV_SSH_PORT=$(prompt_with_default "SSH backend" "$ssh_port")
+        ADV_OPENVPN_PORT=$(prompt_with_default "OpenVPN backend" "$openvpn_port")
+        ADV_V2RAY_PORT=$(prompt_with_default "V2Ray backend" "$v2ray_port")
+        if confirm_action "Gerar domínio (--domain)? (atual: $domain_flag)" "$([[ "$domain_flag" == "true" ]] && echo s || echo n)"; then
+            ADV_DOMAIN="true"
+        else
+            ADV_DOMAIN="false"
+        fi
+        if confirm_action "Exibir banner? (atual: $display_banner)" "$([[ "$display_banner" == "true" ]] && echo s || echo n)"; then
+            ADV_DISPLAY_BANNER="true"
+        else
+            ADV_DISPLAY_BANNER="false"
+        fi
+        buffer_size="$ADV_BUFFER_SIZE"
+        max_connections="$ADV_MAX_CONNECTIONS"
+        write_timeout="$ADV_WRITE_TIMEOUT"
+        idle_timeout="$ADV_IDLE_TIMEOUT"
+        log_level="$ADV_LOG_LEVEL"
+        ssh_port="$ADV_SSH_PORT"
+        openvpn_port="$ADV_OPENVPN_PORT"
+        v2ray_port="$ADV_V2RAY_PORT"
+        domain_flag="$ADV_DOMAIN"
+        display_banner="$ADV_DISPLAY_BANNER"
+    fi
+
+    write_proxy_conf "$port" "$ssl_enabled" "$ssl_cert_path" "$cert_internal" "$ssh_only_flag" \
+        "$http_response" "$buffer_size" "$domain_flag" "$max_connections" "$write_timeout" \
+        "$idle_timeout" "$log_level" "$ssh_port" "$openvpn_port" "$v2ray_port" "$display_banner"
+
+    local was_active="false"
+    systemctl is-active --quiet "$(get_proxy_service_name "$port")" 2>/dev/null && was_active="true"
+
+    if apply_proxy_service "$port" "$was_active"; then
+        if [[ "$was_active" == "true" ]]; then
+            print_success "Porta $port atualizada e reiniciada."
+        else
+            print_success "Configuração da porta $port salva (serviço parado)."
+        fi
+    else
+        print_error "Falha ao aplicar configuração da porta $port."
+    fi
+    pause
+}
+
+show_proxy_port_details() {
+    print_header
+
+    local configured_ports
+    configured_ports=$(list_configured_proxy_ports)
+    if [[ -z "$configured_ports" ]]; then
+        print_error "Nenhuma porta configurada."
+        pause
+        return
+    fi
+
+    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
+    echo -e "${BLUE}Digite a porta para ver detalhes:${RESET}"
+    read -rp "> " port
+    port=$(echo "$port" | tr -d '[:space:]')
+
+    if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
+        print_error "Porta inválida ou não configurada."
+        pause
+        return
+    fi
+
+    migrate_proxy_conf_from_unit_if_needed "$port" || true
+
+    local service_name conf_file
+    service_name=$(get_proxy_service_name "$port")
+    conf_file=$(get_proxy_config_file "$port")
+
+    echo
+    print_box_open
+    print_box_heading "DETALHES PORTA $port"
+    print_box_divider
+    if systemctl is-active --quiet "$service_name" 2>/dev/null; then
+        print_box_line "${WHITE}  Estado: ${GREEN}ATIVO${RESET}"
+    else
+        print_box_line "${WHITE}  Estado: ${RED}PARADO${RESET}"
+    fi
+    print_box_line "${WHITE}  SSL: ${CYAN}$(get_proxy_conf_value "$port" SSL_ENABLED false)${RESET}"
+    print_box_line "${WHITE}  Cert interno: ${CYAN}$(get_proxy_conf_value "$port" CERT_INTERNAL true)${RESET}"
+    print_box_line "${WHITE}  Cert path: ${CYAN}$(get_proxy_conf_value "$port" SSL_CERT_PATH "-")${RESET}"
+    print_box_line "${WHITE}  SSH-only: ${CYAN}$(get_proxy_conf_value "$port" SSH_ONLY false)${RESET}"
+    print_box_line "${WHITE}  Response: ${CYAN}$(get_proxy_conf_value "$port" HTTP_RESPONSE "$DEFAULT_HTTP_RESPONSE")${RESET}"
+    print_box_line "${WHITE}  Buffer: ${CYAN}$(get_proxy_conf_value "$port" BUFFER_SIZE "$DEFAULT_BUFFER_SIZE")${RESET}"
+    print_box_line "${WHITE}  Max conn: ${CYAN}$(get_proxy_conf_value "$port" MAX_CONNECTIONS 0)${RESET}"
+    print_box_line "${WHITE}  Timeouts W/I: ${CYAN}$(get_proxy_conf_value "$port" WRITE_TIMEOUT 0)/$(get_proxy_conf_value "$port" IDLE_TIMEOUT 0)${RESET}"
+    print_box_line "${WHITE}  Log level: ${CYAN}$(get_proxy_conf_value "$port" LOG_LEVEL info)${RESET}"
+    print_box_line "${WHITE}  Backends SSH/OVPN/V2Ray: ${CYAN}$(get_proxy_conf_value "$port" SSH_PORT 22)/$(get_proxy_conf_value "$port" OPENVPN_PORT 1194)/$(get_proxy_conf_value "$port" V2RAY_PORT 1080)${RESET}"
+    print_box_line "${WHITE}  Domain: ${CYAN}$(get_proxy_conf_value "$port" DOMAIN true)${RESET}"
+    print_box_line "${WHITE}  dt-proto-port: ${CYAN}$(get_proto_port)${RESET}"
+    print_box_line "${WHITE}  Conf: ${CYAN}$conf_file${RESET}"
+    print_box_line "${WHITE}  Log: ${CYAN}$(get_proxy_log_file "$port")${RESET}"
+    print_box_divider
+    local exec_line
+    exec_line=$(systemctl cat "$service_name" 2>/dev/null | grep -E '^ExecStart=' | head -n1 | sed 's/^ExecStart=//')
+    if [[ -n "$exec_line" ]]; then
+        print_box_line "${WHITE}  ExecStart:${RESET}"
+        echo -e "${GRAY}$exec_line${RESET}"
+    else
+        print_box_line "${YELLOW}  Unit systemd ainda não criada${RESET}"
+    fi
+    print_box_close
     pause
 }
 
@@ -931,10 +1565,9 @@ restart_proxy_service() {
     local configured_ports
     configured_ports=$(list_configured_proxy_ports)
 
-    echo -e "${BLUE}Portas configuradas: ${GREEN}${configured_ports:-nenhuma}${RESET}"
+    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
     echo -e "${BLUE}Digite a porta para reiniciar:${RESET}"
     read -rp "> " port
-
     port=$(echo "$port" | tr -d '[:space:]')
 
     if ! validate_port "$port"; then
@@ -948,12 +1581,10 @@ restart_proxy_service() {
         return
     fi
 
-    local service_name
-    service_name=$(get_proxy_service_name "$port")
-
+    migrate_proxy_conf_from_unit_if_needed "$port" || true
     print_info "Reiniciando proxy na porta $port..."
 
-    if sudo systemctl restart "$service_name"; then
+    if apply_proxy_service "$port" "true"; then
         print_success "Proxy reiniciado com sucesso na porta $port!"
     else
         print_error "Falha ao reiniciar proxy na porta $port"
@@ -968,10 +1599,9 @@ show_proxy_logs() {
     local configured_ports
     configured_ports=$(list_configured_proxy_ports)
 
-    echo -e "${BLUE}Portas configuradas: ${GREEN}${configured_ports:-nenhuma}${RESET}"
+    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
     echo -e "${BLUE}Digite a porta para ver os logs:${RESET}"
     read -rp "> " port
-
     port=$(echo "$port" | tr -d '[:space:]')
 
     if ! validate_port "$port"; then
@@ -997,16 +1627,7 @@ show_proxy_logs() {
     
     echo -e "${BLUE}Exibindo logs da porta $port (Ctrl+C para sair):${RESET}"
     echo
-    
-    trap 'break' INT
-    while :; do
-        clear
-        sudo cat "$log_file"
-        echo -e "\n${YELLOW}Pressione Ctrl+C para retornar ao menu.${RESET}"
-        sleep 5
-    done
-    trap - INT
-    
+    sudo tail -n 80 -f "$log_file" || true
     pause
 }
 
@@ -1017,23 +1638,24 @@ connection_menu() {
     while true; do
         print_header
         
-        local configured_ports
-        configured_ports=$(list_configured_proxy_ports)
+        local ports_status
+        ports_status=$(format_proxy_ports_status)
         
         print_box_open
         print_box_heading "${PROJECT_NAME} — PROXY" "$CYAN"
-        
-        if [[ -n "$configured_ports" ]]; then
-            print_box_line "${WHITE}  Portas configuradas: ${GREEN}${configured_ports}${RESET}"
-            print_box_divider
-        fi
+        print_box_line "${WHITE}  Portas: ${CYAN}${ports_status}${RESET}"
+        print_box_divider
         
         local menu_items=(
-            "1 • Abrir Porta"
-            "2 • Fechar Porta"
-            "3 • Reiniciar Porta"
-            "4 • Alterar Status"
-            "5 • Ver Log da Porta"
+            "1 • Abrir / criar porta"
+            "2 • Iniciar porta configurada"
+            "3 • Parar porta (mantém config)"
+            "4 • Reiniciar porta"
+            "5 • Editar porta"
+            "6 • Alterar resposta HTTP"
+            "7 • Detalhes da porta"
+            "8 • Ver log da porta"
+            "9 • Remover porta"
             "0 • Voltar ao Menu Inicial"
         )
         
@@ -1049,14 +1671,18 @@ connection_menu() {
         echo
         
         local choice
-        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-5]:${RESET} ")" choice
+        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-9]:${RESET} ")" choice
         
         case "$choice" in
             1) start_proxy_service ;;
-            2) stop_proxy_service ;;
-            3) restart_proxy_service ;;
-            4) change_proxy_status ;;
-            5) show_proxy_logs ;;
+            2) start_configured_proxy_service ;;
+            3) pause_proxy_service ;;
+            4) restart_proxy_service ;;
+            5) edit_proxy_service ;;
+            6) change_proxy_http_response ;;
+            7) show_proxy_port_details ;;
+            8) show_proxy_logs ;;
+            9) remove_proxy_service ;;
             0) return 0 ;;
             *) 
                 print_error "Opção inválida: $choice"
@@ -1687,6 +2313,10 @@ change_port() {
     current_port=$(get_config_value "PORT")
     local current_protocol
     current_protocol=$(get_config_value "PROTOCOL_CONFIG")
+    local is_running="false"
+    if is_server_active; then
+        is_running="true"
+    fi
 
     current_port=${current_port:-8000}
     echo -e "${WHITE}Porta atual: ${BLUE}$current_port${RESET}"
@@ -2260,6 +2890,10 @@ change_proxy_token_menu() {
         if validate_proxy_token "$new_token"; then
             save_proxy_token "$new_token"
             print_success "Token proxy salvo!"
+            print_info "Sincronizando token nos serviços proxy..."
+            local updated
+            updated=$(sync_all_proxy_tokens "$new_token")
+            print_success "Token aplicado em $updated porta(s) proxy."
             break
         else
             print_error "Token proxy inválido. Tente novamente."
