@@ -2,11 +2,12 @@
 
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_WIDTH=62
-readonly MENU_REV="2026-07-22-p1-adv"
+readonly MENU_REV="2026-07-22-p1-banner"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
 readonly PROTO_VERSION_FILE="/etc/proto-server-version"
+readonly PROXY_BANNER_FILE="/etc/bannerssh"
 
 PROTO_SERVER_BIN="/usr/local/bin/proto-server"
 TOKEN_FILE="/etc/proto-server/token"
@@ -387,6 +388,7 @@ print_status() {
     tun=${tun:-tun0}
 
     print_box_line "${WHITE} Porta proto: ${CYAN}${port}${WHITE} | Sub-rede: ${CYAN}${subnet}${WHITE} | TUN: ${CYAN}${tun}${RESET}"
+    print_box_line "${WHITE} Menu: ${GRAY}${MENU_REV}${RESET}  (${MENU_BIN})"
     print_box_close
     echo
 }
@@ -690,6 +692,11 @@ get_proxy_log_file() {
     echo "$PROXY_LOG_DIR/proxy-$port.log"
 }
 
+# Painel ASCII do proxy (--banner-file / --log-file). Padrão clássico dos painéis BR.
+get_proxy_banner_file() {
+    echo "${PROXY_BANNER_FILE:-/etc/bannerssh}"
+}
+
 get_proxy_service_name() {
     local port="$1"
     echo "$PROXY_SERVICE_PREFIX-$port"
@@ -917,7 +924,7 @@ build_proxy_command_from_conf() {
     display_banner=$(get_proxy_conf_value "$port" "DISPLAY_BANNER" "true")
     proto_port=$(get_proto_port)
 
-    local command="$PROXY_EXECUTABLE --token=$token --buffer-size=$buffer_size --response=$http_response --log-file=$(get_proxy_log_file "$port") --log-level=$log_level --dt-proto-port=$proto_port --ssh-port=$ssh_port --openvpn-port=$openvpn_port --v2ray-port=$v2ray_port --max-connections=$max_connections --write-timeout=$write_timeout --idle-timeout=$idle_timeout"
+    local command="$PROXY_EXECUTABLE --token=$token --buffer-size=$buffer_size --response=$http_response --log-file=$(get_proxy_banner_file) --log-level=$log_level --dt-proto-port=$proto_port --ssh-port=$ssh_port --openvpn-port=$openvpn_port --v2ray-port=$v2ray_port --max-connections=$max_connections --write-timeout=$write_timeout --idle-timeout=$idle_timeout"
 
     if [[ "$domain_flag" == "true" ]]; then
         command="$command --domain"
@@ -1754,7 +1761,8 @@ show_proxy_port_details() {
     print_box_line "${WHITE}  Domain: ${CYAN}$(get_proxy_conf_value "$port" DOMAIN true)${RESET}"
     print_box_line "${WHITE}  dt-proto-port: ${CYAN}$(get_proto_port)${RESET}"
     print_box_line "${WHITE}  Conf: ${CYAN}$conf_file${RESET}"
-    print_box_line "${WHITE}  Log: ${CYAN}$(get_proxy_log_file "$port")${RESET}"
+    print_box_line "${WHITE}  Banner file: ${CYAN}$(get_proxy_banner_file)${RESET}"
+    print_box_line "${WHITE}  Journal: ${CYAN}journalctl -u $(get_proxy_service_name "$port") -f${RESET}"
     print_box_divider
     local exec_line
     exec_line=$(systemctl cat "$service_name" 2>/dev/null | grep -E '^ExecStart=' | head -n1 | sed 's/^ExecStart=//')
@@ -1824,19 +1832,13 @@ show_proxy_logs() {
         return
     fi
 
-    local log_file
-    log_file=$(get_proxy_log_file "$port")
+    local service_name
+    service_name=$(get_proxy_service_name "$port")
 
-    if [[ ! -f "$log_file" ]]; then
-        print_error "Arquivo de log não encontrado: $log_file"
-        print_info "Verifique: systemctl status $(get_proxy_service_name "$port")"
-        pause
-        return
-    fi
-    
-    echo -e "${BLUE}Exibindo logs da porta $port (Ctrl+C para sair):${RESET}"
+    echo -e "${BLUE}Exibindo journal do serviço ${service_name} (Ctrl+C para sair):${RESET}"
+    echo -e "${GRAY}Banner de status (painel): $(get_proxy_banner_file)${RESET}"
     echo
-    sudo tail -n 80 -f "$log_file" || true
+    sudo journalctl -u "$service_name" -n 80 -f || true
     pause
 }
 
