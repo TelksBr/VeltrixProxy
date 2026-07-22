@@ -1,12 +1,16 @@
 #!/bin/bash
 
 readonly PROJECT_NAME="VTProxy"
-readonly MENU_BOX_WIDTH=62
-readonly MENU_REV="2026-07-22-p1-adv"
+readonly MENU_BOX_MIN=34
+readonly MENU_BOX_MAX=56
+readonly MENU_REV="2026-07-22-mobile"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
 readonly PROTO_VERSION_FILE="/etc/proto-server-version"
+
+# Largura interna da caixa (sem as bordas ║). Recalculada por refresh_menu_layout.
+MENU_BOX_WIDTH=$MENU_BOX_MAX
 
 PROTO_SERVER_BIN="/usr/local/bin/proto-server"
 TOKEN_FILE="/etc/proto-server/token"
@@ -79,24 +83,87 @@ visible_len() {
     printf '%s' "${#plain}"
 }
 
+detect_term_cols() {
+    local cols="${COLUMNS:-}"
+    if [[ -z "$cols" || ! "$cols" =~ ^[0-9]+$ ]]; then
+        cols=$(stty size 2>/dev/null | awk '{print $2}')
+    fi
+    if [[ -z "$cols" || ! "$cols" =~ ^[0-9]+$ ]] && command -v tput >/dev/null 2>&1; then
+        cols=$(tput cols 2>/dev/null || true)
+    fi
+    if [[ -z "$cols" || ! "$cols" =~ ^[0-9]+$ ]]; then
+        cols=80
+    fi
+    printf '%s' "$cols"
+}
+
+# Ajusta a caixa ao terminal (mobile ~40 cols; desktop até MENU_BOX_MAX).
+refresh_menu_layout() {
+    local cols inner
+    cols=$(detect_term_cols)
+    # 2 chars das bordas ║ … ║; 1 de folga evita wrap em alguns clientes SSH
+    inner=$((cols - 3))
+    if ((inner > MENU_BOX_MAX)); then
+        inner=$MENU_BOX_MAX
+    elif ((inner < MENU_BOX_MIN)); then
+        # Em telas bem estreitas, espreme até o mínimo absoluto
+        if ((cols - 2 >= 28)); then
+            inner=$((cols - 2))
+        else
+            inner=28
+        fi
+    fi
+    MENU_BOX_WIDTH=$inner
+}
+
+is_narrow_menu() {
+    ((MENU_BOX_WIDTH < 46))
+}
+
+truncate_visible() {
+    local text="$1"
+    local max="$2"
+    local plain cut
+    plain=$(strip_ansi "$text")
+    if ((${#plain} <= max)); then
+        printf '%s' "$text"
+        return
+    fi
+    cut=$((max - 1))
+    ((cut < 1)) && cut=1
+    printf '%s…' "${plain:0:cut}"
+}
+
+print_box_rule() {
+    local left="$1"
+    local right="$2"
+    local fill
+    fill=$(printf '%*s' "$MENU_BOX_WIDTH" "" | tr ' ' '═')
+    printf '%b%s%b\n' "${BLUE}${left}" "$fill" "${right}${RESET}"
+}
+
 print_box_open() {
-    echo -e "${BLUE}╔$(printf '═%.0s' {1..62})╗${RESET}"
+    print_box_rule "╔" "╗"
 }
 
 print_box_divider() {
-    echo -e "${BLUE}╠$(printf '═%.0s' {1..62})╣${RESET}"
+    print_box_rule "╠" "╣"
 }
 
 print_box_close() {
-    echo -e "${BLUE}╚$(printf '═%.0s' {1..62})╝${RESET}"
+    print_box_rule "╚" "╝"
 }
 
 print_box_line() {
     local content="$1"
     local inner_width="${2:-$MENU_BOX_WIDTH}"
-    local len pad
+    local len pad plain
     len=$(visible_len "$content")
     [[ "$len" =~ ^[0-9]+$ ]] || len=0
+    if ((len > inner_width)); then
+        content=$(truncate_visible "$content" "$inner_width")
+        len=$(visible_len "$content")
+    fi
     pad=$((inner_width - len))
     ((pad < 0)) && pad=0
     printf '%b' "${BLUE}║${RESET}${content}"
@@ -107,10 +174,18 @@ print_box_line() {
 print_box_heading() {
     local text="$1"
     local color="${2:-$WHITE}"
-    local len=${#text}
-    local left=$(( (MENU_BOX_WIDTH - len) / 2 ))
-    local right=$((MENU_BOX_WIDTH - len - left))
-    print_box_line "${color}$(printf '%*s%s%*s' "$left" "" "$text" "$right")${RESET}"
+    local plain len left right
+    plain=$(strip_ansi "$text")
+    if ((${#plain} > MENU_BOX_WIDTH)); then
+        text=$(truncate_visible "$plain" "$MENU_BOX_WIDTH")
+        plain=$(strip_ansi "$text")
+    fi
+    len=${#plain}
+    left=$(( (MENU_BOX_WIDTH - len) / 2 ))
+    right=$((MENU_BOX_WIDTH - len - left))
+    ((left < 0)) && left=0
+    ((right < 0)) && right=0
+    print_box_line "${color}$(printf '%*s%s%*s' "$left" "" "$plain" "$right")${RESET}"
 }
 
 render_menu_option() {
@@ -120,23 +195,39 @@ render_menu_option() {
     local label="${item#* • }"
     local content
 
-    if [[ "$emphasis" == "red" ]]; then
-        content="${RED}  [${num}] ${label}${RESET}"
+    if is_narrow_menu; then
+        # Menos padding horizontal no mobile
+        if [[ "$emphasis" == "red" ]]; then
+            content="${RED}[${num}] ${label}${RESET}"
+        else
+            content="${WHITE}[${CYAN}${num}${WHITE}] ${BLUE}${label}${RESET}"
+        fi
     else
-        content="${WHITE}  [${CYAN}${num}${WHITE}] ${BLUE}${label}${RESET}"
+        if [[ "$emphasis" == "red" ]]; then
+            content="${RED}  [${num}] ${label}${RESET}"
+        else
+            content="${WHITE}  [${CYAN}${num}${WHITE}] ${BLUE}${label}${RESET}"
+        fi
     fi
     print_box_line "$content"
 }
 
 print_header() {
     clear
+    refresh_menu_layout
     print_box_open
     local title="${PROJECT_NAME} Manager"
     local title_len=${#title}
     local title_left=$(( (MENU_BOX_WIDTH - title_len) / 2 ))
     local title_right=$((MENU_BOX_WIDTH - title_len - title_left))
+    ((title_left < 0)) && title_left=0
+    ((title_right < 0)) && title_right=0
     print_box_line "${BG_BLUE}${WHITE}$(printf '%*s%s%*s' "$title_left" "" "$title" "$title_right")${RESET}"
-    print_box_heading "Proxy + Protocolo integrados"
+    if is_narrow_menu; then
+        print_box_heading "Proxy + Protocolo"
+    else
+        print_box_heading "Proxy + Protocolo integrados"
+    fi
     print_box_close
     echo
 }
@@ -369,15 +460,6 @@ print_status() {
     bound_ip=""
     [[ -f /etc/vtproxy/ip ]] && bound_ip=$(cat /etc/vtproxy/ip)
 
-    print_box_open
-    local status_badge="${status_bg}${BOLD}${status_color} ${proto_status} ${RESET}"
-    print_box_line "${WHITE} Proto: ${status_badge}${BLUE} | Proxy: ${CYAN}${proxy_label}${RESET}"
-    local tokens_line="${WHITE} Tokens proxy: ${proxy_tok}  proto: ${proto_tok}"
-    if [[ -n "$bound_ip" ]]; then
-        tokens_line+="${WHITE} | IP: ${CYAN}${bound_ip}${RESET}"
-    fi
-    print_box_line "$tokens_line"
-
     local port subnet tun
     port=$(get_config_value "PORT")
     subnet=$(get_config_value "VIRTUAL_SUBNET_CIDR")
@@ -386,8 +468,29 @@ print_status() {
     subnet=${subnet:-10.10.0.0/16}
     tun=${tun:-tun0}
 
-    print_box_line "${WHITE} Porta proto: ${CYAN}${port}${WHITE} | Sub-rede: ${CYAN}${subnet}${WHITE} | TUN: ${CYAN}${tun}${RESET}"
-    print_box_line "${WHITE} Menu: ${GRAY}${MENU_REV}${RESET}  (${MENU_BIN})"
+    print_box_open
+    local status_badge="${status_bg}${BOLD}${status_color} ${proto_status} ${RESET}"
+
+    if is_narrow_menu; then
+        print_box_line "${WHITE}Proto: ${status_badge}${RESET}"
+        print_box_line "${WHITE}Proxy: ${CYAN}${proxy_label}${RESET}"
+        print_box_line "${WHITE}Tok P/R: ${proxy_tok}${proto_tok}${RESET}"
+        if [[ -n "$bound_ip" ]]; then
+            print_box_line "${WHITE}IP: ${CYAN}${bound_ip}${RESET}"
+        fi
+        print_box_line "${WHITE}Proto:${CYAN}${port}${WHITE} TUN:${CYAN}${tun}${RESET}"
+        print_box_line "${WHITE}Net: ${CYAN}${subnet}${RESET}"
+        print_box_line "${GRAY}${MENU_REV}${RESET}"
+    else
+        print_box_line "${WHITE} Proto: ${status_badge}${BLUE} | Proxy: ${CYAN}${proxy_label}${RESET}"
+        local tokens_line="${WHITE} Tokens proxy: ${proxy_tok}  proto: ${proto_tok}"
+        if [[ -n "$bound_ip" ]]; then
+            tokens_line+="${WHITE} | IP: ${CYAN}${bound_ip}${RESET}"
+        fi
+        print_box_line "$tokens_line"
+        print_box_line "${WHITE} Porta proto: ${CYAN}${port}${WHITE} | Sub-rede: ${CYAN}${subnet}${WHITE} | TUN: ${CYAN}${tun}${RESET}"
+        print_box_line "${WHITE} Menu: ${GRAY}${MENU_REV}${RESET}  (${MENU_BIN})"
+    fi
     print_box_close
     echo
 }
@@ -1089,6 +1192,7 @@ prompt_proxy_advanced_options() {
     local choice
     while true; do
         echo
+        refresh_menu_layout
         print_box_open
         print_box_heading "OPÇÕES AVANÇADAS" "$CYAN"
         print_box_divider
