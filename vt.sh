@@ -68,19 +68,14 @@ RESET=$'\033[0m'
 BOLD=$'\033[1m'
 
 strip_ansi() {
-    printf '%s' "$1" | sed -u 's/\x1b\[[0-9;]*m//g'
+    # Remove códigos ANSI reais (\x1b) e literais \\033 — sem depender de python3.
+    printf '%s' "$1" | sed -E 's/\x1B\[[0-9;]*[a-zA-Z]//g; s/\\033\[[0-9;]*[a-zA-Z]//g'
 }
 
 visible_len() {
-    python3 - <<'PY' "$1"
-import re
-import sys
-
-text = sys.argv[1]
-text = re.sub(r'\x1b\[[0-9;]*m', '', text)
-text = re.sub(r'\\033\[[0-9;]*m', '', text)
-print(len(text))
-PY
+    local plain
+    plain=$(strip_ansi "$1")
+    printf '%s' "${#plain}"
 }
 
 print_box_open() {
@@ -98,7 +93,10 @@ print_box_close() {
 print_box_line() {
     local content="$1"
     local inner_width="${2:-$MENU_BOX_WIDTH}"
-    local pad=$((inner_width - $(visible_len "$content")))
+    local len pad
+    len=$(visible_len "$content")
+    [[ "$len" =~ ^[0-9]+$ ]] || len=0
+    pad=$((inner_width - len))
     ((pad < 0)) && pad=0
     printf '%b' "${BLUE}║${RESET}${content}"
     printf '%*s' "$pad" ""
