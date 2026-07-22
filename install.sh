@@ -22,7 +22,7 @@ PROTO_CREDENTIALS_FILE="${PROTO_DATA_DIR}/credentials.json"
 PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
-INSTALLER_REV="2026-07-22-iptables"
+INSTALLER_REV="2026-07-22-python3"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
 LEGACY_BINARY_NAME="proxy"
@@ -243,12 +243,16 @@ get_missing_commands() {
   has_command curl || missing+=("curl")
   has_checksum_command || missing+=("sha256sum")
   has_command iptables || missing+=("iptables")
+  # Painel (usuários online) + API online em vt.sh usam python3.
+  has_command python3 || missing+=("python3")
   if [[ ${#missing[@]} -gt 0 ]]; then
     printf '%s\n' "${missing[@]}"
   fi
 }
 
 commands_to_packages() {
+  local pm="$1"
+  shift
   local cmd packages=() pkg
   for cmd in "$@"; do
     cmd="${cmd//$'\r'/}"
@@ -257,6 +261,12 @@ commands_to_packages() {
     curl) pkg="curl" ;;
     sha256sum) pkg="coreutils" ;;
     iptables) pkg="iptables" ;;
+    python3)
+      case "$pm" in
+      pacman) pkg="python" ;;
+      *) pkg="python3" ;;
+      esac
+      ;;
     *) continue ;;
     esac
     [[ " ${packages[*]} " == *" $pkg "* ]] || packages+=("$pkg")
@@ -318,11 +328,11 @@ ensure_dependencies() {
   pm=$(detect_package_manager)
   if [[ "$pm" == "unknown" ]]; then
     log_error "Gerenciador de pacotes não suportado."
-    log_info "Instale manualmente: curl coreutils iptables"
+    log_info "Instale manualmente: curl coreutils iptables python3"
     exit 1
   fi
 
-  read_nonempty_lines packages < <(commands_to_packages "${missing[@]}")
+  read_nonempty_lines packages < <(commands_to_packages "$pm" "${missing[@]}")
   if [[ ${#packages[@]} -eq 0 ]]; then
     log_error "Não foi possível mapear pacotes para: ${missing[*]}"
     exit 1
@@ -341,6 +351,7 @@ ensure_dependencies() {
   has_command curl || still_missing+=("curl")
   has_checksum_command || still_missing+=("sha256sum")
   has_command iptables || still_missing+=("iptables")
+  has_command python3 || still_missing+=("python3")
 
   if [[ ${#still_missing[@]} -gt 0 ]]; then
     log_error "Ainda faltam dependências após instalação: ${still_missing[*]}"
@@ -349,12 +360,13 @@ ensure_dependencies() {
       curl) log_info "curl não encontrado em: $(command -v curl 2>/dev/null || echo 'não localizado')" ;;
       sha256sum) log_info "Tente: apt install coreutils (ou reinicie o terminal)" ;;
       iptables) log_info "Tente: apt install iptables (ou equivalente no seu distro)" ;;
+      python3) log_info "Tente: apt install python3 (Arch: pacman -S python)" ;;
       esac
     done
     exit 1
   fi
 
-  log_success "Dependências OK (curl + checksum + iptables)."
+  log_success "Dependências OK (curl + checksum + iptables + python3)."
 }
 
 detect_platform() {
