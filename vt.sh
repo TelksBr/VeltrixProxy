@@ -2821,12 +2821,7 @@ show_update_preserve_notice() {
 }
 
 run_system_update() {
-    local binary_only="${1:-false}"
     local args=(--update --yes)
-
-    if [[ "$binary_only" == "true" ]]; then
-        args+=(--binary-only)
-    fi
 
     print_info "Baixando e executando instalador oficial..."
     echo -e "${GRAY}curl -fsSL ${INSTALL_URL} | bash -s -- ${args[*]}${RESET}"
@@ -2839,13 +2834,13 @@ run_system_update() {
         return 1
     fi
 
-    print_success "Atualização concluída."
+    print_success "Atualização concluída (binários + menu)."
     echo
     print_info "Proxy: v$(get_installed_proxy_version_label) | Proto: v$(get_installed_proto_version_label)"
 
-    if [[ "$binary_only" != "true" && -x "$MENU_BIN" ]]; then
+    if [[ -x "$MENU_BIN" ]]; then
         echo
-        print_warning "O menu em memória é o antigo. Recarregando o novo vt..."
+        print_warning "Recarregando o novo menu vt..."
         pause
         exec "$MENU_BIN"
     fi
@@ -2855,45 +2850,30 @@ run_system_update() {
 }
 
 update_system_menu() {
-    while true; do
-        print_header
+    print_header
 
-        local proxy_ver proto_ver
-        proxy_ver=$(get_installed_proxy_version_label)
-        proto_ver=$(get_installed_proto_version_label)
+    local proxy_ver proto_ver
+    proxy_ver=$(get_installed_proxy_version_label)
+    proto_ver=$(get_installed_proto_version_label)
 
-        print_box_open
-        print_box_heading "ATUALIZAR SISTEMA" "$CYAN"
-        print_box_divider
-        print_box_line "${WHITE}  Proxy instalado: ${GREEN}v${proxy_ver}${RESET}"
-        print_box_line "${WHITE}  Proto instalado: ${GREEN}v${proto_ver}${RESET}"
-        print_box_divider
-        render_menu_option "1 • Atualizar tudo (binários + menu)"
-        render_menu_option "2 • Atualizar só binários (mantém este menu)"
-        render_menu_option "0 • Voltar" "red"
-        print_box_close
-        echo
+    print_box_open
+    print_box_heading "ATUALIZAR SISTEMA" "$CYAN"
+    print_box_divider
+    print_box_line "${WHITE}  Proxy instalado: ${GREEN}v${proxy_ver}${RESET}"
+    print_box_line "${WHITE}  Proto instalado: ${GREEN}v${proto_ver}${RESET}"
+    print_box_close
+    echo
 
-        show_update_preserve_notice
-        echo
+    show_update_preserve_notice
+    echo
 
-        local option
-        read -rp "$(echo -e "${BLUE}Selecione [0-2]:${RESET} ")" option
-        case "$option" in
-            1)
-                if confirm_action "Atualizar binários + menu agora?" "s"; then
-                    run_system_update "false"
-                fi
-                ;;
-            2)
-                if confirm_action "Atualizar apenas binários proxy/proto?" "s"; then
-                    run_system_update "true"
-                fi
-                ;;
-            0) return 0 ;;
-            *) print_error "Opção inválida: $option"; pause ;;
-        esac
-    done
+    if ! confirm_action "Atualizar binários (proxy/proto) e o menu vt agora?" "s"; then
+        print_info "Atualização cancelada."
+        pause
+        return 0
+    fi
+
+    run_system_update
 }
 
 remove_completely() {
