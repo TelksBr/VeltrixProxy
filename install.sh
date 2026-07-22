@@ -22,13 +22,16 @@ PROTO_CREDENTIALS_FILE="${PROTO_DATA_DIR}/credentials.json"
 PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
-INSTALLER_REV="2026-07-22-python3"
+INSTALLER_REV="2026-07-22-menu-latest"
+MENU_REV_EXPECTED="2026-07-22-p1-adv"
+MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
 LEGACY_BINARY_NAME="proxy"
 LEGACY_VERSION_FILE="/etc/proxyvt-version"
 BOX_WIDTH=51
 TMP_DIR=""
+MENU_COMMIT_SHA=""
 ACTIVE_PROXY_SERVICES=()
 ACTIVE_PROTO=false
 SERVICES_WERE_STOPPED=false
@@ -95,7 +98,7 @@ Modos:
   --reinstall     Reinstala binários e menu vt (interativo ou com --latest)
 
 Opções:
-  --latest, -L    Usa a versão mais recente do proxy e do proto (sem menu)
+  --latest, -L    Usa a versão mais recente do proxy e do proto (também atualiza o menu)
   --version TAG   Versão específica do proxy (ex: v2.1.0)
   --proto-version TAG  Versão específica do proto (ex: v2.0.1)
   --binary-only   Instala/atualiza apenas os binários (não baixa vt.sh)
@@ -494,11 +497,21 @@ resolve_version_in_list() {
   local -n available=$2
   local -n resolved=$3
   local label="$4"
-  local tag normalized
+  local repo="${5:-}"
+  local tag normalized latest_tag
 
   if [[ "$requested" == "latest" || -z "$requested" ]]; then
+    if [[ -n "$repo" ]]; then
+      latest_tag=$(fetch_latest_release_tag "$repo" || true)
+      if [[ -n "$latest_tag" ]]; then
+        resolved="$latest_tag"
+        log_success "Versão ${label} selecionada (releases/latest): ${resolved}"
+        return 0
+      fi
+      log_warn "API releases/latest indisponível para ${repo}; usando lista recente."
+    fi
     resolved="${available[0]}"
-    log_success "Versão ${label} selecionada (mais recente): ${resolved}"
+    log_success "Versão ${label} selecionada (mais recente da lista): ${resolved}"
     return 0
   fi
 
@@ -545,19 +558,31 @@ prompt_version_selection() {
 
 show_versions_and_select() {
   if [[ -n "$VERSION" ]]; then
-    resolve_version_in_list "$VERSION" RELEASES VERSION "proxy"
+    resolve_version_in_list "$VERSION" RELEASES VERSION "proxy" "$REPO"
   elif [[ "$ASSUME_YES" == true ]]; then
-    VERSION="${RELEASES[0]}"
-    log_success "Versão proxy (automática): ${VERSION}"
+    resolve_version_in_list "latest" RELEASES VERSION "proxy" "$REPO"
   else
     prompt_version_selection "proxy" "$REPO" RELEASES VERSION
   fi
 
   if [[ -n "$PROTO_VERSION" ]]; then
-    resolve_version_in_list "$PROTO_VERSION" PROTO_RELEASES PROTO_VERSION "proto"
+    if [[ "$PROTO_VERSION" == "latest" ]]; then
+      local proto_latest=""
+      proto_latest=$(fetch_latest_release_tag "$PROTO_FALLBACK_REPO" || true)
+      if [[ -z "$proto_latest" ]]; then
+        proto_latest=$(fetch_latest_release_tag "$PROTO_REPO" || true)
+      fi
+      if [[ -n "$proto_latest" ]]; then
+        PROTO_VERSION="$proto_latest"
+        log_success "Versão proto selecionada (releases/latest): ${PROTO_VERSION}"
+      else
+        resolve_version_in_list "latest" PROTO_RELEASES PROTO_VERSION "proto"
+      fi
+    else
+      resolve_version_in_list "$PROTO_VERSION" PROTO_RELEASES PROTO_VERSION "proto"
+    fi
   elif [[ "$ASSUME_YES" == true ]]; then
-    PROTO_VERSION="${PROTO_RELEASES[0]}"
-    log_success "Versão proto (automática): ${PROTO_VERSION}"
+    resolve_version_in_list "latest" PROTO_RELEASES PROTO_VERSION "proto" "$PROTO_FALLBACK_REPO"
   else
     prompt_version_selection "proto" "$PROTO_FALLBACK_REPO" PROTO_RELEASES PROTO_VERSION
   fi
@@ -582,11 +607,72 @@ download_file() {
   local output="$2"
   local http_status
 
-  http_status=$(curl -fsSL -w "%{http_code}" -o "$output" "$url" || true)
+  # Evita cache CDN do raw.githubusercontent.com (max-age=300).
+  http_status=$(
+    curl -fsSL \
+      -H "Cache-Control: no-cache" \
+      -H "Pragma: no-cache" \
+      -w "%{http_code}" \
+      -o "$output" \
+      "$url" || true
+  )
   if [[ "$http_status" != "200" ]]; then
     log_error "Falha ao baixar: $url (HTTP $http_status)"
     exit 1
   fi
+  if [[ ! -s "$output" ]]; then
+    log_error "Download vazio: $url"
+    exit 1
+  fi
+}
+
+file_sha256() {
+  local file="$1"
+  if has_command sha256sum; then
+    sha256sum "$file" | awk '{print $1}'
+  elif has_command shasum; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  else
+    wc -c <"$file" | tr -d ' '
+  fi
+}
+
+extract_json_string_field() {
+  local json="$1"
+  local field="$2"
+  echo "$json" \
+    | grep -oE "\"${field}\"[[:space:]]*:[[:space:]]*\"[^\"]+\"" \
+    | head -n1 \
+    | sed -E "s/.*\"${field}\"[[:space:]]*:[[:space:]]*\"([^\"]+)\".*/\1/"
+}
+
+fetch_latest_release_tag() {
+  local repo="$1"
+  local json tag
+
+  json=$(curl -fsSL \
+    -H "Cache-Control: no-cache" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/${repo}/releases/latest" || true)
+
+  tag=$(extract_json_string_field "$json" "tag_name")
+  if [[ -z "$tag" ]]; then
+    return 1
+  fi
+  echo "$tag"
+}
+
+resolve_repo_main_sha() {
+  local json sha
+  json=$(curl -fsSL \
+    -H "Cache-Control: no-cache" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/${REPO}/commits/main" || true)
+  sha=$(extract_json_string_field "$json" "sha")
+  if [[ -z "$sha" || ${#sha} -lt 7 ]]; then
+    return 1
+  fi
+  echo "$sha"
 }
 
 verify_checksum() {
@@ -1114,13 +1200,83 @@ install_menu_script() {
     return 0
   fi
 
-  log_info "Baixando menu unificado (vt.sh)..."
+  [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]] || TMP_DIR=$(mktemp -d)
+
   local menu_tmp="${TMP_DIR}/vt.sh"
-  download_file "$MENU_URL" "$menu_tmp"
-  run_privileged install -m 755 "$menu_tmp" "${INSTALL_DIR}/${MENU_NAME}"
-  run_privileged ln -sf "${MENU_NAME}" "${INSTALL_DIR}/main"
-  run_privileged ln -sf "${MENU_NAME}" "${INSTALL_DIR}/proto"
-  log_success "Menu instalado: ${INSTALL_DIR}/${MENU_NAME} (symlinks: main, proto)"
+  local menu_dest="${INSTALL_DIR}/${MENU_NAME}"
+  local old_hash="(ausente)" new_hash menu_url menu_sha menu_bytes menu_rev_found
+
+  if [[ -f "$menu_dest" ]]; then
+    old_hash=$(file_sha256 "$menu_dest")
+    log_info "Menu atual: ${menu_dest} (sha256=${old_hash:0:12}…)"
+  fi
+
+  log_info "Baixando menu unificado (vt.sh) do branch main (sem cache)..."
+  MENU_COMMIT_SHA=$(resolve_repo_main_sha || true)
+  if [[ -n "$MENU_COMMIT_SHA" ]]; then
+    # URL por commit SHA evita cache do path /main/
+    menu_url="https://raw.githubusercontent.com/${REPO}/${MENU_COMMIT_SHA}/vt.sh"
+    log_info "Commit main: ${MENU_COMMIT_SHA:0:12}"
+  else
+    menu_url="${MENU_URL}?$(date +%s)"
+    log_warn "Não foi possível resolver SHA do main; usando URL com cache-bust."
+  fi
+
+  download_file "$menu_url" "$menu_tmp"
+
+  if ! grep -q "MENU_REV=" "$menu_tmp" 2>/dev/null && ! grep -q "prompt_proxy_advanced_options" "$menu_tmp" 2>/dev/null; then
+    log_warn "Menu baixado parece antigo/incompleto — tentando URL alternativa."
+    download_file "${MENU_URL}?ts=$(date +%s)&nocache=1" "$menu_tmp"
+  fi
+
+  if ! head -n1 "$menu_tmp" | grep -qE '^#!'; then
+    log_error "Menu baixado inválido (sem shebang)."
+    exit 1
+  fi
+
+  menu_rev_found=$(
+    grep -oE 'MENU_REV="[^"]+"' "$menu_tmp" 2>/dev/null \
+      | head -n1 \
+      | sed -E 's/MENU_REV="([^"]+)"/\1/' || true
+  )
+
+  # Remove destino (symlink ou arquivo) antes de instalar — evita escrever através de symlink antigo.
+  run_privileged rm -f "$menu_dest"
+  run_privileged install -m 755 "$menu_tmp" "$menu_dest"
+  run_privileged ln -sfn "${MENU_NAME}" "${INSTALL_DIR}/main"
+  run_privileged ln -sfn "${MENU_NAME}" "${INSTALL_DIR}/proto"
+
+  # Garante que o shell não use hash antigo do comando vt
+  hash -r 2>/dev/null || true
+
+  new_hash=$(file_sha256 "$menu_dest")
+  menu_bytes=$(wc -c <"$menu_dest" | tr -d ' ')
+  echo "${menu_rev_found:-unknown}" | run_privileged tee "$MENU_REV_FILE" >/dev/null
+
+  if [[ "$old_hash" == "$new_hash" ]]; then
+    log_warn "Hash do menu igual ao anterior (${new_hash:0:12}…). Se esperava mudanças, limpe cache CDN ou force push do vt.sh."
+  else
+    log_success "Menu substituído (${old_hash:0:12}… → ${new_hash:0:12}…)"
+  fi
+
+  if [[ -n "$menu_rev_found" ]]; then
+    log_success "Menu instalado: ${menu_dest} (${menu_bytes} bytes, rev=${menu_rev_found})"
+    if [[ -n "$MENU_REV_EXPECTED" && "$menu_rev_found" != "$MENU_REV_EXPECTED" ]]; then
+      log_warn "Revisão do menu (${menu_rev_found}) difere da esperada pelo instalador (${MENU_REV_EXPECTED})."
+      log_warn "Faça push do vt.sh no GitHub main e rode o update de novo."
+    fi
+  else
+    log_success "Menu instalado: ${menu_dest} (${menu_bytes} bytes, symlinks: main, proto)"
+    log_warn "MENU_REV não encontrado no vt.sh baixado — confirme se o main está atualizado."
+  fi
+
+  if command -v "$MENU_NAME" >/dev/null 2>&1; then
+    local resolved
+    resolved=$(command -v "$MENU_NAME")
+    if [[ "$resolved" != "$menu_dest" ]]; then
+      log_warn "Comando '${MENU_NAME}' resolve para ${resolved} (esperado: ${menu_dest}). Ajuste o PATH."
+    fi
+  fi
 }
 
 install_provided_tokens() {
@@ -1165,6 +1321,9 @@ print_finish_message() {
   fi
   if [[ "$BINARY_ONLY" == false ]]; then
     log_info "Execute o menu com: ${MENU_NAME}  (ou main / proto)"
+    if [[ -f "$MENU_REV_FILE" ]]; then
+      log_info "Revisão do menu: $(tr -d '\r\n' <"$MENU_REV_FILE")"
+    fi
     if [[ -n "$PROXY_TOKEN" ]]; then
       log_info "Token proxy já configurado — não será solicitado na primeira execução."
     fi
@@ -1174,7 +1333,7 @@ print_finish_message() {
   fi
   echo ""
   log_info "Para reinstalar/atualizar depois:"
-  echo -e "  ${CYAN}curl -fsSL ${INSTALL_URL} | bash -s -- --update --yes${NC}"
+  echo -e "  ${CYAN}curl -fsSL \"${INSTALL_URL}?$(date +%s)\" | bash -s -- --update --yes${NC}"
 }
 
 main() {

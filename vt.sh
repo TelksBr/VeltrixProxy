@@ -2,6 +2,7 @@
 
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_WIDTH=62
+readonly MENU_REV="2026-07-22-p1-adv"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
