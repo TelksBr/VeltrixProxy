@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="2026-07-22-mobile"
+readonly MENU_REV="2026-07-22-ascii-box"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -120,6 +120,12 @@ is_narrow_menu() {
     ((MENU_BOX_WIDTH < 46))
 }
 
+# Emojis (✅❌) viram "?" no Termius/mobile — usar ASCII colorido.
+mark_ok() { printf '%s' "${GREEN}OK${RESET}"; }
+mark_fail() { printf '%s' "${RED}X${RESET}"; }
+mark_online() { printf '%s' "${GREEN}ON${RESET}"; }
+mark_offline() { printf '%s' "${RED}OFF${RESET}"; }
+
 truncate_visible() {
     local text="$1"
     local max="$2"
@@ -131,33 +137,35 @@ truncate_visible() {
     fi
     cut=$((max - 1))
     ((cut < 1)) && cut=1
-    printf '%s…' "${plain:0:cut}"
+    # "..." ASCII — reticência unicode quebra em alguns terminais mobile
+    printf '%s...' "${plain:0:cut}"
 }
 
+# Caixas em ASCII puro — bordas Unicode (═║╔╗) viram "?" em Termius/mobile.
 print_box_rule() {
     local left="$1"
     local right="$2"
     local fill
-    fill=$(printf '%*s' "$MENU_BOX_WIDTH" "" | tr ' ' '═')
+    fill=$(printf '%*s' "$MENU_BOX_WIDTH" "" | tr ' ' '-')
     printf '%b%s%b\n' "${BLUE}${left}" "$fill" "${right}${RESET}"
 }
 
 print_box_open() {
-    print_box_rule "╔" "╗"
+    print_box_rule "+" "+"
 }
 
 print_box_divider() {
-    print_box_rule "╠" "╣"
+    print_box_rule "+" "+"
 }
 
 print_box_close() {
-    print_box_rule "╚" "╝"
+    print_box_rule "+" "+"
 }
 
 print_box_line() {
     local content="$1"
     local inner_width="${2:-$MENU_BOX_WIDTH}"
-    local len pad plain
+    local len pad
     len=$(visible_len "$content")
     [[ "$len" =~ ^[0-9]+$ ]] || len=0
     if ((len > inner_width)); then
@@ -166,9 +174,9 @@ print_box_line() {
     fi
     pad=$((inner_width - len))
     ((pad < 0)) && pad=0
-    printf '%b' "${BLUE}║${RESET}${content}"
+    printf '%b' "${BLUE}|${RESET}${content}"
     printf '%*s' "$pad" ""
-    printf '%b\n' "${BLUE}║${RESET}"
+    printf '%b\n' "${BLUE}|${RESET}"
 }
 
 print_box_heading() {
@@ -192,11 +200,14 @@ render_menu_option() {
     local item="$1"
     local emphasis="${2:-normal}"
     local num="${item%% *}"
-    local label="${item#* • }"
+    local label="${item#* - }"
+    # Compatível com itens antigos "N • label"
+    if [[ "$item" == *" • "* ]]; then
+        label="${item#* • }"
+    fi
     local content
 
     if is_narrow_menu; then
-        # Menos padding horizontal no mobile
         if [[ "$emphasis" == "red" ]]; then
             content="${RED}[${num}] ${label}${RESET}"
         else
@@ -455,8 +466,8 @@ print_status() {
     local proxy_ports proxy_label proxy_tok proto_tok bound_ip
     proxy_ports=$(format_proxy_ports_status)
     proxy_label="${proxy_ports:-nenhuma}"
-    [[ -n "$(load_proxy_token)" ]] && proxy_tok="✅" || proxy_tok="❌"
-    [[ -n "$(load_proto_token)" ]] && proto_tok="✅" || proto_tok="❌"
+    [[ -n "$(load_proxy_token)" ]] && proxy_tok="$(mark_ok)" || proxy_tok="$(mark_fail)"
+    [[ -n "$(load_proto_token)" ]] && proto_tok="$(mark_ok)" || proto_tok="$(mark_fail)"
     bound_ip=""
     [[ -f /etc/vtproxy/ip ]] && bound_ip=$(cat /etc/vtproxy/ip)
 
@@ -474,7 +485,7 @@ print_status() {
     if is_narrow_menu; then
         print_box_line "${WHITE}Proto: ${status_badge}${RESET}"
         print_box_line "${WHITE}Proxy: ${CYAN}${proxy_label}${RESET}"
-        print_box_line "${WHITE}Tok P/R: ${proxy_tok}${proto_tok}${RESET}"
+        print_box_line "${WHITE}Tok P/R: ${proxy_tok} ${proto_tok}${RESET}"
         if [[ -n "$bound_ip" ]]; then
             print_box_line "${WHITE}IP: ${CYAN}${bound_ip}${RESET}"
         fi
@@ -2220,13 +2231,13 @@ start_server() {
     tun=${tun:-tun0}
 
     print_box_open
-    print_box_line "${CYAN}  📋 CONFIGURAÇÕES ATUAIS${RESET}"
+    print_box_line "${CYAN}  CONFIGURACOES ATUAIS${RESET}"
     print_box_divider
-    print_box_line "${WHITE}  ┣ Porta: ${BLUE}${port}${RESET}"
-    print_box_line "${WHITE}  ┣ Sub-rede: ${BLUE}${subnet}${RESET}"
-    print_box_line "${WHITE}  ┣ Interface TUN: ${BLUE}${tun}${RESET}"
+    print_box_line "${WHITE}  Porta: ${BLUE}${port}${RESET}"
+    print_box_line "${WHITE}  Sub-rede: ${BLUE}${subnet}${RESET}"
+    print_box_line "${WHITE}  Interface TUN: ${BLUE}${tun}${RESET}"
     if [[ -n "$protocol_config" ]]; then
-        print_box_line "${WHITE}  ┣ Protocolos: ${BLUE}${protocol_config}${RESET}"
+        print_box_line "${WHITE}  Protocolos: ${BLUE}${protocol_config}${RESET}"
     fi
     print_box_close
     echo
@@ -2347,7 +2358,7 @@ show_server_status() {
     print_header
     
     print_box_open
-    print_box_line "${CYAN}  📊 STATUS DO SISTEMA${RESET}"
+    print_box_line "${CYAN}  STATUS DO SISTEMA${RESET}"
     print_box_divider
     
     local port=$(get_config_value 'PORT')
@@ -2357,21 +2368,26 @@ show_server_status() {
     auth_mode=${auth_mode:-$AUTH_MODE_FILE}
     local auth_url=$(get_config_value 'AUTH_URL')
     local protocol_config=$(get_config_value 'PROTOCOL_CONFIG')
-    local token_status=$([ -f "$TOKEN_FILE" ] && echo '✅' || echo '❌')
+    local token_status
+    if [[ -f "$TOKEN_FILE" ]]; then
+        token_status="$(mark_ok)"
+    else
+        token_status="$(mark_fail)"
+    fi
     
     if is_server_active; then
-        print_box_line "${WHITE}  ┣ Status: ${GREEN}🟢 ONLINE${RESET}"
+        print_box_line "${WHITE}  Status: $(mark_online)${RESET}"
     else
-        print_box_line "${WHITE}  ┣ Status: ${RED}🔴 OFFLINE${RESET}"
+        print_box_line "${WHITE}  Status: $(mark_offline)${RESET}"
     fi
     
-    print_box_line "${WHITE}  ┣ Porta: ${BLUE}${port:-8000}${RESET}"
-    print_box_line "${WHITE}  ┣ Sub-rede Virtual: ${BLUE}${subnet:-10.10.0.0/16}${RESET}"
-    print_box_line "${WHITE}  ┣ Interface TUN: ${BLUE}${tun:-tun0}${RESET}"
+    print_box_line "${WHITE}  Porta: ${BLUE}${port:-8000}${RESET}"
+    print_box_line "${WHITE}  Sub-rede: ${BLUE}${subnet:-10.10.0.0/16}${RESET}"
+    print_box_line "${WHITE}  TUN: ${BLUE}${tun:-tun0}${RESET}"
     if [[ -n "$protocol_config" ]]; then
-        print_box_line "${WHITE}  ┣ Protocolos: ${BLUE}${protocol_config}${RESET}"
+        print_box_line "${WHITE}  Protocolos: ${BLUE}${protocol_config}${RESET}"
     fi
-    print_box_line "${WHITE}  ┣ Token Configurado: ${BLUE}${token_status}${RESET}"
+    print_box_line "${WHITE}  Token: ${token_status}${RESET}"
     
     local auth_display=""
     case "$auth_mode" in
@@ -2381,7 +2397,7 @@ show_server_status() {
         $AUTH_MODE_NONE) auth_display="Nenhuma" ;;
         *) auth_display="Arquivo" ;;
     esac
-    print_box_line "${WHITE}  ┗ Autenticação: ${BLUE}${auth_display}${RESET}"
+    print_box_line "${WHITE}  Auth: ${BLUE}${auth_display}${RESET}"
     
     print_box_close
     echo
@@ -3035,14 +3051,16 @@ online_users_menu() {
     while true; do
         print_header
 
-        local api_status="OFFLINE"
+        local api_status
         local api_port
         api_port=$(get_online_api_port)
         local online_count
         online_count=$(get_online_users_count)
 
         if is_online_api_active; then
-            api_status="ONLINE"
+            api_status="$(mark_online)"
+        else
+            api_status="$(mark_offline)"
         fi
 
         print_box_open
@@ -3314,10 +3332,17 @@ change_proxy_token_menu() {
 tokens_menu() {
     while true; do
         print_header
-        local proxy_status="❌"
-        local proto_status="❌"
-        [[ -n "$(load_proxy_token)" ]] && proxy_status="✅"
-        [[ -n "$(load_proto_token)" ]] && proto_status="✅"
+        local proxy_status proto_status
+        if [[ -n "$(load_proxy_token)" ]]; then
+            proxy_status="$(mark_ok)"
+        else
+            proxy_status="$(mark_fail)"
+        fi
+        if [[ -n "$(load_proto_token)" ]]; then
+            proto_status="$(mark_ok)"
+        else
+            proto_status="$(mark_fail)"
+        fi
 
         print_box_open
         print_box_heading "GERENCIAR TOKENS"
