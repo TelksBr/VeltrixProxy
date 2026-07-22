@@ -1083,22 +1083,212 @@ start_proxy_for_port() {
 }
 
 prompt_proxy_advanced_options() {
-    # Sets globals: ADV_*
-    ADV_BUFFER_SIZE=$(prompt_with_default "Buffer size (bytes)" "$DEFAULT_BUFFER_SIZE")
-    ADV_MAX_CONNECTIONS=$(prompt_with_default "Max connections (0=ilimitado)" "0")
-    ADV_WRITE_TIMEOUT=$(prompt_with_default "Write timeout segundos (0=off)" "0")
-    ADV_IDLE_TIMEOUT=$(prompt_with_default "Idle timeout segundos (0=off; evite em SSH ocioso)" "0")
-    ADV_LOG_LEVEL=$(prompt_with_default "Log level (debug|info|warn|error)" "info")
-    ADV_SSH_PORT=$(prompt_with_default "Porta backend SSH" "22")
-    ADV_OPENVPN_PORT=$(prompt_with_default "Porta backend OpenVPN" "1194")
-    ADV_V2RAY_PORT=$(prompt_with_default "Porta backend V2Ray" "1080")
-    ADV_DOMAIN="true"
-    if ! confirm_action "Gerar domínio automático (--domain)?" "s"; then
-        ADV_DOMAIN="false"
+    # Edita globals ADV_* (já inicializados). Submenu interativo.
+    local choice
+    while true; do
+        echo
+        print_box_open
+        print_box_heading "OPÇÕES AVANÇADAS" "$CYAN"
+        print_box_divider
+        print_box_line "${WHITE}  1 • Buffer (--buffer-size): ${CYAN}${ADV_BUFFER_SIZE}${RESET}"
+        print_box_line "${WHITE}  2 • Log level: ${CYAN}${ADV_LOG_LEVEL}${RESET}"
+        print_box_line "${WHITE}  3 • Domain (--domain): ${CYAN}${ADV_DOMAIN}${RESET}"
+        print_box_line "${WHITE}  4 • Backends SSH/OVPN/V2Ray: ${CYAN}${ADV_SSH_PORT}/${ADV_OPENVPN_PORT}/${ADV_V2RAY_PORT}${RESET}"
+        print_box_line "${WHITE}  5 • Max conn / write / idle: ${CYAN}${ADV_MAX_CONNECTIONS}/${ADV_WRITE_TIMEOUT}/${ADV_IDLE_TIMEOUT}${RESET}"
+        print_box_line "${WHITE}  6 • Banner (--display-banner): ${CYAN}${ADV_DISPLAY_BANNER}${RESET}"
+        print_box_line "${WHITE}  7 • Cert interno (--cert-internal): ${CYAN}${ADV_CERT_INTERNAL}${RESET}"
+        if [[ -n "${ADV_PORT:-}" ]]; then
+            print_box_line "${WHITE}  8 • Ver ExecStart atual${RESET}"
+            print_box_line "${WHITE}  9 • Salvar e aplicar na porta ${CYAN}${ADV_PORT}${RESET}"
+        fi
+        print_box_divider
+        render_menu_option "0 • Concluir (voltar)" "red"
+        print_box_close
+        echo
+
+        read -rp "$(echo -e "${BLUE}Selecione [0-9]:${RESET} ")" choice
+        case "$choice" in
+            1)
+                ADV_BUFFER_SIZE=$(prompt_with_default "Buffer size em bytes (--buffer-size)" "$ADV_BUFFER_SIZE")
+                if ! [[ "$ADV_BUFFER_SIZE" =~ ^[0-9]+$ ]] || [[ "$ADV_BUFFER_SIZE" -lt 1024 ]]; then
+                    print_warning "Valor inválido; usando $DEFAULT_BUFFER_SIZE"
+                    ADV_BUFFER_SIZE="$DEFAULT_BUFFER_SIZE"
+                fi
+                ;;
+            2)
+                ADV_LOG_LEVEL=$(prompt_with_default "Log level (debug|info|warn|error)" "$ADV_LOG_LEVEL")
+                ;;
+            3)
+                if confirm_action "Gerar domínio automático (--domain)? (atual: $ADV_DOMAIN)" "$([[ "$ADV_DOMAIN" == "true" ]] && echo s || echo n)"; then
+                    ADV_DOMAIN="true"
+                else
+                    ADV_DOMAIN="false"
+                fi
+                ;;
+            4)
+                ADV_SSH_PORT=$(prompt_with_default "Porta backend SSH (--ssh-port)" "$ADV_SSH_PORT")
+                ADV_OPENVPN_PORT=$(prompt_with_default "Porta backend OpenVPN (--openvpn-port)" "$ADV_OPENVPN_PORT")
+                ADV_V2RAY_PORT=$(prompt_with_default "Porta backend V2Ray (--v2ray-port)" "$ADV_V2RAY_PORT")
+                ;;
+            5)
+                ADV_MAX_CONNECTIONS=$(prompt_with_default "Max connections (0=ilimitado)" "$ADV_MAX_CONNECTIONS")
+                ADV_WRITE_TIMEOUT=$(prompt_with_default "Write timeout segundos (0=off)" "$ADV_WRITE_TIMEOUT")
+                ADV_IDLE_TIMEOUT=$(prompt_with_default "Idle timeout segundos (0=off)" "$ADV_IDLE_TIMEOUT")
+                ;;
+            6)
+                if confirm_action "Exibir banner no terminal do serviço? (atual: $ADV_DISPLAY_BANNER)" "$([[ "$ADV_DISPLAY_BANNER" == "true" ]] && echo s || echo n)"; then
+                    ADV_DISPLAY_BANNER="true"
+                else
+                    ADV_DISPLAY_BANNER="false"
+                fi
+                ;;
+            7)
+                if confirm_action "Usar certificado interno (--cert-internal)? (atual: $ADV_CERT_INTERNAL)" "$([[ "$ADV_CERT_INTERNAL" == "true" ]] && echo s || echo n)"; then
+                    ADV_CERT_INTERNAL="true"
+                    ADV_SSL_CERT_PATH=""
+                else
+                    ADV_CERT_INTERNAL="false"
+                    ADV_SSL_CERT_PATH=$(prompt_with_default "Caminho do certificado externo" "${ADV_SSL_CERT_PATH:-/etc/ssl/cert.pem}")
+                fi
+                ;;
+            8)
+                if [[ -z "${ADV_PORT:-}" ]]; then
+                    print_warning "ExecStart só está disponível após escolher uma porta configurada."
+                    pause
+                else
+                    show_proxy_execstart_line "$ADV_PORT"
+                    pause
+                fi
+                ;;
+            9)
+                if [[ -z "${ADV_PORT:-}" ]]; then
+                    print_warning "Sem porta selecionada — use 'Concluir' na criação."
+                    pause
+                    continue
+                fi
+                apply_adv_globals_to_port "$ADV_PORT"
+                ADV_APPLIED=1
+                return 0
+                ;;
+            0)
+                return 0
+                ;;
+            *)
+                print_error "Opção inválida: $choice"
+                ;;
+        esac
+    done
+}
+
+init_adv_defaults() {
+    ADV_PORT=""
+    ADV_APPLIED=0
+    ADV_BUFFER_SIZE="${1:-$DEFAULT_BUFFER_SIZE}"
+    ADV_MAX_CONNECTIONS="${2:-0}"
+    ADV_WRITE_TIMEOUT="${3:-0}"
+    ADV_IDLE_TIMEOUT="${4:-0}"
+    ADV_LOG_LEVEL="${5:-info}"
+    ADV_SSH_PORT="${6:-22}"
+    ADV_OPENVPN_PORT="${7:-1194}"
+    ADV_V2RAY_PORT="${8:-1080}"
+    ADV_DOMAIN="${9:-true}"
+    ADV_DISPLAY_BANNER="${10:-true}"
+    ADV_CERT_INTERNAL="${11:-true}"
+    ADV_SSL_CERT_PATH="${12:-}"
+}
+
+load_adv_from_port() {
+    local port="$1"
+    migrate_proxy_conf_from_unit_if_needed "$port" || true
+    ADV_PORT="$port"
+    ADV_APPLIED=0
+    ADV_BUFFER_SIZE=$(get_proxy_conf_value "$port" "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
+    ADV_MAX_CONNECTIONS=$(get_proxy_conf_value "$port" "MAX_CONNECTIONS" "0")
+    ADV_WRITE_TIMEOUT=$(get_proxy_conf_value "$port" "WRITE_TIMEOUT" "0")
+    ADV_IDLE_TIMEOUT=$(get_proxy_conf_value "$port" "IDLE_TIMEOUT" "0")
+    ADV_LOG_LEVEL=$(get_proxy_conf_value "$port" "LOG_LEVEL" "info")
+    ADV_SSH_PORT=$(get_proxy_conf_value "$port" "SSH_PORT" "22")
+    ADV_OPENVPN_PORT=$(get_proxy_conf_value "$port" "OPENVPN_PORT" "1194")
+    ADV_V2RAY_PORT=$(get_proxy_conf_value "$port" "V2RAY_PORT" "1080")
+    ADV_DOMAIN=$(get_proxy_conf_value "$port" "DOMAIN" "true")
+    ADV_DISPLAY_BANNER=$(get_proxy_conf_value "$port" "DISPLAY_BANNER" "true")
+    ADV_CERT_INTERNAL=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
+    ADV_SSL_CERT_PATH=$(get_proxy_conf_value "$port" "SSL_CERT_PATH" "")
+}
+
+show_proxy_execstart_line() {
+    local port="$1"
+    local service_name exec_line
+    service_name=$(get_proxy_service_name "$port")
+    echo
+    print_info "ExecStart da porta $port:"
+    exec_line=$(systemctl cat "$service_name" 2>/dev/null | grep -E '^ExecStart=' | head -n1 | sed 's/^ExecStart=//')
+    if [[ -n "$exec_line" ]]; then
+        echo -e "${GRAY}$exec_line${RESET}"
+    else
+        print_warning "Unit systemd ainda não existe para esta porta."
     fi
-    ADV_DISPLAY_BANNER="true"
-    if ! confirm_action "Exibir banner no terminal do serviço?" "s"; then
-        ADV_DISPLAY_BANNER="false"
+}
+
+apply_adv_globals_to_port() {
+    local port="$1"
+    local ssl_enabled ssh_only http_response was_active="false"
+
+    ssl_enabled=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
+    ssh_only=$(get_proxy_conf_value "$port" "SSH_ONLY" "false")
+    http_response=$(get_proxy_conf_value "$port" "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
+
+    # Se marcou cert externo, força SSL (senão --cert-internal não faz sentido sozinho).
+    if [[ "$ADV_CERT_INTERNAL" == "false" && -n "$ADV_SSL_CERT_PATH" ]]; then
+        ssl_enabled="true"
+    fi
+
+    write_proxy_conf "$port" "$ssl_enabled" "$ADV_SSL_CERT_PATH" "$ADV_CERT_INTERNAL" "$ssh_only" \
+        "$http_response" "$ADV_BUFFER_SIZE" "$ADV_DOMAIN" "$ADV_MAX_CONNECTIONS" "$ADV_WRITE_TIMEOUT" \
+        "$ADV_IDLE_TIMEOUT" "$ADV_LOG_LEVEL" "$ADV_SSH_PORT" "$ADV_OPENVPN_PORT" "$ADV_V2RAY_PORT" "$ADV_DISPLAY_BANNER"
+
+    systemctl is-active --quiet "$(get_proxy_service_name "$port")" 2>/dev/null && was_active="true"
+
+    if apply_proxy_service "$port" "$was_active"; then
+        if [[ "$was_active" == "true" ]]; then
+            print_success "Opções avançadas aplicadas e serviço reiniciado (porta $port)."
+        else
+            print_success "Opções avançadas salvas na porta $port (serviço parado)."
+        fi
+        show_proxy_execstart_line "$port"
+    else
+        print_error "Falha ao aplicar opções avançadas na porta $port."
+    fi
+    pause
+}
+
+edit_proxy_advanced_service() {
+    print_header
+
+    local configured_ports
+    configured_ports=$(list_configured_proxy_ports)
+    if [[ -z "$configured_ports" ]]; then
+        print_error "Nenhuma porta configurada. Abra uma porta antes."
+        pause
+        return
+    fi
+
+    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
+    echo -e "${BLUE}Digite a porta para opções avançadas:${RESET}"
+    read -rp "> " port
+    port=$(echo "$port" | tr -d '[:space:]')
+
+    if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
+        print_error "Porta inválida ou não configurada."
+        pause
+        return
+    fi
+
+    load_adv_from_port "$port"
+    print_info "Editando opções avançadas da porta $port (inclui buffer)."
+    prompt_proxy_advanced_options
+    if [[ "${ADV_APPLIED:-0}" != "1" ]]; then
+        apply_adv_globals_to_port "$port"
     fi
 }
 
@@ -1217,7 +1407,13 @@ start_proxy_service() {
         ssh_only_flag="true"
     fi
 
-    local buffer_size="$DEFAULT_BUFFER_SIZE"
+    local buffer_size
+    buffer_size=$(prompt_with_default "Buffer size (--buffer-size, bytes)" "$DEFAULT_BUFFER_SIZE")
+    if ! [[ "$buffer_size" =~ ^[0-9]+$ ]] || [[ "$buffer_size" -lt 1024 ]]; then
+        print_warning "Buffer inválido; usando $DEFAULT_BUFFER_SIZE"
+        buffer_size="$DEFAULT_BUFFER_SIZE"
+    fi
+
     local domain_flag="true"
     local max_connections="0"
     local write_timeout="0"
@@ -1228,7 +1424,8 @@ start_proxy_service() {
     local v2ray_port="1080"
     local display_banner="true"
 
-    if confirm_action "Configurar opções avançadas?" "n"; then
+    init_adv_defaults "$buffer_size" "0" "0" "0" "info" "22" "1194" "1080" "true" "true" "$cert_internal" "$ssl_cert_path"
+    if confirm_action "Abrir submenu de opções avançadas (log, domain, backends, timeouts...)?" "n"; then
         prompt_proxy_advanced_options
         buffer_size="$ADV_BUFFER_SIZE"
         max_connections="$ADV_MAX_CONNECTIONS"
@@ -1240,6 +1437,11 @@ start_proxy_service() {
         v2ray_port="$ADV_V2RAY_PORT"
         domain_flag="$ADV_DOMAIN"
         display_banner="$ADV_DISPLAY_BANNER"
+        cert_internal="$ADV_CERT_INTERNAL"
+        ssl_cert_path="$ADV_SSL_CERT_PATH"
+        if [[ "$cert_internal" == "false" && -n "$ssl_cert_path" ]]; then
+            ssl_enabled="true"
+        fi
     fi
     
     print_info "Iniciando proxy na porta $port..."
@@ -1264,6 +1466,7 @@ start_proxy_service() {
 
     if apply_proxy_service "$port" "true"; then
         print_success "Proxy iniciado com sucesso na porta $port!"
+        show_proxy_execstart_line "$port"
     else
         print_error "Falha ao iniciar proxy na porta $port"
     fi
@@ -1450,25 +1653,19 @@ edit_proxy_service() {
         ssh_only_flag="false"
     fi
 
-    if confirm_action "Ajustar opções avançadas?" "n"; then
-        ADV_BUFFER_SIZE=$(prompt_with_default "Buffer size" "$buffer_size")
-        ADV_MAX_CONNECTIONS=$(prompt_with_default "Max connections" "$max_connections")
-        ADV_WRITE_TIMEOUT=$(prompt_with_default "Write timeout" "$write_timeout")
-        ADV_IDLE_TIMEOUT=$(prompt_with_default "Idle timeout" "$idle_timeout")
-        ADV_LOG_LEVEL=$(prompt_with_default "Log level" "$log_level")
-        ADV_SSH_PORT=$(prompt_with_default "SSH backend" "$ssh_port")
-        ADV_OPENVPN_PORT=$(prompt_with_default "OpenVPN backend" "$openvpn_port")
-        ADV_V2RAY_PORT=$(prompt_with_default "V2Ray backend" "$v2ray_port")
-        if confirm_action "Gerar domínio (--domain)? (atual: $domain_flag)" "$([[ "$domain_flag" == "true" ]] && echo s || echo n)"; then
-            ADV_DOMAIN="true"
-        else
-            ADV_DOMAIN="false"
-        fi
-        if confirm_action "Exibir banner? (atual: $display_banner)" "$([[ "$display_banner" == "true" ]] && echo s || echo n)"; then
-            ADV_DISPLAY_BANNER="true"
-        else
-            ADV_DISPLAY_BANNER="false"
-        fi
+    buffer_size=$(prompt_with_default "Buffer size (--buffer-size, bytes)" "$buffer_size")
+    if ! [[ "$buffer_size" =~ ^[0-9]+$ ]] || [[ "$buffer_size" -lt 1024 ]]; then
+        print_warning "Buffer inválido; mantendo valor anterior."
+        buffer_size=$(get_proxy_conf_value "$port" "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
+    fi
+
+    init_adv_defaults "$buffer_size" "$max_connections" "$write_timeout" "$idle_timeout" \
+        "$log_level" "$ssh_port" "$openvpn_port" "$v2ray_port" "$domain_flag" "$display_banner" \
+        "$cert_internal" "$ssl_cert_path"
+    ADV_PORT="$port"
+
+    if confirm_action "Abrir submenu de opções avançadas?" "n"; then
+        prompt_proxy_advanced_options
         buffer_size="$ADV_BUFFER_SIZE"
         max_connections="$ADV_MAX_CONNECTIONS"
         write_timeout="$ADV_WRITE_TIMEOUT"
@@ -1479,6 +1676,11 @@ edit_proxy_service() {
         v2ray_port="$ADV_V2RAY_PORT"
         domain_flag="$ADV_DOMAIN"
         display_banner="$ADV_DISPLAY_BANNER"
+        cert_internal="$ADV_CERT_INTERNAL"
+        ssl_cert_path="$ADV_SSL_CERT_PATH"
+        if [[ "$cert_internal" == "false" && -n "$ssl_cert_path" ]]; then
+            ssl_enabled="true"
+        fi
     fi
 
     write_proxy_conf "$port" "$ssl_enabled" "$ssl_cert_path" "$cert_internal" "$ssh_only_flag" \
@@ -1494,6 +1696,7 @@ edit_proxy_service() {
         else
             print_success "Configuração da porta $port salva (serviço parado)."
         fi
+        show_proxy_execstart_line "$port"
     else
         print_error "Falha ao aplicar configuração da porta $port."
     fi
@@ -1657,15 +1860,16 @@ connection_menu() {
             "3 • Parar porta (mantém config)"
             "4 • Reiniciar porta"
             "5 • Editar porta"
-            "6 • Alterar resposta HTTP"
-            "7 • Detalhes da porta"
-            "8 • Ver log da porta"
-            "9 • Remover porta"
+            "6 • Opções avançadas (buffer/flags)"
+            "7 • Alterar resposta HTTP"
+            "8 • Detalhes / ExecStart"
+            "9 • Ver log da porta"
+            "A • Remover porta"
             "0 • Voltar ao Menu Inicial"
         )
         
         for item in "${menu_items[@]}"; do
-            if [[ $item == *"Voltar"* ]]; then
+            if [[ $item == *"Voltar"* || $item == *"Remover"* ]]; then
                 render_menu_option "$item" "red"
             else
                 render_menu_option "$item"
@@ -1676,7 +1880,7 @@ connection_menu() {
         echo
         
         local choice
-        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-9]:${RESET} ")" choice
+        read -rp "$(echo -e "${BLUE}Selecione [0-9/A]:${RESET} ")" choice
         
         case "$choice" in
             1) start_proxy_service ;;
@@ -1684,10 +1888,11 @@ connection_menu() {
             3) pause_proxy_service ;;
             4) restart_proxy_service ;;
             5) edit_proxy_service ;;
-            6) change_proxy_http_response ;;
-            7) show_proxy_port_details ;;
-            8) show_proxy_logs ;;
-            9) remove_proxy_service ;;
+            6) edit_proxy_advanced_service ;;
+            7) change_proxy_http_response ;;
+            8) show_proxy_port_details ;;
+            9) show_proxy_logs ;;
+            a|A) remove_proxy_service ;;
             0) return 0 ;;
             *) 
                 print_error "Opção inválida: $choice"
