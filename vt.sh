@@ -2,12 +2,11 @@
 
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_WIDTH=62
-readonly MENU_REV="2026-07-22-p1-banner"
+readonly MENU_REV="2026-07-22-p1-adv"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
 readonly PROTO_VERSION_FILE="/etc/proto-server-version"
-readonly PROXY_BANNER_FILE="/etc/bannerssh"
 
 PROTO_SERVER_BIN="/usr/local/bin/proto-server"
 TOKEN_FILE="/etc/proto-server/token"
@@ -692,11 +691,6 @@ get_proxy_log_file() {
     echo "$PROXY_LOG_DIR/proxy-$port.log"
 }
 
-# Painel ASCII do proxy (--banner-file / --log-file). Padrão clássico dos painéis BR.
-get_proxy_banner_file() {
-    echo "${PROXY_BANNER_FILE:-/etc/bannerssh}"
-}
-
 get_proxy_service_name() {
     local port="$1"
     echo "$PROXY_SERVICE_PREFIX-$port"
@@ -924,7 +918,7 @@ build_proxy_command_from_conf() {
     display_banner=$(get_proxy_conf_value "$port" "DISPLAY_BANNER" "true")
     proto_port=$(get_proto_port)
 
-    local command="$PROXY_EXECUTABLE --token=$token --buffer-size=$buffer_size --response=$http_response --log-file=$(get_proxy_banner_file) --log-level=$log_level --dt-proto-port=$proto_port --ssh-port=$ssh_port --openvpn-port=$openvpn_port --v2ray-port=$v2ray_port --max-connections=$max_connections --write-timeout=$write_timeout --idle-timeout=$idle_timeout"
+    local command="$PROXY_EXECUTABLE --token=$token --buffer-size=$buffer_size --response=$http_response --log-file=$(get_proxy_log_file "$port") --log-level=$log_level --dt-proto-port=$proto_port --ssh-port=$ssh_port --openvpn-port=$openvpn_port --v2ray-port=$v2ray_port --max-connections=$max_connections --write-timeout=$write_timeout --idle-timeout=$idle_timeout"
 
     if [[ "$domain_flag" == "true" ]]; then
         command="$command --domain"
@@ -1144,7 +1138,7 @@ prompt_proxy_advanced_options() {
                 ADV_IDLE_TIMEOUT=$(prompt_with_default "Idle timeout segundos (0=off)" "$ADV_IDLE_TIMEOUT")
                 ;;
             6)
-                if confirm_action "Exibir banner no terminal do serviço? (atual: $ADV_DISPLAY_BANNER)" "$([[ "$ADV_DISPLAY_BANNER" == "true" ]] && echo s || echo n)"; then
+                if confirm_action "Exibir banner de status (--display-banner)? (atual: $ADV_DISPLAY_BANNER)" "$([[ "$ADV_DISPLAY_BANNER" == "true" ]] && echo s || echo n)"; then
                     ADV_DISPLAY_BANNER="true"
                 else
                     ADV_DISPLAY_BANNER="false"
@@ -1761,8 +1755,7 @@ show_proxy_port_details() {
     print_box_line "${WHITE}  Domain: ${CYAN}$(get_proxy_conf_value "$port" DOMAIN true)${RESET}"
     print_box_line "${WHITE}  dt-proto-port: ${CYAN}$(get_proto_port)${RESET}"
     print_box_line "${WHITE}  Conf: ${CYAN}$conf_file${RESET}"
-    print_box_line "${WHITE}  Banner file: ${CYAN}$(get_proxy_banner_file)${RESET}"
-    print_box_line "${WHITE}  Journal: ${CYAN}journalctl -u $(get_proxy_service_name "$port") -f${RESET}"
+    print_box_line "${WHITE}  Log/banner file: ${CYAN}$(get_proxy_log_file "$port")${RESET}"
     print_box_divider
     local exec_line
     exec_line=$(systemctl cat "$service_name" 2>/dev/null | grep -E '^ExecStart=' | head -n1 | sed 's/^ExecStart=//')
@@ -1832,13 +1825,19 @@ show_proxy_logs() {
         return
     fi
 
-    local service_name
-    service_name=$(get_proxy_service_name "$port")
+    local log_file
+    log_file=$(get_proxy_log_file "$port")
 
-    echo -e "${BLUE}Exibindo journal do serviço ${service_name} (Ctrl+C para sair):${RESET}"
-    echo -e "${GRAY}Banner de status (painel): $(get_proxy_banner_file)${RESET}"
+    if [[ ! -f "$log_file" ]]; then
+        print_error "Arquivo de log/banner não encontrado: $log_file"
+        print_info "Verifique: systemctl status $(get_proxy_service_name "$port")"
+        pause
+        return
+    fi
+
+    echo -e "${BLUE}Exibindo banner/status da porta $port (Ctrl+C para sair):${RESET}"
     echo
-    sudo journalctl -u "$service_name" -n 80 -f || true
+    sudo tail -n 80 -f "$log_file" || true
     pause
 }
 
