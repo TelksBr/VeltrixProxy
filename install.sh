@@ -22,7 +22,7 @@ PROTO_CREDENTIALS_FILE="${PROTO_DATA_DIR}/credentials.json"
 PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
-INSTALLER_REV="2026-07-14-svc3"
+INSTALLER_REV="2026-07-22-iptables"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
 LEGACY_BINARY_NAME="proxy"
@@ -242,6 +242,7 @@ get_missing_commands() {
   local missing=()
   has_command curl || missing+=("curl")
   has_checksum_command || missing+=("sha256sum")
+  has_command iptables || missing+=("iptables")
   if [[ ${#missing[@]} -gt 0 ]]; then
     printf '%s\n' "${missing[@]}"
   fi
@@ -255,6 +256,7 @@ commands_to_packages() {
     case "$cmd" in
     curl) pkg="curl" ;;
     sha256sum) pkg="coreutils" ;;
+    iptables) pkg="iptables" ;;
     *) continue ;;
     esac
     [[ " ${packages[*]} " == *" $pkg "* ]] || packages+=("$pkg")
@@ -316,7 +318,7 @@ ensure_dependencies() {
   pm=$(detect_package_manager)
   if [[ "$pm" == "unknown" ]]; then
     log_error "Gerenciador de pacotes não suportado."
-    log_info "Instale manualmente: curl coreutils"
+    log_info "Instale manualmente: curl coreutils iptables"
     exit 1
   fi
 
@@ -338,6 +340,7 @@ ensure_dependencies() {
 
   has_command curl || still_missing+=("curl")
   has_checksum_command || still_missing+=("sha256sum")
+  has_command iptables || still_missing+=("iptables")
 
   if [[ ${#still_missing[@]} -gt 0 ]]; then
     log_error "Ainda faltam dependências após instalação: ${still_missing[*]}"
@@ -345,12 +348,13 @@ ensure_dependencies() {
       case "$line" in
       curl) log_info "curl não encontrado em: $(command -v curl 2>/dev/null || echo 'não localizado')" ;;
       sha256sum) log_info "Tente: apt install coreutils (ou reinicie o terminal)" ;;
+      iptables) log_info "Tente: apt install iptables (ou equivalente no seu distro)" ;;
       esac
     done
     exit 1
   fi
 
-  log_success "Dependências OK (curl + checksum)."
+  log_success "Dependências OK (curl + checksum + iptables)."
 }
 
 detect_platform() {
