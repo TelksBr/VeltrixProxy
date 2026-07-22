@@ -842,7 +842,8 @@ is_port_free() {
 confirm_action() {
     local message="$1"
     local default_answer="${2:-n}"
-    echo -e "${YELLOW}$message (s/N)${RESET}"
+    # Mensagens em stderr: permite uso futuro em $(...) sem engolir o prompt.
+    echo -e "${YELLOW}$message (s/N)${RESET}" >&2
     read -rp "> " response
     response=${response:-$default_answer}
     case "${response,,}" in
@@ -855,7 +856,8 @@ prompt_with_default() {
     local message="$1"
     local default="$2"
     local value
-    echo -e "${BLUE}${message} ${GRAY}[${default}]${RESET}"
+    # Prompt em stderr — o valor retorna em stdout para $(prompt_with_default ...).
+    echo -e "${BLUE}${message} ${GRAY}[${default}]${RESET}" >&2
     read -rp "> " value
     value=${value:-$default}
     printf '%s' "$value"
