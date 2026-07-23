@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="2026-07-22-udpgw"
+readonly MENU_REV="2026-07-22-udpgw-metrics"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -3081,6 +3081,109 @@ download_udpgw_binary() {
     return 0
 }
 
+get_udpgw_metrics_base_url() {
+    local listen metrics_url host port
+
+    ensure_udpgw_config
+    listen=$(get_udpgw_config_value "METRICS_LISTEN")
+    listen=${listen:-127.0.0.1:9091}
+
+    if [[ "$listen" == *"://"* ]]; then
+        metrics_url="${listen%/}"
+    else
+        metrics_url="http://${listen}"
+    fi
+
+    printf '%s' "$metrics_url"
+}
+
+fetch_udpgw_metrics_body() {
+    local base_url body
+
+    base_url=$(get_udpgw_metrics_base_url)
+    body=$(curl -fsSL --connect-timeout 3 --max-time 8 "${base_url}/metrics" 2>/dev/null || true)
+    printf '%s' "$body"
+}
+
+parse_udpgw_metric() {
+    local name="$1"
+    local body="$2"
+    local value
+
+    value=$(printf '%s\n' "$body" | awk -v n="$name" '$1 == n { print $2; exit }')
+    [[ -n "$value" ]] || value="-"
+    printf '%s' "$value"
+}
+
+format_udpgw_metric_line() {
+    local label="$1"
+    local value="$2"
+    local warn="${3:-false}"
+    local value_color="$CYAN"
+
+    if [[ "$warn" == "true" && "$value" != "0" && "$value" != "0.0" && "$value" != "-" ]]; then
+        value_color="$YELLOW"
+    fi
+
+    print_box_line "${WHITE}  ${label}: ${value_color}${value}${RESET}"
+}
+
+udpgw_show_metrics() {
+    while true; do
+        print_header
+
+        local metrics_url body active total rejected dropped mapping panics read_err udp_err
+        metrics_url=$(get_udpgw_metrics_base_url)
+
+        print_box_open
+        print_box_heading "METRICAS UDP GATEWAY" "$CYAN"
+        print_box_divider
+
+        if is_udpgw_active; then
+            print_box_line "${WHITE}  Servico: $(mark_online)${RESET}"
+        else
+            print_box_line "${WHITE}  Servico: $(mark_offline)${RESET}"
+        fi
+
+        print_box_line "${WHITE}  Endpoint: ${BLUE}${metrics_url}/metrics${RESET}"
+        print_box_divider
+
+        body=$(fetch_udpgw_metrics_body)
+        if [[ -z "$body" ]]; then
+            print_box_line "${RED}  Nao foi possivel ler metricas.${RESET}"
+            print_box_line "${WHITE}  Verifique se o udpgw esta ativo e se${RESET}"
+            print_box_line "${WHITE}  METRICS_LISTEN esta correto em${RESET}"
+            print_box_line "${WHITE}  ${UDPGW_CONFIG_FILE}${RESET}"
+        else
+            active=$(parse_udpgw_metric "udpgw_active_clients" "$body")
+            total=$(parse_udpgw_metric "udpgw_clients_total" "$body")
+            rejected=$(parse_udpgw_metric "udpgw_clients_rejected_total" "$body")
+            dropped=$(parse_udpgw_metric "udpgw_dropped_replies_total" "$body")
+            mapping=$(parse_udpgw_metric "udpgw_mapping_size" "$body")
+            panics=$(parse_udpgw_metric "udpgw_panics_total" "$body")
+            read_err=$(parse_udpgw_metric "udpgw_read_errors_total" "$body")
+            udp_err=$(parse_udpgw_metric "udpgw_udp_write_errors_total" "$body")
+
+            print_box_line "${WHITE}  Clientes ativos: ${GREEN}${active}${RESET}"
+            format_udpgw_metric_line "Total aceitos" "$total"
+            format_udpgw_metric_line "Rejeitados (limite)" "$rejected" "true"
+            format_udpgw_metric_line "Respostas descartadas" "$dropped" "true"
+            format_udpgw_metric_line "Tamanho do mapa" "$mapping"
+            format_udpgw_metric_line "Panics recuperados" "$panics" "true"
+            format_udpgw_metric_line "Erros leitura TCP" "$read_err" "true"
+            format_udpgw_metric_line "Erros escrita UDP" "$udp_err" "true"
+        fi
+
+        print_box_close
+        echo
+        echo -e "${GRAY}Atualiza a cada 5s. Enter para voltar.${RESET}"
+
+        if read -r -t 5; then
+            break
+        fi
+    done
+}
+
 build_udpgw_exec_start() {
     local listen debug metrics exec_line
 
@@ -3304,10 +3407,11 @@ print_udpgw_menu() {
         "2 • Parar Gateway"
         "3 • Reiniciar Gateway"
         "4 • Status & Configuração"
-        "5 • Visualizar Logs"
-        "6 • Alterar Listen"
-        "7 • Alternar Debug"
-        "8 • Instalar/Atualizar binário"
+        "5 • Painel de Métricas"
+        "6 • Visualizar Logs"
+        "7 • Alterar Listen"
+        "8 • Alternar Debug"
+        "9 • Instalar/Atualizar binário"
         "0 • Voltar ao Menu Inicial"
     )
 
@@ -3330,17 +3434,18 @@ udpgw_main_menu() {
         print_udpgw_menu
 
         local option
-        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-8]:${RESET} ")" option
+        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-9]:${RESET} ")" option
 
         case "$option" in
         1) udpgw_start_server ;;
         2) udpgw_stop_server ;;
         3) udpgw_restart_server ;;
         4) udpgw_show_status ;;
-        5) udpgw_view_logs ;;
-        6) udpgw_change_listen ;;
-        7) udpgw_toggle_debug ;;
-        8) udpgw_install_or_update ;;
+        5) udpgw_show_metrics ;;
+        6) udpgw_view_logs ;;
+        7) udpgw_change_listen ;;
+        8) udpgw_toggle_debug ;;
+        9) udpgw_install_or_update ;;
         0) return 0 ;;
         *)
             print_error "Opção inválida: $option"
