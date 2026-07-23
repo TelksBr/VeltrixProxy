@@ -24,8 +24,8 @@ PROTO_CREDENTIALS_FILE="${PROTO_DATA_DIR}/credentials.json"
 PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
-INSTALLER_REV="2026-07-22-udpgw"
-MENU_REV_EXPECTED="2026-07-22-udpgw-metrics"
+INSTALLER_REV="2026-07-22-udpgw-multi"
+MENU_REV_EXPECTED="2026-07-22-udpgw-multi"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
@@ -38,6 +38,7 @@ MENU_COMMIT_SHA=""
 ACTIVE_PROXY_SERVICES=()
 ACTIVE_PROTO=false
 ACTIVE_UDPGW=false
+ACTIVE_UDPGW_SERVICES=()
 SERVICES_WERE_STOPPED=false
 INSTALL_COMPLETED=false
 
@@ -834,7 +835,37 @@ has_active_proto_process() {
 
 has_udpgw_service() {
   has_systemd || return 1
-  [[ -f /etc/systemd/system/udpgw.service ]]
+  [[ -f /etc/systemd/system/udpgw.service ]] && return 0
+  local services=()
+  read_nonempty_lines services < <(list_all_udpgw_services)
+  [[ ${#services[@]} -gt 0 ]]
+}
+
+list_all_udpgw_services() {
+  local services=() service_file service_name
+
+  if ! has_systemd; then
+    return 0
+  fi
+
+  while IFS= read -r service_file; do
+    service_name="$(basename "$service_file")"
+    [[ " ${services[*]} " == *" $service_name "* ]] || services+=("$service_name")
+  done < <(find_service_files_by_exec 'ExecStart=.*/udpgw( |$)')
+
+  for service_file in /etc/systemd/system/udpgw-*.service; do
+    [[ -f "$service_file" ]] || continue
+    service_name="$(basename "$service_file")"
+    [[ " ${services[*]} " == *" $service_name "* ]] || services+=("$service_name")
+  done
+
+  if [[ -f /etc/systemd/system/udpgw.service ]]; then
+    [[ " ${services[*]} " == *" udpgw.service "* ]] || services+=("udpgw.service")
+  fi
+
+  if [[ ${#services[@]} -gt 0 ]]; then
+    printf '%s\n' "${services[@]}"
+  fi
 }
 
 has_active_udpgw_process() {
@@ -950,6 +981,7 @@ capture_active_services() {
   ACTIVE_PROXY_SERVICES=()
   ACTIVE_PROTO=false
   ACTIVE_UDPGW=false
+  ACTIVE_UDPGW_SERVICES=()
 
   if ! has_systemd; then
     return 0
@@ -969,9 +1001,15 @@ capture_active_services() {
     ACTIVE_PROTO=true
   fi
 
-  if systemctl is-active --quiet udpgw 2>/dev/null; then
-    ACTIVE_UDPGW=true
-  elif has_active_udpgw_process; then
+  read_nonempty_lines services < <(list_all_udpgw_services)
+  for service in "${services[@]}"; do
+    if systemctl is-active --quiet "$service" 2>/dev/null; then
+      ACTIVE_UDPGW_SERVICES+=("$service")
+      ACTIVE_UDPGW=true
+    fi
+  done
+
+  if [[ "$ACTIVE_UDPGW" != true ]] && has_active_udpgw_process; then
     ACTIVE_UDPGW=true
   fi
 
@@ -1017,10 +1055,14 @@ stop_proto_server() {
 }
 
 stop_udpgw_server() {
-  if systemctl is-active --quiet udpgw 2>/dev/null; then
-    log_info "Parando serviço udpgw..."
-    run_privileged systemctl stop udpgw || log_warn "Não foi possível parar udpgw"
-  fi
+  local services=() service
+  read_nonempty_lines services < <(list_all_udpgw_services)
+  [[ ${#services[@]} -eq 0 ]] && return 0
+
+  log_info "Parando ${#services[@]} serviço(s) udpgw..."
+  for service in "${services[@]}"; do
+    run_privileged systemctl stop "$service" || log_warn "Não foi possível parar $service"
+  done
 }
 
 restart_proto_server() {
@@ -1044,34 +1086,52 @@ restart_proto_server() {
 }
 
 restart_udpgw_server() {
+  local services=() service
+
   if ! has_udpgw_service; then
     return 0
   fi
 
-  if [[ "$MODE" == "update" || "$MODE" == "reinstall" || "$ACTIVE_UDPGW" == true ]]; then
-    log_info "Iniciando/reiniciando serviço udpgw..."
-    if ! run_privileged systemctl restart udpgw; then
-      log_warn "Não foi possível reiniciar udpgw."
-      log_info "Verifique: journalctl -u udpgw -n 30 --no-pager"
-      return 1
-    fi
-    if systemctl is-active --quiet udpgw 2>/dev/null; then
-      log_success "udpgw ativo."
-    else
-      log_warn "udpgw não ficou ativo após restart."
-    fi
+  if [[ "$MODE" == "update" || "$MODE" == "reinstall" ]]; then
+    read_nonempty_lines services < <(list_all_udpgw_services)
+  elif [[ ${#ACTIVE_UDPGW_SERVICES[@]} -gt 0 ]]; then
+    services=("${ACTIVE_UDPGW_SERVICES[@]}")
+  elif [[ "$ACTIVE_UDPGW" == true ]]; then
+    read_nonempty_lines services < <(list_all_udpgw_services)
+  else
+    return 0
   fi
+  [[ ${#services[@]} -eq 0 ]] && return 0
+
+  log_info "Reiniciando ${#services[@]} serviço(s) udpgw..."
+  for service in "${services[@]}"; do
+    if ! run_privileged systemctl restart "$service"; then
+      log_warn "Não foi possível reiniciar $service."
+      log_info "Verifique: journalctl -u ${service%.service} -n 30 --no-pager"
+      continue
+    fi
+    if systemctl is-active --quiet "$service" 2>/dev/null; then
+      log_success "${service} ativo."
+    else
+      log_warn "${service} não ficou ativo após restart."
+    fi
+  done
 }
 
 sync_udpgw_service() {
-  local service_file="/etc/systemd/system/udpgw.service"
   local udpgw_bin="${INSTALL_DIR}/${UDPGW_BINARY_NAME}"
+  local services=() service_file
 
-  [[ -f "$service_file" ]] || return 0
+  read_nonempty_lines services < <(list_all_udpgw_services)
+  [[ ${#services[@]} -eq 0 ]] && return 0
 
-  safe_sed_inplace "$service_file" \
-    -e "s|/usr/local/bin/udpgw|${udpgw_bin}|g" \
-    -e "s|${INSTALL_DIR}/udpgw|${udpgw_bin}|g" || true
+  for service_file in "${services[@]}"; do
+    service_file="/etc/systemd/system/${service_file}"
+    [[ -f "$service_file" ]] || continue
+    safe_sed_inplace "$service_file" \
+      -e "s|/usr/local/bin/udpgw|${udpgw_bin}|g" \
+      -e "s|${INSTALL_DIR}/udpgw|${udpgw_bin}|g" || true
+  done
 }
 
 load_saved_proxy_token() {
@@ -1289,10 +1349,12 @@ report_existing_services() {
   fi
 
   if has_udpgw_service || has_active_udpgw_process; then
-    if [[ "$ACTIVE_UDPGW" == true ]]; then
-      log_warn "UDP Gateway ativo detectado — unit file será atualizado e o serviço reiniciado."
+    if [[ ${#ACTIVE_UDPGW_SERVICES[@]} -gt 0 ]]; then
+      log_warn "${#ACTIVE_UDPGW_SERVICES[@]} serviço(s) udpgw ativo(s): ${ACTIVE_UDPGW_SERVICES[*]//.service/}"
+    elif [[ "$ACTIVE_UDPGW" == true ]]; then
+      log_warn "UDP Gateway ativo detectado — unit files serão atualizados e os serviços reiniciados."
     else
-      log_warn "Serviço udpgw configurado — unit file será atualizado se necessário."
+      log_warn "Serviço(s) udpgw configurado(s) — unit files serão atualizados se necessário."
     fi
   fi
 }

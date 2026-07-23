@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="2026-07-22-udpgw-metrics"
+readonly MENU_REV="2026-07-22-udpgw-multi"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -30,9 +30,13 @@ ONLINE_API_SCRIPT="/usr/local/bin/proto_online_api.py"
 ONLINE_API_PORT_FILE="/etc/proto-server/online_api_port"
 
 UDPGW_BIN="/usr/local/bin/udpgw"
+UDPGW_CONFIG_DIR="/etc/udpgw/conf.d"
 UDPGW_CONFIG_FILE="/etc/udpgw/config.conf"
+UDPGW_SERVICE_PREFIX="udpgw"
 UDPGW_SERVICE_NAME="udpgw"
+UDPGW_DEFAULT_PORT=7400
 UDPGW_DEFAULT_LISTEN="0.0.0.0:7400"
+UDPGW_METRICS_BASE=9091
 
 PROXY_DIR="/etc/proxy"
 PROXY_TOKEN_VTPROXY="/etc/vtproxy/proxy.token"
@@ -490,9 +494,8 @@ print_status() {
     port=${port:-8000}
     subnet=${subnet:-10.10.0.0/16}
     tun=${tun:-tun0}
-    local udpgw_listen
-    udpgw_listen=$(get_udpgw_config_value "LISTEN")
-    udpgw_listen=${udpgw_listen:-$UDPGW_DEFAULT_LISTEN}
+    local udpgw_ports
+    udpgw_ports=$(format_udpgw_ports_status)
 
     print_box_open
     local status_badge="${status_bg}${BOLD}${status_color} ${proto_status} ${RESET}"
@@ -506,7 +509,7 @@ print_status() {
         fi
         print_box_line "${WHITE}Proto:${CYAN}${port}${WHITE} TUN:${CYAN}${tun}${RESET}"
         print_box_line "${WHITE}Net: ${CYAN}${subnet}${RESET}"
-        print_box_line "${WHITE}UDPgw: ${udpgw_status}${WHITE} ${CYAN}${udpgw_listen}${RESET}"
+        print_box_line "${WHITE}UDPgw: ${udpgw_status}${WHITE} ${CYAN}${udpgw_ports}${RESET}"
         print_box_line "${GRAY}${MENU_REV}${RESET}"
     else
         print_box_line "${WHITE} Proto: ${status_badge}${BLUE} | Proxy: ${CYAN}${proxy_label}${RESET}"
@@ -516,7 +519,7 @@ print_status() {
         fi
         print_box_line "$tokens_line"
         print_box_line "${WHITE} Porta proto: ${CYAN}${port}${WHITE} | Sub-rede: ${CYAN}${subnet}${WHITE} | TUN: ${CYAN}${tun}${RESET}"
-        print_box_line "${WHITE} UDP Gateway: ${udpgw_status}${WHITE} listen ${CYAN}${udpgw_listen}${RESET}"
+        print_box_line "${WHITE} UDP Gateway: ${udpgw_status}${WHITE} portas ${CYAN}${udpgw_ports}${RESET}"
         print_box_line "${WHITE} Menu: ${GRAY}${MENU_REV}${RESET}  (${MENU_BIN})"
     fi
     print_box_close
@@ -2955,45 +2958,8 @@ run_quick_setup_first_time() {
     pause
 }
 
-get_udpgw_config_value() {
-    local key="$1"
-    if [[ -f "$UDPGW_CONFIG_FILE" ]]; then
-        grep "^${key}=" "$UDPGW_CONFIG_FILE" | cut -d'=' -f2- | head -n1
-    fi
-}
-
-set_udpgw_config_value() {
-    local key="$1"
-    local value="$2"
-    local temp_file
-    temp_file=$(mktemp)
-
-    sudo mkdir -p "$(dirname "$UDPGW_CONFIG_FILE")"
-
-    if [[ -f "$UDPGW_CONFIG_FILE" ]]; then
-        grep -v "^${key}=" "$UDPGW_CONFIG_FILE" >"$temp_file"
-    fi
-    echo "${key}=${value}" >>"$temp_file"
-    sudo mv "$temp_file" "$UDPGW_CONFIG_FILE"
-}
-
-ensure_udpgw_config() {
-    sudo mkdir -p "$(dirname "$UDPGW_CONFIG_FILE")"
-    if [[ ! -f "$UDPGW_CONFIG_FILE" ]]; then
-        sudo tee "$UDPGW_CONFIG_FILE" >/dev/null <<EOF
-LISTEN=${UDPGW_DEFAULT_LISTEN}
-DEBUG=false
-METRICS_LISTEN=127.0.0.1:9091
-EOF
-    fi
-}
-
 is_udpgw_installed() {
     [[ -x "$UDPGW_BIN" ]]
-}
-
-is_udpgw_active() {
-    systemctl is-active "$UDPGW_SERVICE_NAME" &>/dev/null
 }
 
 detect_udpgw_release_arch() {
@@ -3081,30 +3047,6 @@ download_udpgw_binary() {
     return 0
 }
 
-get_udpgw_metrics_base_url() {
-    local listen metrics_url host port
-
-    ensure_udpgw_config
-    listen=$(get_udpgw_config_value "METRICS_LISTEN")
-    listen=${listen:-127.0.0.1:9091}
-
-    if [[ "$listen" == *"://"* ]]; then
-        metrics_url="${listen%/}"
-    else
-        metrics_url="http://${listen}"
-    fi
-
-    printf '%s' "$metrics_url"
-}
-
-fetch_udpgw_metrics_body() {
-    local base_url body
-
-    base_url=$(get_udpgw_metrics_base_url)
-    body=$(curl -fsSL --connect-timeout 3 --max-time 8 "${base_url}/metrics" 2>/dev/null || true)
-    printf '%s' "$body"
-}
-
 parse_udpgw_metric() {
     local name="$1"
     local body="$2"
@@ -3128,103 +3070,259 @@ format_udpgw_metric_line() {
     print_box_line "${WHITE}  ${label}: ${value_color}${value}${RESET}"
 }
 
-udpgw_show_metrics() {
-    while true; do
-        print_header
+UDPGW_ADV_PORT=""
 
-        local metrics_url body active total rejected dropped mapping panics read_err udp_err
-        metrics_url=$(get_udpgw_metrics_base_url)
+ensure_udpgw_dirs() {
+    sudo mkdir -p /etc/udpgw "$UDPGW_CONFIG_DIR" 2>/dev/null || true
+}
 
-        print_box_open
-        print_box_heading "METRICAS UDP GATEWAY" "$CYAN"
-        print_box_divider
+get_udpgw_config_file() {
+    local port="$1"
+    echo "${UDPGW_CONFIG_DIR}/udpgw-${port}.conf"
+}
 
-        if is_udpgw_active; then
-            print_box_line "${WHITE}  Servico: $(mark_online)${RESET}"
-        else
-            print_box_line "${WHITE}  Servico: $(mark_offline)${RESET}"
+get_udpgw_service_name() {
+    local port="$1"
+    echo "${UDPGW_SERVICE_PREFIX}-${port}"
+}
+
+get_udpgw_conf_value() {
+    local port="$1"
+    local key="$2"
+    local default="${3:-}"
+    local file val
+
+    file=$(get_udpgw_config_file "$port")
+    if [[ -f "$file" ]]; then
+        val=$(grep -E "^${key}=" "$file" 2>/dev/null | head -n1 | cut -d= -f2-)
+        if [[ -n "$val" ]]; then
+            printf '%s' "$val"
+            return 0
         fi
+    fi
+    printf '%s' "$default"
+}
 
-        print_box_line "${WHITE}  Endpoint: ${BLUE}${metrics_url}/metrics${RESET}"
-        print_box_divider
+set_udpgw_conf_key() {
+    local port="$1"
+    local key="$2"
+    local value="$3"
+    local file temp_file
 
-        body=$(fetch_udpgw_metrics_body)
-        if [[ -z "$body" ]]; then
-            print_box_line "${RED}  Nao foi possivel ler metricas.${RESET}"
-            print_box_line "${WHITE}  Verifique se o udpgw esta ativo e se${RESET}"
-            print_box_line "${WHITE}  METRICS_LISTEN esta correto em${RESET}"
-            print_box_line "${WHITE}  ${UDPGW_CONFIG_FILE}${RESET}"
-        else
-            active=$(parse_udpgw_metric "udpgw_active_clients" "$body")
-            total=$(parse_udpgw_metric "udpgw_clients_total" "$body")
-            rejected=$(parse_udpgw_metric "udpgw_clients_rejected_total" "$body")
-            dropped=$(parse_udpgw_metric "udpgw_dropped_replies_total" "$body")
-            mapping=$(parse_udpgw_metric "udpgw_mapping_size" "$body")
-            panics=$(parse_udpgw_metric "udpgw_panics_total" "$body")
-            read_err=$(parse_udpgw_metric "udpgw_read_errors_total" "$body")
-            udp_err=$(parse_udpgw_metric "udpgw_udp_write_errors_total" "$body")
+    ensure_udpgw_dirs
+    file=$(get_udpgw_config_file "$port")
+    temp_file=$(mktemp)
+    if [[ -f "$file" ]]; then
+        grep -v "^${key}=" "$file" >"$temp_file" || true
+    fi
+    echo "${key}=${value}" >>"$temp_file"
+    sudo mv "$temp_file" "$file"
+    sudo chmod 644 "$file" 2>/dev/null || true
+}
 
-            print_box_line "${WHITE}  Clientes ativos: ${GREEN}${active}${RESET}"
-            format_udpgw_metric_line "Total aceitos" "$total"
-            format_udpgw_metric_line "Rejeitados (limite)" "$rejected" "true"
-            format_udpgw_metric_line "Respostas descartadas" "$dropped" "true"
-            format_udpgw_metric_line "Tamanho do mapa" "$mapping"
-            format_udpgw_metric_line "Panics recuperados" "$panics" "true"
-            format_udpgw_metric_line "Erros leitura TCP" "$read_err" "true"
-            format_udpgw_metric_line "Erros escrita UDP" "$udp_err" "true"
-        fi
+suggest_udpgw_metrics_listen() {
+    local try_p="$UDPGW_METRICS_BASE"
+    while is_port_in_use "$try_p"; do
+        try_p=$((try_p + 1))
+    done
+    echo "127.0.0.1:${try_p}"
+}
 
-        print_box_close
-        echo
-        echo -e "${GRAY}Atualiza a cada 5s. Enter para voltar.${RESET}"
+write_udpgw_conf_new() {
+    local port="$1"
+    local metrics_listen listen
 
-        if read -r -t 5; then
-            break
+    metrics_listen=$(suggest_udpgw_metrics_listen)
+    listen="0.0.0.0:${port}"
+
+    sudo tee "$(get_udpgw_config_file "$port")" >/dev/null <<EOF
+PORT=${port}
+LISTEN=${listen}
+DEBUG=false
+METRICS_LISTEN=${metrics_listen}
+MAX_FRAME=
+WRITE_CHAN=
+UDP_BIND=
+UDP_RBUF=
+UDP_WBUF=
+MAP_TTL=
+REAP_EVERY=
+IDLE_TIMEOUT=
+MAX_CLIENT_CONNS=
+MAX_MAP_ENTRIES=
+MAX_CLIENTS=
+AUTO_RESTART_INTERVAL=
+AUTO_RESTART_GRACE=
+EOF
+}
+
+migrate_legacy_udpgw_if_needed() {
+    local port=7400 listen file
+
+    ensure_udpgw_dirs
+    [[ -f "$UDPGW_CONFIG_FILE" ]] || return 0
+
+    listen=$(grep '^LISTEN=' "$UDPGW_CONFIG_FILE" 2>/dev/null | head -n1 | cut -d= -f2-)
+    if [[ "$listen" =~ :([0-9]+)$ ]]; then
+        port="${BASH_REMATCH[1]}"
+    fi
+
+    file=$(get_udpgw_config_file "$port")
+    if [[ ! -f "$file" ]]; then
+        sudo cp "$UDPGW_CONFIG_FILE" "$file"
+        set_udpgw_conf_key "$port" "PORT" "$port"
+    fi
+
+    if [[ -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service" ]]; then
+        apply_udpgw_service "$port" "false" || true
+        sudo systemctl disable "$UDPGW_SERVICE_NAME" 2>/dev/null || true
+        sudo systemctl stop "$UDPGW_SERVICE_NAME" 2>/dev/null || true
+    fi
+}
+
+list_configured_udpgw_ports() {
+    local ports=() f port service_file
+
+    migrate_legacy_udpgw_if_needed || true
+    ensure_udpgw_dirs
+
+    for service_file in /etc/systemd/system/${UDPGW_SERVICE_PREFIX}-*.service; do
+        [[ -f "$service_file" ]] || continue
+        port=$(basename "$service_file" .service | sed -n "s/^${UDPGW_SERVICE_PREFIX}-\\([0-9]\\+\\)$/\\1/p")
+        [[ -n "$port" ]] && ports+=("$port")
+    done
+
+    for f in "$UDPGW_CONFIG_DIR"/udpgw-*.conf; do
+        [[ -f "$f" ]] || continue
+        port=$(basename "$f" .conf | sed -n 's/^udpgw-\([0-9]\+\)$/\1/p')
+        [[ -n "$port" ]] && ports+=("$port")
+    done
+
+    if [[ ${#ports[@]} -eq 0 ]]; then
+        return 0
+    fi
+    printf '%s\n' "${ports[@]}" | sort -nu | paste -sd, - 2>/dev/null || true
+}
+
+is_udpgw_port_active() {
+    local port="$1"
+    systemctl is-active --quiet "$(get_udpgw_service_name "$port")" 2>/dev/null
+}
+
+is_udpgw_active() {
+    local ports port
+    if systemctl is-active --quiet "$UDPGW_SERVICE_NAME" 2>/dev/null; then
+        return 0
+    fi
+    ports=$(list_configured_udpgw_ports)
+    [[ -z "$ports" ]] && return 1
+    IFS=',' read -ra pa <<< "$ports"
+    for port in "${pa[@]}"; do
+        is_udpgw_port_active "$port" && return 0
+    done
+    return 1
+}
+
+list_active_udpgw_ports() {
+    local ports port active=""
+    ports=$(list_configured_udpgw_ports)
+    [[ -z "$ports" ]] && return 0
+    IFS=',' read -ra pa <<< "$ports"
+    for port in "${pa[@]}"; do
+        [[ -z "$port" ]] && continue
+        if is_udpgw_port_active "$port"; then
+            [[ -n "$active" ]] && active+=","
+            active+="$port"
         fi
     done
+    printf '%s' "$active"
 }
 
-build_udpgw_exec_start() {
-    local listen debug metrics exec_line
+format_udpgw_ports_status() {
+    local configured active port mark line=""
+    configured=$(list_configured_udpgw_ports)
+    active=$(list_active_udpgw_ports)
 
-    ensure_udpgw_config
-    listen=$(get_udpgw_config_value "LISTEN")
-    debug=$(get_udpgw_config_value "DEBUG")
-    metrics=$(get_udpgw_config_value "METRICS_LISTEN")
-
-    listen=${listen:-$UDPGW_DEFAULT_LISTEN}
-    exec_line="${UDPGW_BIN} -listen ${listen}"
-
-    if [[ "$debug" == "true" ]]; then
-        exec_line+=" -debug"
+    if [[ -z "$configured" ]]; then
+        echo "nenhuma"
+        return 0
     fi
 
-    if [[ -n "$metrics" ]]; then
-        exec_line+=" -metrics-listen ${metrics}"
-    fi
-
-    printf '%s' "$exec_line"
+    IFS=',' read -ra pa <<< "$configured"
+    for port in "${pa[@]}"; do
+        [[ -z "$port" ]] && continue
+        if [[ ",${active}," == *",${port},"* ]]; then
+            mark="ON"
+        else
+            mark="OFF"
+        fi
+        if [[ -n "$line" ]]; then line+=","; fi
+        line+="${port}:${mark}"
+    done
+    echo "$line"
 }
 
-create_udpgw_systemd_service() {
-    local exec_start listen
+append_udpgw_flag_if_set() {
+    local -n _cmd=$1
+    local flag="$2"
+    local value="$3"
+    [[ -n "$value" && "$value" != "0" ]] && _cmd+=" ${flag} ${value}"
+}
+
+build_udpgw_command_from_conf() {
+    local port="$1"
+    local listen cmd val
+
+    listen=$(get_udpgw_conf_value "$port" "LISTEN" "0.0.0.0:${port}")
+    cmd="${UDPGW_BIN} -listen ${listen}"
+
+    if [[ "$(get_udpgw_conf_value "$port" "DEBUG" "false")" == "true" ]]; then
+        cmd+=" -debug"
+    fi
+
+    val=$(get_udpgw_conf_value "$port" "METRICS_LISTEN" "")
+    [[ -n "$val" ]] && cmd+=" -metrics-listen ${val}"
+
+    append_udpgw_flag_if_set cmd "-max-frame" "$(get_udpgw_conf_value "$port" "MAX_FRAME" "")"
+    append_udpgw_flag_if_set cmd "-write-chan" "$(get_udpgw_conf_value "$port" "WRITE_CHAN" "")"
+    val=$(get_udpgw_conf_value "$port" "UDP_BIND" "")
+    [[ -n "$val" ]] && cmd+=" -udp-bind ${val}"
+    append_udpgw_flag_if_set cmd "-udp-rbuf" "$(get_udpgw_conf_value "$port" "UDP_RBUF" "")"
+    append_udpgw_flag_if_set cmd "-udp-wbuf" "$(get_udpgw_conf_value "$port" "UDP_WBUF" "")"
+    val=$(get_udpgw_conf_value "$port" "MAP_TTL" "")
+    [[ -n "$val" ]] && cmd+=" -map-ttl ${val}"
+    val=$(get_udpgw_conf_value "$port" "REAP_EVERY" "")
+    [[ -n "$val" ]] && cmd+=" -reap-every ${val}"
+    val=$(get_udpgw_conf_value "$port" "IDLE_TIMEOUT" "")
+    [[ -n "$val" ]] && cmd+=" -idle-timeout ${val}"
+    append_udpgw_flag_if_set cmd "-max-client-conns" "$(get_udpgw_conf_value "$port" "MAX_CLIENT_CONNS" "")"
+    append_udpgw_flag_if_set cmd "-max-map-entries" "$(get_udpgw_conf_value "$port" "MAX_MAP_ENTRIES" "")"
+    append_udpgw_flag_if_set cmd "-max-clients" "$(get_udpgw_conf_value "$port" "MAX_CLIENTS" "")"
+    val=$(get_udpgw_conf_value "$port" "AUTO_RESTART_INTERVAL" "")
+    [[ -n "$val" ]] && cmd+=" -auto-restart-interval ${val}"
+    val=$(get_udpgw_conf_value "$port" "AUTO_RESTART_GRACE" "")
+    [[ -n "$val" ]] && cmd+=" -auto-restart-grace ${val}"
+
+    printf '%s' "$cmd"
+}
+
+apply_udpgw_service() {
+    local port="$1"
+    local restart="${2:-false}"
+    local service_name exec_start listen
 
     if ! is_udpgw_installed; then
-        print_error "Binário udpgw não encontrado em ${UDPGW_BIN}."
-        print_info "Use a opção Instalar/Atualizar binário no menu UDP Gateway."
+        print_error "Binário udpgw não encontrado."
         return 1
     fi
 
-    ensure_udpgw_config
-    listen=$(get_udpgw_config_value "LISTEN")
-    listen=${listen:-$UDPGW_DEFAULT_LISTEN}
-    exec_start=$(build_udpgw_exec_start)
+    service_name=$(get_udpgw_service_name "$port")
+    listen=$(get_udpgw_conf_value "$port" "LISTEN" "0.0.0.0:${port}")
+    exec_start=$(build_udpgw_command_from_conf "$port")
 
-    print_info "Criando serviço systemd udpgw..."
-
-    sudo tee "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service" >/dev/null <<EOF
+    sudo tee "/etc/systemd/system/${service_name}.service" >/dev/null <<EOF
 [Unit]
-Description=${PROJECT_NAME} UDP Gateway (BadVPN udpgw)
+Description=${PROJECT_NAME} UDP Gateway port ${port}
 After=network.target
 
 [Service]
@@ -3240,221 +3338,412 @@ WantedBy=multi-user.target
 EOF
 
     sudo systemctl daemon-reload
-    print_success "Serviço udpgw configurado (listen=${listen})."
+    if [[ "$restart" == "true" ]]; then
+        sudo systemctl enable "$service_name" >/dev/null 2>&1 || true
+        sudo systemctl restart "$service_name"
+    fi
+    return 0
 }
 
-udpgw_start_server() {
-    print_header
-    ensure_udpgw_config
+select_udpgw_port_interactive() {
+    local prompt="${1:-Selecione a porta TCP do gateway}"
+    local ports=() port choice i
 
+    migrate_legacy_udpgw_if_needed || true
+    ports=()
+    while IFS= read -r port; do
+        [[ -n "$port" ]] && ports+=("$port")
+    done < <(list_configured_udpgw_ports | tr ',' '\n' | grep -E '^[0-9]+$' || true)
+    if [[ ${#ports[@]} -eq 0 ]]; then
+        print_error "Nenhuma porta udpgw configurada."
+        return 1
+    fi
+
+    echo -e "${BLUE}${prompt}:${RESET}"
+    for i in "${!ports[@]}"; do
+        port="${ports[$i]}"
+        local st="OFF"
+        is_udpgw_port_active "$port" && st="ON"
+        echo " $((i + 1))) ${port} [${st}] listen=$(get_udpgw_conf_value "$port" LISTEN "0.0.0.0:${port}")"
+    done
+    read -rp "> " choice
+    if [[ "$choice" =~ ^[1-9][0-9]*$ ]] && ((choice >= 1 && choice <= ${#ports[@]})); then
+        echo "${ports[$((choice - 1))]}"
+        return 0
+    fi
+    print_error "Escolha inválida."
+    return 1
+}
+
+show_udpgw_execstart_line() {
+    local port="$1"
+    local service_name exec_line
+    service_name=$(get_udpgw_service_name "$port")
+    exec_line=$(systemctl cat "$service_name" 2>/dev/null | grep -E '^ExecStart=' | head -n1 | sed 's/^ExecStart=//')
+    if [[ -n "$exec_line" ]]; then
+        echo -e "${GRAY}${exec_line}${RESET}"
+    else
+        print_warning "Unit systemd ainda não existe para porta ${port}."
+    fi
+}
+
+prompt_udpgw_advanced_options() {
+    local port="$1"
+    local choice val
+
+    UDPGW_ADV_PORT="$port"
+    while true; do
+        print_header
+        refresh_menu_layout
+        print_box_open
+        print_box_heading "OPCOES AVANCADAS — porta ${port}" "$CYAN"
+        print_box_divider
+        print_box_line "${WHITE}  1 • Listen: ${CYAN}$(get_udpgw_conf_value "$port" LISTEN "0.0.0.0:${port}")${RESET}"
+        print_box_line "${WHITE}  2 • Debug: ${CYAN}$(get_udpgw_conf_value "$port" DEBUG false)${RESET}"
+        print_box_line "${WHITE}  3 • Metrics: ${CYAN}$(get_udpgw_conf_value "$port" METRICS_LISTEN "")${RESET}"
+        print_box_line "${WHITE}  4 • Max frame / write-chan: ${CYAN}$(get_udpgw_conf_value "$port" MAX_FRAME "") / $(get_udpgw_conf_value "$port" WRITE_CHAN "")${RESET}"
+        print_box_line "${WHITE}  5 • UDP bind / rbuf / wbuf${RESET}"
+        print_box_line "${WHITE}  6 • map-ttl / reap-every / idle-timeout${RESET}"
+        print_box_line "${WHITE}  7 • max-client-conns / max-map / max-clients${RESET}"
+        print_box_line "${WHITE}  8 • auto-restart interval / grace${RESET}"
+        print_box_line "${WHITE}  9 • Ver ExecStart${RESET}"
+        print_box_line "${WHITE}  S • Salvar e aplicar systemd${RESET}"
+        print_box_divider
+        render_menu_option "0 • Voltar" "red"
+        print_box_close
+        echo
+
+        read -rp "$(echo -e "${BLUE}Selecione [0-9/S]:${RESET} ")" choice
+        case "$choice" in
+        1)
+            val=$(prompt_with_default "Listen (-listen)" "$(get_udpgw_conf_value "$port" LISTEN "0.0.0.0:${port}")")
+            set_udpgw_conf_key "$port" "LISTEN" "$val"
+            ;;
+        2)
+            if confirm_action "Ativar debug (-debug)?" "$([[ "$(get_udpgw_conf_value "$port" DEBUG false)" == "true" ]] && echo s || echo n)"; then
+                set_udpgw_conf_key "$port" "DEBUG" "true"
+            else
+                set_udpgw_conf_key "$port" "DEBUG" "false"
+            fi
+            ;;
+        3)
+            val=$(prompt_with_default "Metrics listen (-metrics-listen, vazio=padrao binario)" "$(get_udpgw_conf_value "$port" METRICS_LISTEN "")")
+            set_udpgw_conf_key "$port" "METRICS_LISTEN" "$val"
+            ;;
+        4)
+            val=$(prompt_with_default "Max frame bytes (-max-frame, vazio=padrao)" "$(get_udpgw_conf_value "$port" MAX_FRAME "")")
+            set_udpgw_conf_key "$port" "MAX_FRAME" "$val"
+            val=$(prompt_with_default "Write channel (-write-chan, vazio=padrao)" "$(get_udpgw_conf_value "$port" WRITE_CHAN "")")
+            set_udpgw_conf_key "$port" "WRITE_CHAN" "$val"
+            ;;
+        5)
+            val=$(prompt_with_default "UDP bind IP (-udp-bind)" "$(get_udpgw_conf_value "$port" UDP_BIND "")")
+            set_udpgw_conf_key "$port" "UDP_BIND" "$val"
+            val=$(prompt_with_default "UDP read buffer (-udp-rbuf)" "$(get_udpgw_conf_value "$port" UDP_RBUF "")")
+            set_udpgw_conf_key "$port" "UDP_RBUF" "$val"
+            val=$(prompt_with_default "UDP write buffer (-udp-wbuf)" "$(get_udpgw_conf_value "$port" UDP_WBUF "")")
+            set_udpgw_conf_key "$port" "UDP_WBUF" "$val"
+            ;;
+        6)
+            val=$(prompt_with_default "Map TTL (-map-ttl, ex: 90s)" "$(get_udpgw_conf_value "$port" MAP_TTL "")")
+            set_udpgw_conf_key "$port" "MAP_TTL" "$val"
+            val=$(prompt_with_default "Reap every (-reap-every, ex: 10s)" "$(get_udpgw_conf_value "$port" REAP_EVERY "")")
+            set_udpgw_conf_key "$port" "REAP_EVERY" "$val"
+            val=$(prompt_with_default "Idle timeout (-idle-timeout, ex: 2m)" "$(get_udpgw_conf_value "$port" IDLE_TIMEOUT "")")
+            set_udpgw_conf_key "$port" "IDLE_TIMEOUT" "$val"
+            ;;
+        7)
+            val=$(prompt_with_default "Max client conns (-max-client-conns)" "$(get_udpgw_conf_value "$port" MAX_CLIENT_CONNS "")")
+            set_udpgw_conf_key "$port" "MAX_CLIENT_CONNS" "$val"
+            val=$(prompt_with_default "Max map entries (-max-map-entries)" "$(get_udpgw_conf_value "$port" MAX_MAP_ENTRIES "")")
+            set_udpgw_conf_key "$port" "MAX_MAP_ENTRIES" "$val"
+            val=$(prompt_with_default "Max clients (-max-clients)" "$(get_udpgw_conf_value "$port" MAX_CLIENTS "")")
+            set_udpgw_conf_key "$port" "MAX_CLIENTS" "$val"
+            ;;
+        8)
+            val=$(prompt_with_default "Auto restart interval (-auto-restart-interval)" "$(get_udpgw_conf_value "$port" AUTO_RESTART_INTERVAL "")")
+            set_udpgw_conf_key "$port" "AUTO_RESTART_INTERVAL" "$val"
+            val=$(prompt_with_default "Auto restart grace (-auto-restart-grace)" "$(get_udpgw_conf_value "$port" AUTO_RESTART_GRACE "")")
+            set_udpgw_conf_key "$port" "AUTO_RESTART_GRACE" "$val"
+            ;;
+        9)
+            show_udpgw_execstart_line "$port"
+            pause
+            ;;
+        s|S)
+            local was="false"
+            is_udpgw_port_active "$port" && was="true"
+            apply_udpgw_service "$port" "$was"
+            print_success "Configuracao aplicada na porta ${port}."
+            show_udpgw_execstart_line "$port"
+            pause
+            ;;
+        0) return 0 ;;
+        *) print_error "Opcao invalida: $choice" ;;
+        esac
+    done
+}
+
+udpgw_create_port() {
+    print_header
     if ! is_udpgw_installed; then
-        print_warning "Binário não instalado. Baixando versão mais recente..."
+        print_warning "Binario nao instalado. Baixando..."
         download_udpgw_binary || { pause; return 1; }
     fi
 
-    if [[ ! -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service" ]]; then
-        create_udpgw_systemd_service || { pause; return 1; }
-    else
-        create_udpgw_systemd_service || true
-    fi
+    local port
+    port=$(prompt_with_default "Porta TCP do gateway (-listen)" "$UDPGW_DEFAULT_PORT")
+    validate_port "$port" || { pause; return 1; }
 
-    print_info "Iniciando ${UDPGW_SERVICE_NAME}..."
-    if sudo systemctl enable "$UDPGW_SERVICE_NAME" >/dev/null 2>&1 \
-        && sudo systemctl restart "$UDPGW_SERVICE_NAME"; then
-        if is_udpgw_active; then
-            local listen_active
-            listen_active=$(get_udpgw_config_value "LISTEN")
-            listen_active=${listen_active:-$UDPGW_DEFAULT_LISTEN}
-            print_success "UDP Gateway ativo em ${listen_active}"
-        else
-            print_error "Serviço pode não ter iniciado corretamente."
-            print_info "Logs: sudo journalctl -u ${UDPGW_SERVICE_NAME} -n 30 --no-pager"
+    local existing
+    existing=$(list_configured_udpgw_ports)
+    if [[ ",${existing}," == *",${port},"* ]]; then
+        print_warning "Porta ${port} ja configurada."
+    else
+        if ! check_port_available "$port"; then
+            pause
+            return 1
         fi
-    else
-        print_error "Falha ao iniciar o serviço udpgw."
+        write_udpgw_conf_new "$port"
+        print_success "Config criada: $(get_udpgw_config_file "$port")"
+    fi
+
+    if confirm_action "Abrir opcoes avancadas antes de iniciar?" "n"; then
+        prompt_udpgw_advanced_options "$port"
+    fi
+
+    if apply_udpgw_service "$port" "true"; then
+        if is_udpgw_port_active "$port"; then
+            print_success "UDP Gateway ativo na porta ${port}."
+        else
+            print_error "Servico pode nao ter iniciado."
+            print_info "Logs: journalctl -u $(get_udpgw_service_name "$port") -n 30 --no-pager"
+        fi
     fi
     pause
 }
 
-udpgw_stop_server() {
-    if is_udpgw_active; then
-        print_info "Parando ${UDPGW_SERVICE_NAME}..."
-        sudo systemctl stop "$UDPGW_SERVICE_NAME"
-        print_success "UDP Gateway parado."
-    else
-        print_error "UDP Gateway não está ativo."
-    fi
+udpgw_start_port() {
+    local port was="false"
+    port=$(select_udpgw_port_interactive "Porta para iniciar") || { pause; return 1; }
+    is_udpgw_port_active "$port" && was="true"
+    apply_udpgw_service "$port" "true"
+    print_success "Porta ${port} iniciada."
     pause
 }
 
-udpgw_restart_server() {
-    if [[ -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service" ]]; then
-        print_info "Reiniciando ${UDPGW_SERVICE_NAME}..."
-        sudo systemctl restart "$UDPGW_SERVICE_NAME"
-        print_success "UDP Gateway reiniciado."
-    else
-        print_error "Serviço udpgw não configurado."
-    fi
+udpgw_stop_port() {
+    local port sn
+    port=$(select_udpgw_port_interactive "Porta para parar") || { pause; return 1; }
+    sn=$(get_udpgw_service_name "$port")
+    sudo systemctl stop "$sn" 2>/dev/null || true
+    print_success "Porta ${port} parada."
     pause
 }
 
-udpgw_show_status() {
+udpgw_restart_port() {
+    local port sn
+    port=$(select_udpgw_port_interactive "Porta para reiniciar") || { pause; return 1; }
+    sn=$(get_udpgw_service_name "$port")
+    sudo systemctl restart "$sn"
+    print_success "Porta ${port} reiniciada."
+    pause
+}
+
+udpgw_show_port_status() {
+    local port listen metrics debug
+    port=$(select_udpgw_port_interactive "Porta para status") || { pause; return 1; }
+    listen=$(get_udpgw_conf_value "$port" LISTEN "0.0.0.0:${port}")
+    metrics=$(get_udpgw_conf_value "$port" METRICS_LISTEN "")
+    debug=$(get_udpgw_conf_value "$port" DEBUG "false")
+
     print_header
-
-    local listen_val debug_val metrics_val
-    listen_val=$(get_udpgw_config_value "LISTEN")
-    debug_val=$(get_udpgw_config_value "DEBUG")
-    metrics_val=$(get_udpgw_config_value "METRICS_LISTEN")
-    listen_val=${listen_val:-$UDPGW_DEFAULT_LISTEN}
-    debug_val=${debug_val:-false}
-    metrics_val=${metrics_val:-127.0.0.1:9091}
-
     print_box_open
-    print_box_line "${CYAN}  STATUS UDP GATEWAY${RESET}"
+    print_box_heading "STATUS — porta ${port}" "$CYAN"
     print_box_divider
-
-    if is_udpgw_active; then
+    if is_udpgw_port_active "$port"; then
         print_box_line "${WHITE}  Status: $(mark_online)${RESET}"
     else
         print_box_line "${WHITE}  Status: $(mark_offline)${RESET}"
     fi
-
-    print_box_line "${WHITE}  Listen: ${BLUE}${listen_val}${RESET}"
-    print_box_line "${WHITE}  Debug: ${BLUE}${debug_val}${RESET}"
-    print_box_line "${WHITE}  Metrics: ${BLUE}${metrics_val}${RESET}"
-    print_box_line "${WHITE}  Versão: ${BLUE}v$(get_installed_udpgw_version_label)${RESET}"
-    print_box_line "${WHITE}  Binário: ${BLUE}${UDPGW_BIN}${RESET}"
+    print_box_line "${WHITE}  Listen: ${BLUE}${listen}${RESET}"
+    print_box_line "${WHITE}  Metrics: ${BLUE}${metrics:-padrao binario}${RESET}"
+    print_box_line "${WHITE}  Debug: ${BLUE}${debug}${RESET}"
+    print_box_line "${WHITE}  Config: ${BLUE}$(get_udpgw_config_file "$port")${RESET}"
     print_box_close
     echo
+    show_udpgw_execstart_line "$port"
     pause
 }
 
-udpgw_view_logs() {
-    print_info "Logs do udpgw (Ctrl+C para sair)..."
-    echo
-    sudo journalctl -u "$UDPGW_SERVICE_NAME" -f
+udpgw_view_port_logs() {
+    local port sn
+    port=$(select_udpgw_port_interactive "Porta para logs") || { pause; return 1; }
+    sn=$(get_udpgw_service_name "$port")
+    print_info "Logs ${sn} (Ctrl+C para sair)..."
+    sudo journalctl -u "$sn" -f
     pause
 }
 
-udpgw_change_listen() {
-    print_header
-    ensure_udpgw_config
-
-    local current new_listen
-    current=$(get_udpgw_config_value "LISTEN")
-    current=${current:-$UDPGW_DEFAULT_LISTEN}
-
-    print_box_open
-    print_box_line "${WHITE}Listen atual: ${CYAN}${current}${RESET}"
-    print_box_close
-    echo
-
-    echo -e "${BLUE}Novo endereço listen (Enter mantém [${current}]):${RESET}"
-    read -rp "> " new_listen
-    new_listen=${new_listen:-$current}
-
-    set_udpgw_config_value "LISTEN" "$new_listen"
-    print_success "Listen atualizado para ${new_listen}."
-
-    if [[ -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service" ]]; then
-        create_udpgw_systemd_service
-        if is_udpgw_active; then
-            sudo systemctl restart "$UDPGW_SERVICE_NAME"
-            print_success "Serviço reiniciado com nova configuração."
-        fi
+udpgw_remove_port() {
+    local port sn
+    port=$(select_udpgw_port_interactive "Porta para remover") || { pause; return 1; }
+    if ! confirm_action "Remover porta ${port} (servico + config)?" "n"; then
+        pause
+        return 0
     fi
+    sn=$(get_udpgw_service_name "$port")
+    sudo systemctl stop "$sn" 2>/dev/null || true
+    sudo systemctl disable "$sn" 2>/dev/null || true
+    sudo rm -f "/etc/systemd/system/${sn}.service"
+    sudo rm -f "$(get_udpgw_config_file "$port")"
+    sudo systemctl daemon-reload
+    print_success "Porta ${port} removida."
     pause
 }
 
-udpgw_toggle_debug() {
-    ensure_udpgw_config
-    local current new_value
-    current=$(get_udpgw_config_value "DEBUG")
-    if [[ "$current" == "true" ]]; then
-        new_value="false"
+get_udpgw_metrics_base_url_for_port() {
+    local port="$1"
+    local listen metrics_url
+    listen=$(get_udpgw_conf_value "$port" "METRICS_LISTEN" "")
+    listen=${listen:-127.0.0.1:9091}
+    if [[ "$listen" == *"://"* ]]; then
+        metrics_url="${listen%/}"
     else
-        new_value="true"
+        metrics_url="http://${listen}"
     fi
-    set_udpgw_config_value "DEBUG" "$new_value"
-    print_success "Debug=${new_value}"
+    printf '%s' "$metrics_url"
+}
 
-    if [[ -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service" ]]; then
-        create_udpgw_systemd_service
-        is_udpgw_active && sudo systemctl restart "$UDPGW_SERVICE_NAME"
-    fi
-    pause
+udpgw_show_metrics_for_port() {
+    local port="$1"
+    while true; do
+        print_header
+        local metrics_url body active total rejected dropped mapping panics read_err udp_err
+        metrics_url=$(get_udpgw_metrics_base_url_for_port "$port")
+
+        print_box_open
+        print_box_heading "METRICAS — porta ${port}" "$CYAN"
+        print_box_divider
+        if is_udpgw_port_active "$port"; then
+            print_box_line "${WHITE}  Servico: $(mark_online)${RESET}"
+        else
+            print_box_line "${WHITE}  Servico: $(mark_offline)${RESET}"
+        fi
+        print_box_line "${WHITE}  Endpoint: ${BLUE}${metrics_url}/metrics${RESET}"
+        print_box_divider
+
+        body=$(curl -fsSL --connect-timeout 3 --max-time 8 "${metrics_url}/metrics" 2>/dev/null || true)
+        if [[ -z "$body" ]]; then
+            print_box_line "${RED}  Nao foi possivel ler metricas.${RESET}"
+        else
+            active=$(parse_udpgw_metric "udpgw_active_clients" "$body")
+            total=$(parse_udpgw_metric "udpgw_clients_total" "$body")
+            rejected=$(parse_udpgw_metric "udpgw_clients_rejected_total" "$body")
+            dropped=$(parse_udpgw_metric "udpgw_dropped_replies_total" "$body")
+            mapping=$(parse_udpgw_metric "udpgw_mapping_size" "$body")
+            panics=$(parse_udpgw_metric "udpgw_panics_total" "$body")
+            read_err=$(parse_udpgw_metric "udpgw_read_errors_total" "$body")
+            udp_err=$(parse_udpgw_metric "udpgw_udp_write_errors_total" "$body")
+            print_box_line "${WHITE}  Clientes ativos: ${GREEN}${active}${RESET}"
+            format_udpgw_metric_line "Total aceitos" "$total"
+            format_udpgw_metric_line "Rejeitados" "$rejected" "true"
+            format_udpgw_metric_line "Respostas descartadas" "$dropped" "true"
+            format_udpgw_metric_line "Tamanho do mapa" "$mapping"
+            format_udpgw_metric_line "Panics" "$panics" "true"
+            format_udpgw_metric_line "Erros TCP" "$read_err" "true"
+            format_udpgw_metric_line "Erros UDP" "$udp_err" "true"
+        fi
+        print_box_close
+        echo
+        echo -e "${GRAY}Atualiza a cada 5s. Enter para voltar.${RESET}"
+        if read -r -t 5; then break; fi
+    done
+}
+
+udpgw_show_metrics_menu() {
+    local port
+    port=$(select_udpgw_port_interactive "Porta para metricas") || { pause; return 1; }
+    udpgw_show_metrics_for_port "$port"
+}
+
+udpgw_edit_advanced_menu() {
+    local port
+    port=$(select_udpgw_port_interactive "Porta para opcoes avancadas") || { pause; return 1; }
+    prompt_udpgw_advanced_options "$port"
 }
 
 udpgw_install_or_update() {
     print_header
-    print_info "Instalando/atualizando binário udpgw..."
+    print_info "Instalando/atualizando binario udpgw..."
     if download_udpgw_binary; then
-        if [[ -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service" ]]; then
-            create_udpgw_systemd_service
-            is_udpgw_active && sudo systemctl restart "$UDPGW_SERVICE_NAME"
-        fi
+        local port
+        for port in $(list_configured_udpgw_ports | tr ',' ' '); do
+            [[ -z "$port" ]] && continue
+            local was="false"
+            is_udpgw_port_active "$port" && was="true"
+            apply_udpgw_service "$port" "$was"
+        done
     fi
     pause
 }
 
 print_udpgw_menu() {
+    local ports_status
+    ports_status=$(format_udpgw_ports_status)
     print_box_open
     print_box_heading "UDP GATEWAY (udpgw)"
     print_box_divider
-
+    print_box_line "${WHITE}  Portas: ${CYAN}${ports_status}${RESET}"
+    print_box_divider
     local menu_items=(
-        "1 • Iniciar Gateway"
-        "2 • Parar Gateway"
-        "3 • Reiniciar Gateway"
-        "4 • Status & Configuração"
-        "5 • Painel de Métricas"
-        "6 • Visualizar Logs"
-        "7 • Alterar Listen"
-        "8 • Alternar Debug"
-        "9 • Instalar/Atualizar binário"
+        "1 • Abrir / criar porta"
+        "2 • Iniciar porta"
+        "3 • Parar porta"
+        "4 • Reiniciar porta"
+        "5 • Status & ExecStart"
+        "6 • Painel de metricas"
+        "7 • Visualizar logs"
+        "8 • Opcoes avancadas (flags)"
+        "9 • Instalar/atualizar binario"
+        "A • Remover porta"
         "0 • Voltar ao Menu Inicial"
     )
-
     for item in "${menu_items[@]}"; do
-        if [[ $item == *"Voltar"* ]]; then
+        if [[ $item == *"Voltar"* || $item == *"Remover"* ]]; then
             render_menu_option "$item" "red"
         else
             render_menu_option "$item"
         fi
     done
-
     print_box_close
     echo
 }
 
 udpgw_main_menu() {
+    migrate_legacy_udpgw_if_needed || true
     while true; do
         print_header
         print_status
         print_udpgw_menu
-
         local option
-        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-9]:${RESET} ")" option
-
+        read -rp "$(echo -e "${BLUE}Selecione [0-9/A]:${RESET} ")" option
         case "$option" in
-        1) udpgw_start_server ;;
-        2) udpgw_stop_server ;;
-        3) udpgw_restart_server ;;
-        4) udpgw_show_status ;;
-        5) udpgw_show_metrics ;;
-        6) udpgw_view_logs ;;
-        7) udpgw_change_listen ;;
-        8) udpgw_toggle_debug ;;
+        1) udpgw_create_port ;;
+        2) udpgw_start_port ;;
+        3) udpgw_stop_port ;;
+        4) udpgw_restart_port ;;
+        5) udpgw_show_port_status ;;
+        6) udpgw_show_metrics_menu ;;
+        7) udpgw_view_port_logs ;;
+        8) udpgw_edit_advanced_menu ;;
         9) udpgw_install_or_update ;;
+        a|A) udpgw_remove_port ;;
         0) return 0 ;;
-        *)
-            print_error "Opção inválida: $option"
-            pause
-            ;;
+        *) print_error "Opcao invalida: $option"; pause ;;
         esac
     done
 }
-
 protocol_main_menu() {
     while true; do
         print_header
@@ -3765,10 +4054,20 @@ remove_completely() {
     fi
 
     if systemctl is-active --quiet "$UDPGW_SERVICE_NAME" 2>/dev/null; then
-        print_info "Parando serviço $UDPGW_SERVICE_NAME..."
+        print_info "Parando serviço legado $UDPGW_SERVICE_NAME..."
         sudo systemctl stop "$UDPGW_SERVICE_NAME"
         sudo systemctl disable "$UDPGW_SERVICE_NAME" 2>/dev/null
     fi
+
+    print_info "Parando serviços UDP Gateway..."
+    for service in /etc/systemd/system/${UDPGW_SERVICE_PREFIX}-*.service; do
+        [[ -f "$service" ]] || continue
+        local sn
+        sn=$(basename "$service")
+        sudo systemctl stop "$sn" 2>/dev/null || true
+        sudo systemctl disable "$sn" 2>/dev/null || true
+        sudo rm -f "$service"
+    done
 
     print_info "Parando serviço SSH Auth API..."
     if systemctl is-active --quiet ssh-auth-api; then
@@ -3802,7 +4101,6 @@ remove_completely() {
     sudo systemctl daemon-reload
     sudo systemctl reset-failed
     
-    print_info "Removendo arquivos de serviço..."
     sudo rm -f "/etc/systemd/system/$SERVICE_NAME.service"
     sudo rm -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service"
     
@@ -3816,7 +4114,7 @@ remove_completely() {
     print_info "Removendo configurações e dados..."
     sudo rm -rf "$(dirname "$TOKEN_FILE")"
     sudo rm -rf "$(dirname "$CONFIG_FILE")"
-    sudo rm -rf "$(dirname "$UDPGW_CONFIG_FILE")"
+    sudo rm -rf /etc/udpgw
     sudo rm -f "$UDPGW_VERSION_FILE"
     sudo rm -rf "$(dirname "$PROXY_TOKEN_VTPROXY")"
     sudo rm -rf "$DATA_DIR"
