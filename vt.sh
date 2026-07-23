@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="2026-07-22-udpgw-adv-menu"
+readonly MENU_REV="2026-07-22-udpgw-metrics-fix"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -3125,19 +3125,107 @@ set_udpgw_conf_key() {
     sudo chmod 644 "$file" 2>/dev/null || true
 }
 
+udpgw_metrics_port_from_listen() {
+    local listen="$1"
+    if [[ "$listen" =~ :([0-9]+)$ ]]; then
+        echo "${BASH_REMATCH[1]}"
+    fi
+}
+
 suggest_udpgw_metrics_listen() {
+    local except_port="${1:-}"
     local try_p="$UDPGW_METRICS_BASE"
-    while is_port_in_use "$try_p"; do
-        try_p=$((try_p + 1))
+    local reserved=() f port listen mport
+
+    for f in "$UDPGW_CONFIG_DIR"/udpgw-*.conf; do
+        [[ -f "$f" ]] || continue
+        port=$(basename "$f" .conf | sed -n 's/^udpgw-\([0-9]\+\)$/\1/p')
+        [[ -z "$port" || "$port" == "$except_port" ]] && continue
+        listen=$(grep '^METRICS_LISTEN=' "$f" 2>/dev/null | head -n1 | cut -d= -f2-)
+        mport=$(udpgw_metrics_port_from_listen "${listen:-127.0.0.1:9091}")
+        [[ -n "$mport" ]] && reserved+=("$mport")
+    done
+
+    while true; do
+        local taken="false"
+        for mport in "${reserved[@]}"; do
+            [[ "$mport" == "$try_p" ]] && taken="true" && break
+        done
+        if [[ "$taken" == true ]] || is_port_in_use "$try_p"; then
+            try_p=$((try_p + 1))
+            continue
+        fi
+        break
     done
     echo "127.0.0.1:${try_p}"
+}
+
+udpgw_fix_all_metrics_collisions() {
+    local ports=() port listen mport try_p
+    local -a used=()
+    local -a changed=()
+
+    while IFS= read -r port; do
+        [[ -n "$port" ]] && ports+=("$port")
+    done < <(list_configured_udpgw_ports | tr ',' '\n' | sort -n)
+
+    for port in "${ports[@]}"; do
+        listen=$(get_udpgw_conf_value "$port" "METRICS_LISTEN" "")
+        [[ -z "$listen" ]] && listen="127.0.0.1:9091"
+        mport=$(udpgw_metrics_port_from_listen "$listen")
+        [[ -z "$mport" ]] && mport="$UDPGW_METRICS_BASE"
+
+        local collision="false"
+        for u in "${used[@]}"; do
+            [[ "$u" == "$mport" ]] && collision="true" && break
+        done
+
+        if [[ "$collision" == true ]]; then
+            try_p="$UDPGW_METRICS_BASE"
+            while [[ " ${used[*]} " == *" $try_p "* ]]; do
+                try_p=$((try_p + 1))
+            done
+            listen="127.0.0.1:${try_p}"
+            set_udpgw_conf_key "$port" "METRICS_LISTEN" "$listen"
+            mport=$try_p
+            changed+=("$port")
+        fi
+        used+=("$mport")
+    done
+
+    for port in "${changed[@]}"; do
+        local was="false"
+        is_udpgw_port_active "$port" && was="true"
+        apply_udpgw_service "$port" "$was" || true
+    done
+}
+
+udpgw_metrics_conflict_with() {
+    local port="$1"
+    local listen mport other other_listen other_mport
+
+    listen=$(get_udpgw_conf_value "$port" "METRICS_LISTEN" "")
+    [[ -z "$listen" ]] && listen="127.0.0.1:9091"
+    mport=$(udpgw_metrics_port_from_listen "$listen")
+
+    for other in $(list_configured_udpgw_ports | tr ',' ' '); do
+        [[ -z "$other" || "$other" == "$port" ]] && continue
+        other_listen=$(get_udpgw_conf_value "$other" "METRICS_LISTEN" "")
+        [[ -z "$other_listen" ]] && other_listen="127.0.0.1:9091"
+        other_mport=$(udpgw_metrics_port_from_listen "$other_listen")
+        if [[ -n "$mport" && "$mport" == "$other_mport" ]]; then
+            echo "$other"
+            return 0
+        fi
+    done
+    return 1
 }
 
 write_udpgw_conf_new() {
     local port="$1"
     local metrics_listen listen
 
-    metrics_listen=$(suggest_udpgw_metrics_listen)
+    metrics_listen=$(suggest_udpgw_metrics_listen "$port")
     listen="0.0.0.0:${port}"
 
     sudo tee "$(get_udpgw_config_file "$port")" >/dev/null <<EOF
@@ -3379,7 +3467,8 @@ is_udpgw_port_configured() {
 }
 
 select_udpgw_port_interactive() {
-    local prompt="${1:-Digite a porta TCP do gateway}"
+    local _result_var="${1:?select_udpgw_port_interactive: variavel de retorno obrigatoria}"
+    local prompt="${2:-Digite a porta TCP do gateway}"
     local port configured
 
     configured=$(list_configured_udpgw_ports)
@@ -3412,7 +3501,7 @@ select_udpgw_port_interactive() {
         return 1
     fi
 
-    printf '%s' "$port"
+    printf -v "$_result_var" '%s' "$port"
     return 0
 }
 
@@ -3482,6 +3571,10 @@ udpgw_advanced_network_submenu() {
             ;;
         2)
             val=$(prompt_with_default "Metrics (-metrics-listen, vazio=padrao)" "$(get_udpgw_conf_value "$port" METRICS_LISTEN "")")
+            if [[ -z "$val" && "$(list_configured_udpgw_ports)" == *","* ]]; then
+                val=$(suggest_udpgw_metrics_listen "$port")
+                print_info "Multi-instancia: metrics unico sugerido ${val}"
+            fi
             set_udpgw_conf_key "$port" "METRICS_LISTEN" "$val"
             ;;
         3)
@@ -3730,7 +3823,7 @@ udpgw_create_port() {
 
 udpgw_start_port() {
     local port was="false"
-    port=$(select_udpgw_port_interactive "Porta para iniciar") || { pause; return 1; }
+    select_udpgw_port_interactive port "Porta para iniciar" || { pause; return 1; }
     is_udpgw_port_active "$port" && was="true"
     apply_udpgw_service "$port" "true"
     print_success "Porta ${port} iniciada."
@@ -3739,7 +3832,7 @@ udpgw_start_port() {
 
 udpgw_stop_port() {
     local port sn
-    port=$(select_udpgw_port_interactive "Porta para parar") || { pause; return 1; }
+    select_udpgw_port_interactive port "Porta para parar" || { pause; return 1; }
     sn=$(get_udpgw_service_name "$port")
     sudo systemctl stop "$sn" 2>/dev/null || true
     print_success "Porta ${port} parada."
@@ -3748,7 +3841,7 @@ udpgw_stop_port() {
 
 udpgw_restart_port() {
     local port sn
-    port=$(select_udpgw_port_interactive "Porta para reiniciar") || { pause; return 1; }
+    select_udpgw_port_interactive port "Porta para reiniciar" || { pause; return 1; }
     sn=$(get_udpgw_service_name "$port")
     sudo systemctl restart "$sn"
     print_success "Porta ${port} reiniciada."
@@ -3757,7 +3850,7 @@ udpgw_restart_port() {
 
 udpgw_show_port_status() {
     local port listen metrics debug
-    port=$(select_udpgw_port_interactive "Porta para status") || { pause; return 1; }
+    select_udpgw_port_interactive port "Porta para status" || { pause; return 1; }
     listen=$(get_udpgw_conf_value "$port" LISTEN "0.0.0.0:${port}")
     metrics=$(get_udpgw_conf_value "$port" METRICS_LISTEN "")
     debug=$(get_udpgw_conf_value "$port" DEBUG "false")
@@ -3783,7 +3876,7 @@ udpgw_show_port_status() {
 
 udpgw_view_port_logs() {
     local port sn
-    port=$(select_udpgw_port_interactive "Porta para logs") || { pause; return 1; }
+    select_udpgw_port_interactive port "Porta para logs" || { pause; return 1; }
     sn=$(get_udpgw_service_name "$port")
     print_info "Logs ${sn} (Ctrl+C para sair)..."
     sudo journalctl -u "$sn" -f
@@ -3792,7 +3885,7 @@ udpgw_view_port_logs() {
 
 udpgw_remove_port() {
     local port sn
-    port=$(select_udpgw_port_interactive "Porta para remover") || { pause; return 1; }
+    select_udpgw_port_interactive port "Porta para remover" || { pause; return 1; }
     if ! confirm_action "Remover porta ${port} (servico + config)?" "n"; then
         pause
         return 0
@@ -3822,26 +3915,59 @@ get_udpgw_metrics_base_url_for_port() {
 
 udpgw_show_metrics_for_port() {
     local port="$1"
-    while true; do
-        print_header
-        local metrics_url body active total rejected dropped mapping panics read_err udp_err
-        metrics_url=$(get_udpgw_metrics_base_url_for_port "$port")
+    local metrics_url body svc_active metrics_ok listen_tcp metrics_cfg conflict_port
 
-        print_box_open
-        print_box_heading "METRICAS - porta ${port}" "$CYAN"
-        print_box_divider
-        if is_udpgw_port_active "$port"; then
-            print_box_line "${WHITE}  Servico: $(mark_online)${RESET}"
-        else
-            print_box_line "${WHITE}  Servico: $(mark_offline)${RESET}"
+    if [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]]; then
+        print_error "Porta invalida para metricas."
+        pause
+        return 1
+    fi
+
+    while true; do
+        echo
+        refresh_menu_layout
+        metrics_url=$(get_udpgw_metrics_base_url_for_port "$port")
+        listen_tcp=$(get_udpgw_conf_value "$port" LISTEN "0.0.0.0:${port}")
+        metrics_cfg=$(get_udpgw_conf_value "$port" "METRICS_LISTEN" "")
+        if [[ -z "$metrics_cfg" ]]; then
+            metrics_cfg="127.0.0.1:9091 (padrao binario)"
         fi
-        print_box_line "${WHITE}  Endpoint: ${BLUE}${metrics_url}/metrics${RESET}"
-        print_box_divider
+
+        svc_active="false"
+        is_udpgw_port_active "$port" && svc_active="true"
 
         body=$(curl -fsSL --connect-timeout 3 --max-time 8 "${metrics_url}/metrics" 2>/dev/null || true)
-        if [[ -z "$body" ]]; then
-            print_box_line "${RED}  Nao foi possivel ler metricas.${RESET}"
+        metrics_ok="false"
+        [[ -n "$body" ]] && metrics_ok="true"
+
+        print_box_open
+        print_box_heading "METRICAS UDPGW ${port}" "$CYAN"
+        print_box_divider
+        print_box_line "${WHITE}  TCP listen:${RESET}  ${CYAN}${listen_tcp}${RESET}"
+        print_box_line "${WHITE}  Metrics cfg:${RESET} ${CYAN}${metrics_cfg}${RESET}"
+        print_box_line "${WHITE}  Endpoint:${RESET}    ${BLUE}${metrics_url}/metrics${RESET}"
+        print_box_divider
+
+        if [[ "$svc_active" == "true" && "$metrics_ok" == "true" ]]; then
+            print_box_line "${WHITE}  Servico:${RESET}     $(mark_online)  ${GRAY}systemd + metrics OK${RESET}"
+        elif [[ "$svc_active" == "true" && "$metrics_ok" != "true" ]]; then
+            print_box_line "${WHITE}  Servico:${RESET}     $(mark_online)  ${YELLOW}metricas indisponiveis${RESET}"
+        elif [[ "$svc_active" != "true" && "$metrics_ok" == "true" ]]; then
+            print_box_line "${WHITE}  Servico:${RESET}     $(mark_offline) ${YELLOW}metricas respondendo${RESET}"
         else
+            print_box_line "${WHITE}  Servico:${RESET}     $(mark_offline)"
+        fi
+
+        if conflict_port=$(udpgw_metrics_conflict_with "$port" 2>/dev/null); then
+            print_box_line "${YELLOW}  AVISO: mesma porta metrics que TCP ${conflict_port}${RESET}"
+            print_box_line "${YELLOW}  Use opcoes avancadas ou reinicie o vt para corrigir.${RESET}"
+        fi
+        print_box_divider
+
+        if [[ "$metrics_ok" != "true" ]]; then
+            print_box_line "${RED}  Nao foi possivel ler metricas neste endpoint.${RESET}"
+        else
+            local active total rejected dropped mapping panics read_err udp_err
             active=$(parse_udpgw_metric "udpgw_active_clients" "$body")
             total=$(parse_udpgw_metric "udpgw_clients_total" "$body")
             rejected=$(parse_udpgw_metric "udpgw_clients_rejected_total" "$body")
@@ -3868,13 +3994,13 @@ udpgw_show_metrics_for_port() {
 
 udpgw_show_metrics_menu() {
     local port
-    port=$(select_udpgw_port_interactive "Porta para metricas") || { pause; return 1; }
+    select_udpgw_port_interactive port "Porta para metricas" || { pause; return 1; }
     udpgw_show_metrics_for_port "$port"
 }
 
 udpgw_edit_advanced_menu() {
     local port
-    port=$(select_udpgw_port_interactive "Porta para opcoes avancadas") || { pause; return 1; }
+    select_udpgw_port_interactive port "Porta para opcoes avancadas" || { pause; return 1; }
     prompt_udpgw_advanced_options "$port"
 }
 
@@ -3926,6 +4052,7 @@ print_udpgw_menu() {
 }
 
 udpgw_main_menu() {
+    udpgw_fix_all_metrics_collisions || true
     while true; do
         print_header
         print_status
@@ -4461,5 +4588,6 @@ check_token_on_startup
 run_quick_setup_first_time
 
 migrate_legacy_udpgw_if_needed || true
+udpgw_fix_all_metrics_collisions || true
 
 initial_menu
