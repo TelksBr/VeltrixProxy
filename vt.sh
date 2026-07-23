@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="2026-07-22-udpgw-metrics-live"
+readonly MENU_REV="25"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -509,7 +509,6 @@ print_status() {
         print_box_line "${WHITE}Proto:${CYAN}${port}${WHITE} TUN:${CYAN}${tun}${RESET}"
         print_box_line "${WHITE}Net: ${CYAN}${subnet}${RESET}"
         print_box_line "${WHITE}UDPgw: ${udpgw_status}${WHITE} ${CYAN}${udpgw_ports}${RESET}"
-        print_box_line "${GRAY}${MENU_REV}${RESET}"
     else
         print_box_line "${WHITE} Proto: ${status_badge}${BLUE} | Proxy: ${CYAN}${proxy_label}${RESET}"
         local tokens_line="${WHITE} Tokens proxy: ${proxy_tok}  proto: ${proto_tok}"
@@ -519,7 +518,6 @@ print_status() {
         print_box_line "$tokens_line"
         print_box_line "${WHITE} Porta proto: ${CYAN}${port}${WHITE} | Sub-rede: ${CYAN}${subnet}${WHITE} | TUN: ${CYAN}${tun}${RESET}"
         print_box_line "${WHITE} UDP Gateway: ${udpgw_status}${WHITE} portas ${CYAN}${udpgw_ports}${RESET}"
-        print_box_line "${WHITE} Menu: ${GRAY}${MENU_REV}${RESET}  (${MENU_BIN})"
     fi
     print_box_close
     echo
