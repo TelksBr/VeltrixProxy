@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="2026-07-22-udpgw-port-var-fix"
+readonly MENU_REV="2026-07-22-udpgw-metrics-live"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -3069,6 +3069,105 @@ format_udpgw_metric_line() {
     print_box_line "${WHITE}  ${label}: ${value_color}${value}${RESET}"
 }
 
+udpgw_metrics_value_color() {
+    local value="$1"
+    local warn="${2:-false}"
+    if [[ "$warn" == "true" && "$value" != "0" && "$value" != "0.0" && "$value" != "-" ]]; then
+        printf '%s' "$YELLOW"
+    else
+        printf '%s' "$CYAN"
+    fi
+}
+
+udpgw_metrics_cursor_hide() {
+    [[ -t 1 ]] || return 0
+    command -v tput >/dev/null 2>&1 && tput civis 2>/dev/null || printf '\033[?25l'
+}
+
+udpgw_metrics_cursor_show() {
+    [[ -t 1 ]] || return 0
+    command -v tput >/dev/null 2>&1 && tput cnorm 2>/dev/null || printf '\033[?25h'
+}
+
+udpgw_metrics_cursor_up() {
+    local n="$1"
+    [[ -t 1 && "$n" -gt 0 ]] || return 0
+    command -v tput >/dev/null 2>&1 && tput cuu "$n" 2>/dev/null || printf '\033[%dA' "$n"
+}
+
+udpgw_metrics_dyn_line() {
+    print_box_line "$1"
+    UDPGW_METRICS_DYN_LINES=$((UDPGW_METRICS_DYN_LINES + 1))
+}
+
+udpgw_metrics_dyn_kv() {
+    local label="$1"
+    local value="$2"
+    local warn="${3:-false}"
+    local value_color
+    value_color=$(udpgw_metrics_value_color "$value" "$warn")
+    udpgw_metrics_dyn_line "$(printf "${WHITE}  %-22s${RESET} ${value_color}%s${RESET}" "${label}:" "$value")"
+}
+
+udpgw_metrics_render_live_block() {
+    local port="$1"
+    local svc_active="$2"
+    local metrics_ok="$3"
+    local body="$4"
+
+    UDPGW_METRICS_DYN_LINES=0
+
+    if [[ "$svc_active" == "true" && "$metrics_ok" == "true" ]]; then
+        udpgw_metrics_dyn_line "${WHITE}  Servico:${RESET}             $(mark_online)  ${GRAY}systemd + metrics OK${RESET}"
+    elif [[ "$svc_active" == "true" ]]; then
+        udpgw_metrics_dyn_line "${WHITE}  Servico:${RESET}             $(mark_online)  ${YELLOW}metricas indisponiveis${RESET}"
+    elif [[ "$metrics_ok" == "true" ]]; then
+        udpgw_metrics_dyn_line "${WHITE}  Servico:${RESET}             $(mark_offline) ${YELLOW}metricas respondendo${RESET}"
+    else
+        udpgw_metrics_dyn_line "${WHITE}  Servico:${RESET}             $(mark_offline)"
+    fi
+
+    udpgw_metrics_dyn_line "${GRAY}  Atualizado:${RESET}           ${WHITE}$(date +%H:%M:%S)${RESET}"
+    print_box_divider
+    UDPGW_METRICS_DYN_LINES=$((UDPGW_METRICS_DYN_LINES + 1))
+
+    if [[ "$metrics_ok" != "true" ]]; then
+        udpgw_metrics_dyn_kv "Clientes ativos" "-"
+        udpgw_metrics_dyn_kv "Total aceitos" "-"
+        udpgw_metrics_dyn_kv "Rejeitados" "-"
+        udpgw_metrics_dyn_kv "Respostas descartadas" "-"
+        udpgw_metrics_dyn_kv "Tamanho do mapa" "-"
+        udpgw_metrics_dyn_kv "Panics" "-"
+        udpgw_metrics_dyn_kv "Erros TCP" "-"
+        udpgw_metrics_dyn_kv "Erros UDP" "-"
+    else
+        local active total rejected dropped mapping panics read_err udp_err
+        active=$(parse_udpgw_metric "udpgw_active_clients" "$body")
+        total=$(parse_udpgw_metric "udpgw_clients_total" "$body")
+        rejected=$(parse_udpgw_metric "udpgw_clients_rejected_total" "$body")
+        dropped=$(parse_udpgw_metric "udpgw_dropped_replies_total" "$body")
+        mapping=$(parse_udpgw_metric "udpgw_mapping_size" "$body")
+        panics=$(parse_udpgw_metric "udpgw_panics_total" "$body")
+        read_err=$(parse_udpgw_metric "udpgw_read_errors_total" "$body")
+        udp_err=$(parse_udpgw_metric "udpgw_udp_write_errors_total" "$body")
+        udpgw_metrics_dyn_kv "Clientes ativos" "$active" "false"
+        udpgw_metrics_dyn_kv "Total aceitos" "$total" "false"
+        udpgw_metrics_dyn_kv "Rejeitados" "$rejected" "true"
+        udpgw_metrics_dyn_kv "Respostas descartadas" "$dropped" "true"
+        udpgw_metrics_dyn_kv "Tamanho do mapa" "$mapping" "false"
+        udpgw_metrics_dyn_kv "Panics" "$panics" "true"
+        udpgw_metrics_dyn_kv "Erros TCP" "$read_err" "true"
+        udpgw_metrics_dyn_kv "Erros UDP" "$udp_err" "true"
+    fi
+
+    print_box_close
+    UDPGW_METRICS_DYN_LINES=$((UDPGW_METRICS_DYN_LINES + 1))
+
+    printf '\033[2K\r'
+    echo -e "${GRAY}  Live refresh 2s | Enter para voltar${RESET}"
+    UDPGW_METRICS_DYN_LINES=$((UDPGW_METRICS_DYN_LINES + 1))
+}
+
 UDPGW_ADV_PORT=""
 UDPGW_MIGRATION_CHECKED=""
 
@@ -3916,6 +4015,9 @@ get_udpgw_metrics_base_url_for_port() {
 udpgw_show_metrics_for_port() {
     local port="$1"
     local metrics_url body svc_active metrics_ok listen_tcp metrics_cfg conflict_port
+    local refresh_sec=2
+    local static_drawn="false"
+    local live_lines=0
 
     if [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]]; then
         print_error "Porta invalida para metricas."
@@ -3923,73 +4025,68 @@ udpgw_show_metrics_for_port() {
         return 1
     fi
 
-    while true; do
-        echo
-        refresh_menu_layout
-        metrics_url=$(get_udpgw_metrics_base_url_for_port "$port")
-        listen_tcp=$(get_udpgw_conf_value "$port" LISTEN "0.0.0.0:${port}")
-        metrics_cfg=$(get_udpgw_conf_value "$port" "METRICS_LISTEN" "")
-        if [[ -z "$metrics_cfg" ]]; then
-            metrics_cfg="127.0.0.1:9091 (padrao binario)"
-        fi
+    metrics_url=$(get_udpgw_metrics_base_url_for_port "$port")
+    listen_tcp=$(get_udpgw_conf_value "$port" LISTEN "0.0.0.0:${port}")
+    metrics_cfg=$(get_udpgw_conf_value "$port" "METRICS_LISTEN" "")
+    if [[ -z "$metrics_cfg" ]]; then
+        metrics_cfg="127.0.0.1:9091 (padrao binario)"
+    fi
+    conflict_port=$(udpgw_metrics_conflict_with "$port" 2>/dev/null || true)
 
+    udpgw_metrics_cursor_hide
+    clear
+    refresh_menu_layout
+
+    print_box_open
+    print_box_heading "METRICAS UDPGW ${port}" "$CYAN"
+    print_box_divider
+    print_box_line "${WHITE}  TCP listen:${RESET}  ${CYAN}${listen_tcp}${RESET}"
+    print_box_line "${WHITE}  Metrics cfg:${RESET} ${CYAN}${metrics_cfg}${RESET}"
+    print_box_line "${WHITE}  Endpoint:${RESET}    ${BLUE}${metrics_url}/metrics${RESET}"
+    if [[ -n "$conflict_port" ]]; then
+        print_box_line "${YELLOW}  AVISO: metrics compartilhada com TCP ${conflict_port}${RESET}"
+    fi
+    print_box_divider
+    static_drawn="true"
+
+    while true; do
         svc_active="false"
         is_udpgw_port_active "$port" && svc_active="true"
 
-        body=$(curl -fsSL --connect-timeout 3 --max-time 8 "${metrics_url}/metrics" 2>/dev/null || true)
+        body=$(curl -fsSL --connect-timeout 2 --max-time 5 "${metrics_url}/metrics" 2>/dev/null || true)
         metrics_ok="false"
         [[ -n "$body" ]] && metrics_ok="true"
 
-        print_box_open
-        print_box_heading "METRICAS UDPGW ${port}" "$CYAN"
-        print_box_divider
-        print_box_line "${WHITE}  TCP listen:${RESET}  ${CYAN}${listen_tcp}${RESET}"
-        print_box_line "${WHITE}  Metrics cfg:${RESET} ${CYAN}${metrics_cfg}${RESET}"
-        print_box_line "${WHITE}  Endpoint:${RESET}    ${BLUE}${metrics_url}/metrics${RESET}"
-        print_box_divider
-
-        if [[ "$svc_active" == "true" && "$metrics_ok" == "true" ]]; then
-            print_box_line "${WHITE}  Servico:${RESET}     $(mark_online)  ${GRAY}systemd + metrics OK${RESET}"
-        elif [[ "$svc_active" == "true" && "$metrics_ok" != "true" ]]; then
-            print_box_line "${WHITE}  Servico:${RESET}     $(mark_online)  ${YELLOW}metricas indisponiveis${RESET}"
-        elif [[ "$svc_active" != "true" && "$metrics_ok" == "true" ]]; then
-            print_box_line "${WHITE}  Servico:${RESET}     $(mark_offline) ${YELLOW}metricas respondendo${RESET}"
+        if [[ "$static_drawn" == "true" ]]; then
+            static_drawn="false"
+        elif [[ -t 1 ]]; then
+            udpgw_metrics_cursor_up "$live_lines"
         else
-            print_box_line "${WHITE}  Servico:${RESET}     $(mark_offline)"
+            udpgw_metrics_cursor_up 0
+            clear
+            refresh_menu_layout
+            print_box_open
+            print_box_heading "METRICAS UDPGW ${port}" "$CYAN"
+            print_box_divider
+            print_box_line "${WHITE}  TCP listen:${RESET}  ${CYAN}${listen_tcp}${RESET}"
+            print_box_line "${WHITE}  Metrics cfg:${RESET} ${CYAN}${metrics_cfg}${RESET}"
+            print_box_line "${WHITE}  Endpoint:${RESET}    ${BLUE}${metrics_url}/metrics${RESET}"
+            if [[ -n "$conflict_port" ]]; then
+                print_box_line "${YELLOW}  AVISO: metrics compartilhada com TCP ${conflict_port}${RESET}"
+            fi
+            print_box_divider
         fi
 
-        if conflict_port=$(udpgw_metrics_conflict_with "$port" 2>/dev/null); then
-            print_box_line "${YELLOW}  AVISO: mesma porta metrics que TCP ${conflict_port}${RESET}"
-            print_box_line "${YELLOW}  Use opcoes avancadas ou reinicie o vt para corrigir.${RESET}"
-        fi
-        print_box_divider
+        udpgw_metrics_render_live_block "$port" "$svc_active" "$metrics_ok" "$body"
+        live_lines=$UDPGW_METRICS_DYN_LINES
 
-        if [[ "$metrics_ok" != "true" ]]; then
-            print_box_line "${RED}  Nao foi possivel ler metricas neste endpoint.${RESET}"
-        else
-            local active total rejected dropped mapping panics read_err udp_err
-            active=$(parse_udpgw_metric "udpgw_active_clients" "$body")
-            total=$(parse_udpgw_metric "udpgw_clients_total" "$body")
-            rejected=$(parse_udpgw_metric "udpgw_clients_rejected_total" "$body")
-            dropped=$(parse_udpgw_metric "udpgw_dropped_replies_total" "$body")
-            mapping=$(parse_udpgw_metric "udpgw_mapping_size" "$body")
-            panics=$(parse_udpgw_metric "udpgw_panics_total" "$body")
-            read_err=$(parse_udpgw_metric "udpgw_read_errors_total" "$body")
-            udp_err=$(parse_udpgw_metric "udpgw_udp_write_errors_total" "$body")
-            print_box_line "${WHITE}  Clientes ativos: ${GREEN}${active}${RESET}"
-            format_udpgw_metric_line "Total aceitos" "$total"
-            format_udpgw_metric_line "Rejeitados" "$rejected" "true"
-            format_udpgw_metric_line "Respostas descartadas" "$dropped" "true"
-            format_udpgw_metric_line "Tamanho do mapa" "$mapping"
-            format_udpgw_metric_line "Panics" "$panics" "true"
-            format_udpgw_metric_line "Erros TCP" "$read_err" "true"
-            format_udpgw_metric_line "Erros UDP" "$udp_err" "true"
+        if read -r -t "$refresh_sec" -n 1 _key 2>/dev/null; then
+            break
         fi
-        print_box_close
-        echo
-        echo -e "${GRAY}Atualiza a cada 5s. Enter para voltar.${RESET}"
-        if read -r -t 5; then break; fi
     done
+
+    udpgw_metrics_cursor_show
+    echo
 }
 
 udpgw_show_metrics_menu() {
