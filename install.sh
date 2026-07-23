@@ -11,9 +11,11 @@ RELEASE_BINARY_PREFIX="proxy"
 PROTO_RELEASE_BINARY_PREFIX="proto-server"
 PROTO_REPO="${PROTO_REPO:-TelksBr/VeltrixProxy}"
 PROTO_FALLBACK_REPO="${PROTO_FALLBACK_REPO:-DTunnel0/DTProto-Server-Releases}"
+UDPGW_REPO="${UDPGW_REPO:-TelksBr/VeltrixUPGW}"
 # Binário instalado (novo nome — não sobrescreve /usr/local/bin/proxy legado)
 BINARY_NAME="proxy-server"
 PROTO_BINARY_NAME="proto-server"
+UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
 PROTO_CONFIG_FILE="/etc/proto-server/config.conf"
@@ -22,11 +24,12 @@ PROTO_CREDENTIALS_FILE="${PROTO_DATA_DIR}/credentials.json"
 PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
-INSTALLER_REV="2026-07-22-menu-latest"
-MENU_REV_EXPECTED="2026-07-22-ascii-box"
+INSTALLER_REV="2026-07-22-udpgw"
+MENU_REV_EXPECTED="2026-07-22-udpgw"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
+UDPGW_VERSION_FILE="/etc/udpgw-version"
 LEGACY_BINARY_NAME="proxy"
 LEGACY_VERSION_FILE="/etc/proxyvt-version"
 BOX_WIDTH=51
@@ -34,13 +37,16 @@ TMP_DIR=""
 MENU_COMMIT_SHA=""
 ACTIVE_PROXY_SERVICES=()
 ACTIVE_PROTO=false
+ACTIVE_UDPGW=false
 SERVICES_WERE_STOPPED=false
 INSTALL_COMPLETED=false
 
 MODE="install"
 VERSION=""
 PROTO_VERSION=""
+UDPGW_VERSION=""
 INSTALLED_PROTO_VERSION=""
+INSTALLED_UDPGW_VERSION=""
 ASSUME_YES=false
 BINARY_ONLY=false
 SKIP_HEADER=false
@@ -48,6 +54,7 @@ MAX_VERSIONS=10
 PROXY_TOKEN=""
 PROTO_TOKEN=""
 INSTALL_IP=""
+SKIP_UDPGW=false
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -101,6 +108,8 @@ Opções:
   --latest, -L    Usa a versão mais recente do proxy e do proto (também atualiza o menu)
   --version TAG   Versão específica do proxy (ex: v2.1.0)
   --proto-version TAG  Versão específica do proto (ex: v2.0.1)
+  --udpgw-version TAG  Versão específica do UDP Gateway (ex: v1.0.1)
+  --no-udpgw           Não instala/atualiza o binário udpgw
   --binary-only   Instala/atualiza apenas os binários (não baixa vt.sh)
   --proxy-token T Token da licença proxy (VT)
   --proto-token T Token do servidor de protocolo
@@ -126,6 +135,7 @@ cleanup() {
     has_systemd && run_privileged systemctl daemon-reload 2>/dev/null || true
     restart_proxy_services || true
     restart_proto_server || true
+    restart_udpgw_server || true
   fi
 }
 trap cleanup EXIT
@@ -139,6 +149,7 @@ parse_args() {
     --latest | -L)
       VERSION="latest"
       PROTO_VERSION="latest"
+      UDPGW_VERSION="latest"
       ;;
     --version)
       shift
@@ -150,6 +161,12 @@ parse_args() {
       PROTO_VERSION="${1:-}"
       [[ -n "$PROTO_VERSION" ]] || { log_error "Use --proto-version TAG"; exit 1; }
       ;;
+    --udpgw-version)
+      shift
+      UDPGW_VERSION="${1:-}"
+      [[ -n "$UDPGW_VERSION" ]] || { log_error "Use --udpgw-version TAG"; exit 1; }
+      ;;
+    --no-udpgw) SKIP_UDPGW=true ;;
     --binary-only) BINARY_ONLY=true ;;
     --proxy-token)
       shift
@@ -187,6 +204,7 @@ parse_args() {
   update)
     [[ -z "$VERSION" ]] && VERSION="latest"
     [[ -z "$PROTO_VERSION" ]] && PROTO_VERSION="latest"
+    [[ -z "$UDPGW_VERSION" ]] && UDPGW_VERSION="latest"
     ASSUME_YES=true
     ;;
   reinstall)
@@ -206,6 +224,7 @@ print_header() {
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Modo:        ${MODE}"
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Binário proxy: ${INSTALL_DIR}/${BINARY_NAME}"
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Binário proto: ${INSTALL_DIR}/${PROTO_BINARY_NAME}"
+  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Binário udpgw: ${INSTALL_DIR}/${UDPGW_BINARY_NAME}"
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Menu:          ${INSTALL_DIR}/${MENU_NAME}"
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Revisão:       ${INSTALLER_REV}"
   echo -e "${BLUE}╚═══════════════════════════════════════════════════╝${NC}"
@@ -395,6 +414,13 @@ detect_platform() {
   log_info "Plataforma detectada: $OS_NAME/$ARCH_NAME"
 }
 
+detect_udpgw_arch() {
+  case "$ARCH_NAME" in
+  arm) echo "armv7" ;;
+  *) echo "$ARCH_NAME" ;;
+  esac
+}
+
 get_installed_version() {
   if [[ -x "${INSTALL_DIR}/${BINARY_NAME}" ]]; then
     "${INSTALL_DIR}/${BINARY_NAME}" --version 2>/dev/null | awk '{print $2}' | tr -d 'v' || true
@@ -427,10 +453,22 @@ get_installed_proto_version() {
   fi
 }
 
+get_installed_udpgw_version() {
+  if [[ -x "${INSTALL_DIR}/${UDPGW_BINARY_NAME}" ]]; then
+    "${INSTALL_DIR}/${UDPGW_BINARY_NAME}" -version 2>/dev/null | tr -d 'v\r\n' || true
+    return
+  fi
+
+  if [[ -f "$UDPGW_VERSION_FILE" ]]; then
+    tr -d 'v' <"$UDPGW_VERSION_FILE"
+  fi
+}
+
 show_current_installation() {
-  local current current_proto
+  local current current_proto current_udpgw
   current=$(get_installed_version || true)
   current_proto=$(get_installed_proto_version || true)
+  current_udpgw=$(get_installed_udpgw_version || true)
   if [[ -n "$current" ]]; then
     log_info "Versão proxy instalada: v${current}"
     if [[ -x "${INSTALL_DIR}/${LEGACY_BINARY_NAME}" && ! -x "${INSTALL_DIR}/${BINARY_NAME}" ]]; then
@@ -444,6 +482,12 @@ show_current_installation() {
     log_info "Versão proto instalada: v${current_proto}"
   else
     log_warn "Nenhuma instalação proto detectada em ${INSTALL_DIR}/${PROTO_BINARY_NAME}"
+  fi
+
+  if [[ -n "$current_udpgw" ]]; then
+    log_info "Versão udpgw instalada: v${current_udpgw}"
+  else
+    log_warn "Nenhuma instalação udpgw detectada em ${INSTALL_DIR}/${UDPGW_BINARY_NAME}"
   fi
 }
 
@@ -483,6 +527,10 @@ fetch_releases() {
 
 fetch_proto_releases() {
   fetch_release_tags "$PROTO_FALLBACK_REPO" PROTO_RELEASES
+}
+
+fetch_udpgw_releases() {
+  fetch_release_tags "$UDPGW_REPO" UDPGW_RELEASES
 }
 
 normalize_version_tag() {
@@ -586,13 +634,26 @@ show_versions_and_select() {
   else
     prompt_version_selection "proto" "$PROTO_FALLBACK_REPO" PROTO_RELEASES PROTO_VERSION
   fi
+
+  if [[ "$SKIP_UDPGW" == true ]]; then
+    UDPGW_VERSION=""
+  elif [[ -n "$UDPGW_VERSION" ]]; then
+    resolve_version_in_list "$UDPGW_VERSION" UDPGW_RELEASES UDPGW_VERSION "udpgw" "$UDPGW_REPO"
+  elif [[ "$ASSUME_YES" == true ]]; then
+    resolve_version_in_list "latest" UDPGW_RELEASES UDPGW_VERSION "udpgw" "$UDPGW_REPO"
+  else
+    prompt_version_selection "udpgw" "$UDPGW_REPO" UDPGW_RELEASES UDPGW_VERSION
+  fi
 }
 
 confirm_installation() {
   [[ "$ASSUME_YES" == true ]] && return 0
 
   echo ""
-  read -rp "Continuar com proxy ${VERSION} e proto ${PROTO_VERSION}? (s/N): " answer
+  local confirm_msg="Continuar com proxy ${VERSION} e proto ${PROTO_VERSION}"
+  [[ "$SKIP_UDPGW" != true && -n "$UDPGW_VERSION" ]] && confirm_msg+=" e udpgw ${UDPGW_VERSION}"
+  confirm_msg+="?"
+  read -rp "${confirm_msg} (s/N): " answer
   case "${answer,,}" in
   s | sim) ;;
   *)
@@ -729,6 +790,18 @@ has_active_proto_process() {
   return 1
 }
 
+has_udpgw_service() {
+  has_systemd || return 1
+  [[ -f /etc/systemd/system/udpgw.service ]]
+}
+
+has_active_udpgw_process() {
+  if has_command pgrep; then
+    pgrep -f '/usr/local/bin/udpgw' >/dev/null 2>&1 && return 0
+  fi
+  return 1
+}
+
 has_active_vtproxy_processes() {
   has_active_proxy_process || has_active_proto_process
 }
@@ -828,12 +901,13 @@ has_proxy_services() {
 }
 
 has_existing_services() {
-  has_proto_service || has_proxy_services
+  has_proto_service || has_proxy_services || has_udpgw_service
 }
 
 capture_active_services() {
   ACTIVE_PROXY_SERVICES=()
   ACTIVE_PROTO=false
+  ACTIVE_UDPGW=false
 
   if ! has_systemd; then
     return 0
@@ -851,6 +925,12 @@ capture_active_services() {
     ACTIVE_PROTO=true
   elif has_active_proto_process; then
     ACTIVE_PROTO=true
+  fi
+
+  if systemctl is-active --quiet udpgw 2>/dev/null; then
+    ACTIVE_UDPGW=true
+  elif has_active_udpgw_process; then
+    ACTIVE_UDPGW=true
   fi
 
   if [[ ${#ACTIVE_PROXY_SERVICES[@]} -eq 0 ]] && has_active_proxy_process; then
@@ -894,6 +974,13 @@ stop_proto_server() {
   fi
 }
 
+stop_udpgw_server() {
+  if systemctl is-active --quiet udpgw 2>/dev/null; then
+    log_info "Parando serviço udpgw..."
+    run_privileged systemctl stop udpgw || log_warn "Não foi possível parar udpgw"
+  fi
+}
+
 restart_proto_server() {
   if ! has_proto_service; then
     return 0
@@ -912,6 +999,37 @@ restart_proto_server() {
       log_warn "proto-server não ficou ativo após restart."
     fi
   fi
+}
+
+restart_udpgw_server() {
+  if ! has_udpgw_service; then
+    return 0
+  fi
+
+  if [[ "$MODE" == "update" || "$MODE" == "reinstall" || "$ACTIVE_UDPGW" == true ]]; then
+    log_info "Iniciando/reiniciando serviço udpgw..."
+    if ! run_privileged systemctl restart udpgw; then
+      log_warn "Não foi possível reiniciar udpgw."
+      log_info "Verifique: journalctl -u udpgw -n 30 --no-pager"
+      return 1
+    fi
+    if systemctl is-active --quiet udpgw 2>/dev/null; then
+      log_success "udpgw ativo."
+    else
+      log_warn "udpgw não ficou ativo após restart."
+    fi
+  fi
+}
+
+sync_udpgw_service() {
+  local service_file="/etc/systemd/system/udpgw.service"
+  local udpgw_bin="${INSTALL_DIR}/${UDPGW_BINARY_NAME}"
+
+  [[ -f "$service_file" ]] || return 0
+
+  safe_sed_inplace "$service_file" \
+    -e "s|/usr/local/bin/udpgw|${udpgw_bin}|g" \
+    -e "s|${INSTALL_DIR}/udpgw|${udpgw_bin}|g" || true
 }
 
 load_saved_proxy_token() {
@@ -1086,6 +1204,7 @@ refresh_existing_services() {
   sync_proxy_service_executables
   [[ -n "$proxy_token" ]] && sync_proxy_service_tokens "$proxy_token"
   [[ -n "$proto_token" ]] && sync_proto_service "$proto_token"
+  sync_udpgw_service
 
   if has_systemd; then
     run_privileged systemctl daemon-reload || log_warn "Falha ao recarregar systemd"
@@ -1125,6 +1244,14 @@ report_existing_services() {
     fi
   elif has_active_proxy_process; then
     log_warn "Processo proxy ativo detectado — reinicie manualmente se não houver unit systemd."
+  fi
+
+  if has_udpgw_service || has_active_udpgw_process; then
+    if [[ "$ACTIVE_UDPGW" == true ]]; then
+      log_warn "UDP Gateway ativo detectado — unit file será atualizado e o serviço reiniciado."
+    else
+      log_warn "Serviço udpgw configurado — unit file será atualizado se necessário."
+    fi
   fi
 }
 
@@ -1192,6 +1319,35 @@ download_and_install_proto_binary() {
   echo "$INSTALLED_PROTO_VERSION" | run_privileged tee "$PROTO_VERSION_FILE" >/dev/null
 
   log_success "Binário proto instalado: ${INSTALL_DIR}/${PROTO_BINARY_NAME} (${PROTO_VERSION})"
+}
+
+download_and_install_udpgw_binary() {
+  local udpgw_arch filename url http_status
+
+  udpgw_arch=$(detect_udpgw_arch)
+  filename="udpgw-${OS_NAME}-${udpgw_arch}"
+  url="https://github.com/${UDPGW_REPO}/releases/download/${UDPGW_VERSION}/${filename}"
+
+  [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]] || TMP_DIR=$(mktemp -d)
+  cd "$TMP_DIR"
+
+  log_info "Baixando binário udpgw: $filename (${UDPGW_VERSION})"
+  http_status=$(curl -fsSL -w "%{http_code}" -o "$filename" "$url" 2>/dev/null || true)
+  if [[ "$http_status" != "200" ]]; then
+    log_error "Falha ao baixar binário udpgw ${UDPGW_VERSION} (HTTP ${http_status:-404})"
+    log_info "Verifique releases em: https://github.com/${UDPGW_REPO}/releases"
+    exit 1
+  fi
+
+  DOWNLOAD_URL="$url"
+  verify_checksum "$filename"
+
+  log_info "Instalando binário em ${INSTALL_DIR}/${UDPGW_BINARY_NAME}..."
+  run_privileged install -m 755 "$filename" "${INSTALL_DIR}/${UDPGW_BINARY_NAME}"
+  INSTALLED_UDPGW_VERSION="${UDPGW_VERSION#v}"
+  echo "$INSTALLED_UDPGW_VERSION" | run_privileged tee "$UDPGW_VERSION_FILE" >/dev/null
+
+  log_success "Binário udpgw instalado: ${INSTALL_DIR}/${UDPGW_BINARY_NAME} (${UDPGW_VERSION})"
 }
 
 install_menu_script() {
@@ -1319,6 +1475,9 @@ print_finish_message() {
   if [[ -n "$INSTALLED_PROTO_VERSION" ]]; then
     log_info "Versão proto: v${INSTALLED_PROTO_VERSION}"
   fi
+  if [[ -n "$INSTALLED_UDPGW_VERSION" ]]; then
+    log_info "Versão udpgw: v${INSTALLED_UDPGW_VERSION}"
+  fi
   if [[ "$BINARY_ONLY" == false ]]; then
     log_info "Execute o menu com: ${MENU_NAME}  (ou main / proto)"
     if [[ -f "$MENU_REV_FILE" ]]; then
@@ -1346,6 +1505,9 @@ main() {
   report_existing_services
   fetch_releases
   fetch_proto_releases
+  if [[ "$SKIP_UDPGW" != true ]]; then
+    fetch_udpgw_releases
+  fi
   show_versions_and_select
   confirm_installation
 
@@ -1353,10 +1515,14 @@ main() {
     SERVICES_WERE_STOPPED=true
     stop_proxy_services
     stop_proto_server
+    stop_udpgw_server
   fi
 
   download_and_install_binary
   download_and_install_proto_binary
+  if [[ "$SKIP_UDPGW" != true && -n "$UDPGW_VERSION" ]]; then
+    download_and_install_udpgw_binary
+  fi
   configure_sysctl
   install_menu_script
   install_provided_tokens
@@ -1365,6 +1531,7 @@ main() {
   if should_manage_services; then
     restart_proxy_services
     restart_proto_server
+    restart_udpgw_server
   fi
 
   INSTALL_COMPLETED=true

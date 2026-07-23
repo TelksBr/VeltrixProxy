@@ -3,11 +3,13 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="2026-07-22-ascii-box"
+readonly MENU_REV="2026-07-22-udpgw"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
 readonly PROTO_VERSION_FILE="/etc/proto-server-version"
+readonly UDPGW_VERSION_FILE="/etc/udpgw-version"
+readonly UDPGW_REPO="TelksBr/VeltrixUPGW"
 
 # Largura interna da caixa (sem as bordas ║). Recalculada por refresh_menu_layout.
 MENU_BOX_WIDTH=$MENU_BOX_MAX
@@ -26,6 +28,11 @@ QUICK_SETUP_ASKED_KEY="QUICK_SETUP_ASKED"
 ONLINE_API_SERVICE_NAME="proto-online-api"
 ONLINE_API_SCRIPT="/usr/local/bin/proto_online_api.py"
 ONLINE_API_PORT_FILE="/etc/proto-server/online_api_port"
+
+UDPGW_BIN="/usr/local/bin/udpgw"
+UDPGW_CONFIG_FILE="/etc/udpgw/config.conf"
+UDPGW_SERVICE_NAME="udpgw"
+UDPGW_DEFAULT_LISTEN="0.0.0.0:7400"
 
 PROXY_DIR="/etc/proxy"
 PROXY_TOKEN_VTPROXY="/etc/vtproxy/proxy.token"
@@ -463,11 +470,16 @@ print_status() {
         proto_status="OFFLINE"
     fi
 
-    local proxy_ports proxy_label proxy_tok proto_tok bound_ip
+    local proxy_ports proxy_label proxy_tok proto_tok udpgw_status bound_ip
     proxy_ports=$(format_proxy_ports_status)
     proxy_label="${proxy_ports:-nenhuma}"
     [[ -n "$(load_proxy_token)" ]] && proxy_tok="$(mark_ok)" || proxy_tok="$(mark_fail)"
     [[ -n "$(load_proto_token)" ]] && proto_tok="$(mark_ok)" || proto_tok="$(mark_fail)"
+    if is_udpgw_active; then
+        udpgw_status="$(mark_online)"
+    else
+        udpgw_status="$(mark_offline)"
+    fi
     bound_ip=""
     [[ -f /etc/vtproxy/ip ]] && bound_ip=$(cat /etc/vtproxy/ip)
 
@@ -478,6 +490,9 @@ print_status() {
     port=${port:-8000}
     subnet=${subnet:-10.10.0.0/16}
     tun=${tun:-tun0}
+    local udpgw_listen
+    udpgw_listen=$(get_udpgw_config_value "LISTEN")
+    udpgw_listen=${udpgw_listen:-$UDPGW_DEFAULT_LISTEN}
 
     print_box_open
     local status_badge="${status_bg}${BOLD}${status_color} ${proto_status} ${RESET}"
@@ -491,6 +506,7 @@ print_status() {
         fi
         print_box_line "${WHITE}Proto:${CYAN}${port}${WHITE} TUN:${CYAN}${tun}${RESET}"
         print_box_line "${WHITE}Net: ${CYAN}${subnet}${RESET}"
+        print_box_line "${WHITE}UDPgw: ${udpgw_status}${WHITE} ${CYAN}${udpgw_listen}${RESET}"
         print_box_line "${GRAY}${MENU_REV}${RESET}"
     else
         print_box_line "${WHITE} Proto: ${status_badge}${BLUE} | Proxy: ${CYAN}${proxy_label}${RESET}"
@@ -500,6 +516,7 @@ print_status() {
         fi
         print_box_line "$tokens_line"
         print_box_line "${WHITE} Porta proto: ${CYAN}${port}${WHITE} | Sub-rede: ${CYAN}${subnet}${WHITE} | TUN: ${CYAN}${tun}${RESET}"
+        print_box_line "${WHITE} UDP Gateway: ${udpgw_status}${WHITE} listen ${CYAN}${udpgw_listen}${RESET}"
         print_box_line "${WHITE} Menu: ${GRAY}${MENU_REV}${RESET}  (${MENU_BIN})"
     fi
     print_box_close
@@ -546,7 +563,8 @@ print_initial_menu() {
         "3 • Usuarios Online"
         "4 • Gerenciar Tokens"
         "5 • Atualizar Sistema"
-        "6 • Remover Instalação"
+        "6 • UDP Gateway (udpgw)"
+        "7 • Remover Instalação"
         "0 • Sair"
     )
     
@@ -2937,6 +2955,380 @@ run_quick_setup_first_time() {
     pause
 }
 
+get_udpgw_config_value() {
+    local key="$1"
+    if [[ -f "$UDPGW_CONFIG_FILE" ]]; then
+        grep "^${key}=" "$UDPGW_CONFIG_FILE" | cut -d'=' -f2- | head -n1
+    fi
+}
+
+set_udpgw_config_value() {
+    local key="$1"
+    local value="$2"
+    local temp_file
+    temp_file=$(mktemp)
+
+    sudo mkdir -p "$(dirname "$UDPGW_CONFIG_FILE")"
+
+    if [[ -f "$UDPGW_CONFIG_FILE" ]]; then
+        grep -v "^${key}=" "$UDPGW_CONFIG_FILE" >"$temp_file"
+    fi
+    echo "${key}=${value}" >>"$temp_file"
+    sudo mv "$temp_file" "$UDPGW_CONFIG_FILE"
+}
+
+ensure_udpgw_config() {
+    sudo mkdir -p "$(dirname "$UDPGW_CONFIG_FILE")"
+    if [[ ! -f "$UDPGW_CONFIG_FILE" ]]; then
+        sudo tee "$UDPGW_CONFIG_FILE" >/dev/null <<EOF
+LISTEN=${UDPGW_DEFAULT_LISTEN}
+DEBUG=false
+METRICS_LISTEN=127.0.0.1:9091
+EOF
+    fi
+}
+
+is_udpgw_installed() {
+    [[ -x "$UDPGW_BIN" ]]
+}
+
+is_udpgw_active() {
+    systemctl is-active "$UDPGW_SERVICE_NAME" &>/dev/null
+}
+
+detect_udpgw_release_arch() {
+    case "$(uname -m)" in
+    x86_64) echo "amd64" ;;
+    aarch64) echo "arm64" ;;
+    armv7l) echo "armv7" ;;
+    i386 | i686) echo "386" ;;
+    *) echo "amd64" ;;
+    esac
+}
+
+get_installed_udpgw_version_label() {
+    local ver=""
+    if [[ -x "$UDPGW_BIN" ]]; then
+        ver=$("$UDPGW_BIN" -version 2>/dev/null | tr -d 'v\r\n' || true)
+    fi
+    if [[ -z "$ver" && -f "$UDPGW_VERSION_FILE" ]]; then
+        ver=$(tr -d '\r\n' <"$UDPGW_VERSION_FILE")
+    fi
+    echo "${ver:-desconhecida}"
+}
+
+fetch_latest_udpgw_release_tag() {
+    local json tag
+    json=$(curl -fsSL \
+        -H "Cache-Control: no-cache" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/${UDPGW_REPO}/releases/latest" 2>/dev/null || true)
+    tag=$(echo "$json" | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n1 | sed -E 's/.*"([^"]+)"$/\1/')
+    [[ -n "$tag" ]] && echo "$tag"
+}
+
+download_udpgw_binary() {
+    local tag="${1:-}"
+    local arch filename url tmp http_status
+
+    if [[ -z "$tag" ]]; then
+        tag=$(fetch_latest_udpgw_release_tag || true)
+    fi
+    if [[ -z "$tag" ]]; then
+        print_error "Não foi possível resolver a versão do UDP Gateway."
+        return 1
+    fi
+
+    arch=$(detect_udpgw_release_arch)
+    filename="udpgw-linux-${arch}"
+    url="https://github.com/${UDPGW_REPO}/releases/download/${tag}/${filename}"
+
+    tmp=$(mktemp)
+    print_info "Baixando ${filename} (${tag})..."
+    http_status=$(curl -fsSL -w "%{http_code}" -o "$tmp" "$url" 2>/dev/null || true)
+    if [[ "$http_status" != "200" || ! -s "$tmp" ]]; then
+        rm -f "$tmp"
+        print_error "Falha ao baixar ${filename} (HTTP ${http_status:-000})."
+        print_info "Release: https://github.com/${UDPGW_REPO}/releases/tag/${tag}"
+        return 1
+    fi
+
+    sudo install -m 755 "$tmp" "$UDPGW_BIN"
+    rm -f "$tmp"
+    echo "${tag#v}" | sudo tee "$UDPGW_VERSION_FILE" >/dev/null
+    print_success "Binário udpgw instalado: ${UDPGW_BIN} (${tag})"
+    return 0
+}
+
+build_udpgw_exec_start() {
+    local listen debug metrics exec_line
+
+    ensure_udpgw_config
+    listen=$(get_udpgw_config_value "LISTEN")
+    debug=$(get_udpgw_config_value "DEBUG")
+    metrics=$(get_udpgw_config_value "METRICS_LISTEN")
+
+    listen=${listen:-$UDPGW_DEFAULT_LISTEN}
+    exec_line="${UDPGW_BIN} -listen ${listen}"
+
+    if [[ "$debug" == "true" ]]; then
+        exec_line+=" -debug"
+    fi
+
+    if [[ -n "$metrics" ]]; then
+        exec_line+=" -metrics-listen ${metrics}"
+    fi
+
+    printf '%s' "$exec_line"
+}
+
+create_udpgw_systemd_service() {
+    local exec_start listen
+
+    if ! is_udpgw_installed; then
+        print_error "Binário udpgw não encontrado em ${UDPGW_BIN}."
+        print_info "Use a opção Instalar/Atualizar binário no menu UDP Gateway."
+        return 1
+    fi
+
+    ensure_udpgw_config
+    listen=$(get_udpgw_config_value "LISTEN")
+    listen=${listen:-$UDPGW_DEFAULT_LISTEN}
+    exec_start=$(build_udpgw_exec_start)
+
+    print_info "Criando serviço systemd udpgw..."
+
+    sudo tee "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service" >/dev/null <<EOF
+[Unit]
+Description=${PROJECT_NAME} UDP Gateway (BadVPN udpgw)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=${exec_start}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo systemctl daemon-reload
+    print_success "Serviço udpgw configurado (listen=${listen})."
+}
+
+udpgw_start_server() {
+    print_header
+    ensure_udpgw_config
+
+    if ! is_udpgw_installed; then
+        print_warning "Binário não instalado. Baixando versão mais recente..."
+        download_udpgw_binary || { pause; return 1; }
+    fi
+
+    if [[ ! -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service" ]]; then
+        create_udpgw_systemd_service || { pause; return 1; }
+    else
+        create_udpgw_systemd_service || true
+    fi
+
+    print_info "Iniciando ${UDPGW_SERVICE_NAME}..."
+    if sudo systemctl enable "$UDPGW_SERVICE_NAME" >/dev/null 2>&1 \
+        && sudo systemctl restart "$UDPGW_SERVICE_NAME"; then
+        if is_udpgw_active; then
+            local listen_active
+            listen_active=$(get_udpgw_config_value "LISTEN")
+            listen_active=${listen_active:-$UDPGW_DEFAULT_LISTEN}
+            print_success "UDP Gateway ativo em ${listen_active}"
+        else
+            print_error "Serviço pode não ter iniciado corretamente."
+            print_info "Logs: sudo journalctl -u ${UDPGW_SERVICE_NAME} -n 30 --no-pager"
+        fi
+    else
+        print_error "Falha ao iniciar o serviço udpgw."
+    fi
+    pause
+}
+
+udpgw_stop_server() {
+    if is_udpgw_active; then
+        print_info "Parando ${UDPGW_SERVICE_NAME}..."
+        sudo systemctl stop "$UDPGW_SERVICE_NAME"
+        print_success "UDP Gateway parado."
+    else
+        print_error "UDP Gateway não está ativo."
+    fi
+    pause
+}
+
+udpgw_restart_server() {
+    if [[ -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service" ]]; then
+        print_info "Reiniciando ${UDPGW_SERVICE_NAME}..."
+        sudo systemctl restart "$UDPGW_SERVICE_NAME"
+        print_success "UDP Gateway reiniciado."
+    else
+        print_error "Serviço udpgw não configurado."
+    fi
+    pause
+}
+
+udpgw_show_status() {
+    print_header
+
+    local listen_val debug_val metrics_val
+    listen_val=$(get_udpgw_config_value "LISTEN")
+    debug_val=$(get_udpgw_config_value "DEBUG")
+    metrics_val=$(get_udpgw_config_value "METRICS_LISTEN")
+    listen_val=${listen_val:-$UDPGW_DEFAULT_LISTEN}
+    debug_val=${debug_val:-false}
+    metrics_val=${metrics_val:-127.0.0.1:9091}
+
+    print_box_open
+    print_box_line "${CYAN}  STATUS UDP GATEWAY${RESET}"
+    print_box_divider
+
+    if is_udpgw_active; then
+        print_box_line "${WHITE}  Status: $(mark_online)${RESET}"
+    else
+        print_box_line "${WHITE}  Status: $(mark_offline)${RESET}"
+    fi
+
+    print_box_line "${WHITE}  Listen: ${BLUE}${listen_val}${RESET}"
+    print_box_line "${WHITE}  Debug: ${BLUE}${debug_val}${RESET}"
+    print_box_line "${WHITE}  Metrics: ${BLUE}${metrics_val}${RESET}"
+    print_box_line "${WHITE}  Versão: ${BLUE}v$(get_installed_udpgw_version_label)${RESET}"
+    print_box_line "${WHITE}  Binário: ${BLUE}${UDPGW_BIN}${RESET}"
+    print_box_close
+    echo
+    pause
+}
+
+udpgw_view_logs() {
+    print_info "Logs do udpgw (Ctrl+C para sair)..."
+    echo
+    sudo journalctl -u "$UDPGW_SERVICE_NAME" -f
+    pause
+}
+
+udpgw_change_listen() {
+    print_header
+    ensure_udpgw_config
+
+    local current new_listen
+    current=$(get_udpgw_config_value "LISTEN")
+    current=${current:-$UDPGW_DEFAULT_LISTEN}
+
+    print_box_open
+    print_box_line "${WHITE}Listen atual: ${CYAN}${current}${RESET}"
+    print_box_close
+    echo
+
+    echo -e "${BLUE}Novo endereço listen (Enter mantém [${current}]):${RESET}"
+    read -rp "> " new_listen
+    new_listen=${new_listen:-$current}
+
+    set_udpgw_config_value "LISTEN" "$new_listen"
+    print_success "Listen atualizado para ${new_listen}."
+
+    if [[ -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service" ]]; then
+        create_udpgw_systemd_service
+        if is_udpgw_active; then
+            sudo systemctl restart "$UDPGW_SERVICE_NAME"
+            print_success "Serviço reiniciado com nova configuração."
+        fi
+    fi
+    pause
+}
+
+udpgw_toggle_debug() {
+    ensure_udpgw_config
+    local current new_value
+    current=$(get_udpgw_config_value "DEBUG")
+    if [[ "$current" == "true" ]]; then
+        new_value="false"
+    else
+        new_value="true"
+    fi
+    set_udpgw_config_value "DEBUG" "$new_value"
+    print_success "Debug=${new_value}"
+
+    if [[ -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service" ]]; then
+        create_udpgw_systemd_service
+        is_udpgw_active && sudo systemctl restart "$UDPGW_SERVICE_NAME"
+    fi
+    pause
+}
+
+udpgw_install_or_update() {
+    print_header
+    print_info "Instalando/atualizando binário udpgw..."
+    if download_udpgw_binary; then
+        if [[ -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service" ]]; then
+            create_udpgw_systemd_service
+            is_udpgw_active && sudo systemctl restart "$UDPGW_SERVICE_NAME"
+        fi
+    fi
+    pause
+}
+
+print_udpgw_menu() {
+    print_box_open
+    print_box_heading "UDP GATEWAY (udpgw)"
+    print_box_divider
+
+    local menu_items=(
+        "1 • Iniciar Gateway"
+        "2 • Parar Gateway"
+        "3 • Reiniciar Gateway"
+        "4 • Status & Configuração"
+        "5 • Visualizar Logs"
+        "6 • Alterar Listen"
+        "7 • Alternar Debug"
+        "8 • Instalar/Atualizar binário"
+        "0 • Voltar ao Menu Inicial"
+    )
+
+    for item in "${menu_items[@]}"; do
+        if [[ $item == *"Voltar"* ]]; then
+            render_menu_option "$item" "red"
+        else
+            render_menu_option "$item"
+        fi
+    done
+
+    print_box_close
+    echo
+}
+
+udpgw_main_menu() {
+    while true; do
+        print_header
+        print_status
+        print_udpgw_menu
+
+        local option
+        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-8]:${RESET} ")" option
+
+        case "$option" in
+        1) udpgw_start_server ;;
+        2) udpgw_stop_server ;;
+        3) udpgw_restart_server ;;
+        4) udpgw_show_status ;;
+        5) udpgw_view_logs ;;
+        6) udpgw_change_listen ;;
+        7) udpgw_toggle_debug ;;
+        8) udpgw_install_or_update ;;
+        0) return 0 ;;
+        *)
+            print_error "Opção inválida: $option"
+            pause
+            ;;
+        esac
+    done
+}
+
 protocol_main_menu() {
     while true; do
         print_header
@@ -3140,12 +3532,14 @@ show_update_preserve_notice() {
     echo -e "${WHITE}O que será atualizado:${RESET}"
     echo -e "${CYAN}  • Binário proxy-server${RESET}"
     echo -e "${CYAN}  • Binário proto-server${RESET}"
+    echo -e "${CYAN}  • Binário udpgw (UDP Gateway)${RESET}"
     echo -e "${CYAN}  • Menu vt (este menu)${RESET}"
     echo
     echo -e "${WHITE}O que é PRESERVADO:${RESET}"
     echo -e "${GREEN}  • Tokens proxy e proto${RESET}"
     echo -e "${GREEN}  • Units systemd e configs de portas (/etc/proxy/conf.d)${RESET}"
     echo -e "${GREEN}  • Config do proto (/etc/proto-server)${RESET}"
+    echo -e "${GREEN}  • Config do udpgw (/etc/udpgw)${RESET}"
     echo -e "${GREEN}  • Credenciais, certs e dados${RESET}"
     echo
     echo -e "${YELLOW}Serviços ativos serão reiniciados após a troca dos binários.${RESET}"
@@ -3167,7 +3561,7 @@ run_system_update() {
 
     print_success "Atualização concluída (binários + menu)."
     echo
-    print_info "Proxy: v$(get_installed_proxy_version_label) | Proto: v$(get_installed_proto_version_label)"
+    print_info "Proxy: v$(get_installed_proxy_version_label) | Proto: v$(get_installed_proto_version_label) | UDPgw: v$(get_installed_udpgw_version_label)"
 
     if [[ -x "$MENU_BIN" ]]; then
         echo
@@ -3183,22 +3577,24 @@ run_system_update() {
 update_system_menu() {
     print_header
 
-    local proxy_ver proto_ver
+    local proxy_ver proto_ver udpgw_ver
     proxy_ver=$(get_installed_proxy_version_label)
     proto_ver=$(get_installed_proto_version_label)
+    udpgw_ver=$(get_installed_udpgw_version_label)
 
     print_box_open
     print_box_heading "ATUALIZAR SISTEMA" "$CYAN"
     print_box_divider
     print_box_line "${WHITE}  Proxy instalado: ${GREEN}v${proxy_ver}${RESET}"
     print_box_line "${WHITE}  Proto instalado: ${GREEN}v${proto_ver}${RESET}"
+    print_box_line "${WHITE}  UDPgw instalado: ${GREEN}v${udpgw_ver}${RESET}"
     print_box_close
     echo
 
     show_update_preserve_notice
     echo
 
-    if ! confirm_action "Atualizar binários (proxy/proto) e o menu vt agora?" "s"; then
+    if ! confirm_action "Atualizar binários (proxy/proto/udpgw) e o menu vt agora?" "s"; then
         print_info "Atualização cancelada."
         pause
         return 0
@@ -3217,6 +3613,7 @@ remove_completely() {
     echo
     echo -e "${YELLOW}Itens que serão removidos:${RESET}"
     echo -e "${WHITE}  • Serviço protocolo (proto-server)${RESET}"
+    echo -e "${WHITE}  • Serviço UDP Gateway (udpgw)${RESET}"
     echo -e "${WHITE}  • Todos os serviços Proxy ativos${RESET}"
     echo -e "${WHITE}  • Serviço SSH Auth API${RESET}"
     echo -e "${WHITE}  • Ambiente virtual SSH Auth${RESET}"
@@ -3239,6 +3636,12 @@ remove_completely() {
         print_info "Parando serviço $SERVICE_NAME..."
         sudo systemctl stop "$SERVICE_NAME"
         sudo systemctl disable "$SERVICE_NAME" 2>/dev/null
+    fi
+
+    if systemctl is-active --quiet "$UDPGW_SERVICE_NAME" 2>/dev/null; then
+        print_info "Parando serviço $UDPGW_SERVICE_NAME..."
+        sudo systemctl stop "$UDPGW_SERVICE_NAME"
+        sudo systemctl disable "$UDPGW_SERVICE_NAME" 2>/dev/null
     fi
 
     print_info "Parando serviço SSH Auth API..."
@@ -3275,9 +3678,11 @@ remove_completely() {
     
     print_info "Removendo arquivos de serviço..."
     sudo rm -f "/etc/systemd/system/$SERVICE_NAME.service"
+    sudo rm -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service"
     
     print_info "Removendo binários..."
     sudo rm -f "$PROTO_SERVER_BIN"
+    sudo rm -f "$UDPGW_BIN"
     sudo rm -f "$PROXY_EXECUTABLE"
     sudo rm -f "/usr/local/bin/vt"
     sudo rm -f "/usr/local/bin/main"
@@ -3285,6 +3690,8 @@ remove_completely() {
     print_info "Removendo configurações e dados..."
     sudo rm -rf "$(dirname "$TOKEN_FILE")"
     sudo rm -rf "$(dirname "$CONFIG_FILE")"
+    sudo rm -rf "$(dirname "$UDPGW_CONFIG_FILE")"
+    sudo rm -f "$UDPGW_VERSION_FILE"
     sudo rm -rf "$(dirname "$PROXY_TOKEN_VTPROXY")"
     sudo rm -rf "$DATA_DIR"
     sudo rm -rf "$PROXY_DIR"
@@ -3374,7 +3781,7 @@ initial_menu() {
         print_initial_menu
         
         local option
-        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-6]:${RESET} ")" option
+        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-7]:${RESET} ")" option
         
         case "$option" in
             1) protocol_main_menu ;;
@@ -3382,7 +3789,8 @@ initial_menu() {
             3) online_users_menu ;;
             4) tokens_menu ;;
             5) update_system_menu ;;
-            6) remove_completely ;;
+            6) udpgw_main_menu ;;
+            7) remove_completely ;;
             0)
                 print_info "Saindo..."
                 exit 0
