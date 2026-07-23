@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="2026-07-22-udpgw-port-select"
+readonly MENU_REV="2026-07-22-udpgw-adv-menu"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -3428,97 +3428,261 @@ show_udpgw_execstart_line() {
     fi
 }
 
-prompt_udpgw_advanced_options() {
+udpgw_conf_or_default() {
+    local port="$1"
+    local key="$2"
+    local fallback="${3:-}"
+    local val
+
+    val=$(get_udpgw_conf_value "$port" "$key" "$fallback")
+    if [[ -n "$val" ]]; then
+        printf '%s' "$val"
+    else
+        printf '%s' "(padrao)"
+    fi
+}
+
+udpgw_apply_advanced_config() {
+    local port="$1"
+    local was="false"
+
+    is_udpgw_port_active "$port" && was="true"
+    apply_udpgw_service "$port" "$was"
+    print_success "Configuracao aplicada na porta ${port}."
+    show_udpgw_execstart_line "$port"
+    pause
+}
+
+udpgw_advanced_network_submenu() {
     local port="$1"
     local choice val
 
-    UDPGW_ADV_PORT="$port"
     while true; do
-        print_header
+        echo
         refresh_menu_layout
         print_box_open
-        print_box_heading "OPCOES AVANCADAS — porta ${port}" "$CYAN"
+        print_box_heading "REDE - porta ${port}" "$CYAN"
         print_box_divider
-        print_box_line "${WHITE}  1 • Listen: ${CYAN}$(get_udpgw_conf_value "$port" LISTEN "0.0.0.0:${port}")${RESET}"
-        print_box_line "${WHITE}  2 • Debug: ${CYAN}$(get_udpgw_conf_value "$port" DEBUG false)${RESET}"
-        print_box_line "${WHITE}  3 • Metrics: ${CYAN}$(get_udpgw_conf_value "$port" METRICS_LISTEN "")${RESET}"
-        print_box_line "${WHITE}  4 • Max frame / write-chan: ${CYAN}$(get_udpgw_conf_value "$port" MAX_FRAME "") / $(get_udpgw_conf_value "$port" WRITE_CHAN "")${RESET}"
-        print_box_line "${WHITE}  5 • UDP bind / rbuf / wbuf${RESET}"
-        print_box_line "${WHITE}  6 • map-ttl / reap-every / idle-timeout${RESET}"
-        print_box_line "${WHITE}  7 • max-client-conns / max-map / max-clients${RESET}"
-        print_box_line "${WHITE}  8 • auto-restart interval / grace${RESET}"
-        print_box_line "${WHITE}  9 • Ver ExecStart${RESET}"
-        print_box_line "${WHITE}  S • Salvar e aplicar systemd${RESET}"
+        print_box_line "${WHITE}  Listen (-listen)${RESET}          ${CYAN}$(get_udpgw_conf_value "$port" LISTEN "0.0.0.0:${port}")${RESET}"
+        print_box_line "${WHITE}  Metrics (-metrics-listen)${RESET} ${CYAN}$(udpgw_conf_or_default "$port" METRICS_LISTEN)${RESET}"
+        print_box_line "${WHITE}  UDP bind (-udp-bind)${RESET}      ${CYAN}$(udpgw_conf_or_default "$port" UDP_BIND)${RESET}"
         print_box_divider
+        render_menu_option "1 • Alterar Listen"
+        render_menu_option "2 • Alterar Metrics"
+        render_menu_option "3 • Alterar UDP bind"
         render_menu_option "0 • Voltar" "red"
         print_box_close
         echo
 
-        read -rp "$(echo -e "${BLUE}Selecione [0-9/S]:${RESET} ")" choice
+        read -rp "$(echo -e "${BLUE}Selecione [0-3]:${RESET} ")" choice
         case "$choice" in
         1)
             val=$(prompt_with_default "Listen (-listen)" "$(get_udpgw_conf_value "$port" LISTEN "0.0.0.0:${port}")")
             set_udpgw_conf_key "$port" "LISTEN" "$val"
             ;;
         2)
-            if confirm_action "Ativar debug (-debug)?" "$([[ "$(get_udpgw_conf_value "$port" DEBUG false)" == "true" ]] && echo s || echo n)"; then
-                set_udpgw_conf_key "$port" "DEBUG" "true"
-            else
-                set_udpgw_conf_key "$port" "DEBUG" "false"
-            fi
-            ;;
-        3)
-            val=$(prompt_with_default "Metrics listen (-metrics-listen, vazio=padrao binario)" "$(get_udpgw_conf_value "$port" METRICS_LISTEN "")")
+            val=$(prompt_with_default "Metrics (-metrics-listen, vazio=padrao)" "$(get_udpgw_conf_value "$port" METRICS_LISTEN "")")
             set_udpgw_conf_key "$port" "METRICS_LISTEN" "$val"
             ;;
-        4)
+        3)
+            val=$(prompt_with_default "UDP bind IP (-udp-bind, vazio=padrao)" "$(get_udpgw_conf_value "$port" UDP_BIND "")")
+            set_udpgw_conf_key "$port" "UDP_BIND" "$val"
+            ;;
+        0) return 0 ;;
+        *) print_error "Opcao invalida: $choice" ;;
+        esac
+    done
+}
+
+udpgw_advanced_perf_submenu() {
+    local port="$1"
+    local choice val
+
+    while true; do
+        echo
+        refresh_menu_layout
+        print_box_open
+        print_box_heading "PERFORMANCE - porta ${port}" "$CYAN"
+        print_box_divider
+        print_box_line "${WHITE}  Max frame (-max-frame)${RESET}    ${CYAN}$(udpgw_conf_or_default "$port" MAX_FRAME)${RESET}"
+        print_box_line "${WHITE}  Write chan (-write-chan)${RESET}  ${CYAN}$(udpgw_conf_or_default "$port" WRITE_CHAN)${RESET}"
+        print_box_line "${WHITE}  UDP rbuf (-udp-rbuf)${RESET}      ${CYAN}$(udpgw_conf_or_default "$port" UDP_RBUF)${RESET}"
+        print_box_line "${WHITE}  UDP wbuf (-udp-wbuf)${RESET}      ${CYAN}$(udpgw_conf_or_default "$port" UDP_WBUF)${RESET}"
+        print_box_divider
+        render_menu_option "1 • Alterar max frame"
+        render_menu_option "2 • Alterar write channel"
+        render_menu_option "3 • Alterar UDP read buffer"
+        render_menu_option "4 • Alterar UDP write buffer"
+        render_menu_option "0 • Voltar" "red"
+        print_box_close
+        echo
+
+        read -rp "$(echo -e "${BLUE}Selecione [0-4]:${RESET} ")" choice
+        case "$choice" in
+        1)
             val=$(prompt_with_default "Max frame bytes (-max-frame, vazio=padrao)" "$(get_udpgw_conf_value "$port" MAX_FRAME "")")
             set_udpgw_conf_key "$port" "MAX_FRAME" "$val"
+            ;;
+        2)
             val=$(prompt_with_default "Write channel (-write-chan, vazio=padrao)" "$(get_udpgw_conf_value "$port" WRITE_CHAN "")")
             set_udpgw_conf_key "$port" "WRITE_CHAN" "$val"
             ;;
-        5)
-            val=$(prompt_with_default "UDP bind IP (-udp-bind)" "$(get_udpgw_conf_value "$port" UDP_BIND "")")
-            set_udpgw_conf_key "$port" "UDP_BIND" "$val"
-            val=$(prompt_with_default "UDP read buffer (-udp-rbuf)" "$(get_udpgw_conf_value "$port" UDP_RBUF "")")
+        3)
+            val=$(prompt_with_default "UDP read buffer (-udp-rbuf, vazio=padrao)" "$(get_udpgw_conf_value "$port" UDP_RBUF "")")
             set_udpgw_conf_key "$port" "UDP_RBUF" "$val"
-            val=$(prompt_with_default "UDP write buffer (-udp-wbuf)" "$(get_udpgw_conf_value "$port" UDP_WBUF "")")
+            ;;
+        4)
+            val=$(prompt_with_default "UDP write buffer (-udp-wbuf, vazio=padrao)" "$(get_udpgw_conf_value "$port" UDP_WBUF "")")
             set_udpgw_conf_key "$port" "UDP_WBUF" "$val"
             ;;
-        6)
-            val=$(prompt_with_default "Map TTL (-map-ttl, ex: 90s)" "$(get_udpgw_conf_value "$port" MAP_TTL "")")
-            set_udpgw_conf_key "$port" "MAP_TTL" "$val"
-            val=$(prompt_with_default "Reap every (-reap-every, ex: 10s)" "$(get_udpgw_conf_value "$port" REAP_EVERY "")")
-            set_udpgw_conf_key "$port" "REAP_EVERY" "$val"
-            val=$(prompt_with_default "Idle timeout (-idle-timeout, ex: 2m)" "$(get_udpgw_conf_value "$port" IDLE_TIMEOUT "")")
-            set_udpgw_conf_key "$port" "IDLE_TIMEOUT" "$val"
-            ;;
-        7)
-            val=$(prompt_with_default "Max client conns (-max-client-conns)" "$(get_udpgw_conf_value "$port" MAX_CLIENT_CONNS "")")
+        0) return 0 ;;
+        *) print_error "Opcao invalida: $choice" ;;
+        esac
+    done
+}
+
+udpgw_advanced_limits_submenu() {
+    local port="$1"
+    local choice val
+
+    while true; do
+        echo
+        refresh_menu_layout
+        print_box_open
+        print_box_heading "LIMITES - porta ${port}" "$CYAN"
+        print_box_divider
+        print_box_line "${WHITE}  Max client conns${RESET}  ${CYAN}$(udpgw_conf_or_default "$port" MAX_CLIENT_CONNS)${RESET}"
+        print_box_line "${WHITE}  Max map entries${RESET}   ${CYAN}$(udpgw_conf_or_default "$port" MAX_MAP_ENTRIES)${RESET}"
+        print_box_line "${WHITE}  Max clients${RESET}       ${CYAN}$(udpgw_conf_or_default "$port" MAX_CLIENTS)${RESET}"
+        print_box_divider
+        render_menu_option "1 • Alterar max client conns"
+        render_menu_option "2 • Alterar max map entries"
+        render_menu_option "3 • Alterar max clients"
+        render_menu_option "0 • Voltar" "red"
+        print_box_close
+        echo
+
+        read -rp "$(echo -e "${BLUE}Selecione [0-3]:${RESET} ")" choice
+        case "$choice" in
+        1)
+            val=$(prompt_with_default "Max client conns (-max-client-conns, vazio=padrao)" "$(get_udpgw_conf_value "$port" MAX_CLIENT_CONNS "")")
             set_udpgw_conf_key "$port" "MAX_CLIENT_CONNS" "$val"
-            val=$(prompt_with_default "Max map entries (-max-map-entries)" "$(get_udpgw_conf_value "$port" MAX_MAP_ENTRIES "")")
+            ;;
+        2)
+            val=$(prompt_with_default "Max map entries (-max-map-entries, vazio=padrao)" "$(get_udpgw_conf_value "$port" MAX_MAP_ENTRIES "")")
             set_udpgw_conf_key "$port" "MAX_MAP_ENTRIES" "$val"
-            val=$(prompt_with_default "Max clients (-max-clients)" "$(get_udpgw_conf_value "$port" MAX_CLIENTS "")")
+            ;;
+        3)
+            val=$(prompt_with_default "Max clients (-max-clients, vazio=padrao)" "$(get_udpgw_conf_value "$port" MAX_CLIENTS "")")
             set_udpgw_conf_key "$port" "MAX_CLIENTS" "$val"
             ;;
-        8)
-            val=$(prompt_with_default "Auto restart interval (-auto-restart-interval)" "$(get_udpgw_conf_value "$port" AUTO_RESTART_INTERVAL "")")
+        0) return 0 ;;
+        *) print_error "Opcao invalida: $choice" ;;
+        esac
+    done
+}
+
+udpgw_advanced_timeouts_submenu() {
+    local port="$1"
+    local choice val
+
+    while true; do
+        echo
+        refresh_menu_layout
+        print_box_open
+        print_box_heading "TIMEOUTS - porta ${port}" "$CYAN"
+        print_box_divider
+        print_box_line "${WHITE}  Map TTL (-map-ttl)${RESET}                 ${CYAN}$(udpgw_conf_or_default "$port" MAP_TTL)${RESET}"
+        print_box_line "${WHITE}  Reap every (-reap-every)${RESET}           ${CYAN}$(udpgw_conf_or_default "$port" REAP_EVERY)${RESET}"
+        print_box_line "${WHITE}  Idle timeout (-idle-timeout)${RESET}       ${CYAN}$(udpgw_conf_or_default "$port" IDLE_TIMEOUT)${RESET}"
+        print_box_line "${WHITE}  Auto-restart interval${RESET}                ${CYAN}$(udpgw_conf_or_default "$port" AUTO_RESTART_INTERVAL)${RESET}"
+        print_box_line "${WHITE}  Auto-restart grace${RESET}                   ${CYAN}$(udpgw_conf_or_default "$port" AUTO_RESTART_GRACE)${RESET}"
+        print_box_divider
+        render_menu_option "1 • Alterar map TTL"
+        render_menu_option "2 • Alterar reap every"
+        render_menu_option "3 • Alterar idle timeout"
+        render_menu_option "4 • Alterar auto-restart interval"
+        render_menu_option "5 • Alterar auto-restart grace"
+        render_menu_option "0 • Voltar" "red"
+        print_box_close
+        echo
+
+        read -rp "$(echo -e "${BLUE}Selecione [0-5]:${RESET} ")" choice
+        case "$choice" in
+        1)
+            val=$(prompt_with_default "Map TTL (-map-ttl, ex: 90s, vazio=padrao)" "$(get_udpgw_conf_value "$port" MAP_TTL "")")
+            set_udpgw_conf_key "$port" "MAP_TTL" "$val"
+            ;;
+        2)
+            val=$(prompt_with_default "Reap every (-reap-every, ex: 10s, vazio=padrao)" "$(get_udpgw_conf_value "$port" REAP_EVERY "")")
+            set_udpgw_conf_key "$port" "REAP_EVERY" "$val"
+            ;;
+        3)
+            val=$(prompt_with_default "Idle timeout (-idle-timeout, ex: 2m, vazio=padrao)" "$(get_udpgw_conf_value "$port" IDLE_TIMEOUT "")")
+            set_udpgw_conf_key "$port" "IDLE_TIMEOUT" "$val"
+            ;;
+        4)
+            val=$(prompt_with_default "Auto-restart interval (-auto-restart-interval, vazio=padrao)" "$(get_udpgw_conf_value "$port" AUTO_RESTART_INTERVAL "")")
             set_udpgw_conf_key "$port" "AUTO_RESTART_INTERVAL" "$val"
-            val=$(prompt_with_default "Auto restart grace (-auto-restart-grace)" "$(get_udpgw_conf_value "$port" AUTO_RESTART_GRACE "")")
+            ;;
+        5)
+            val=$(prompt_with_default "Auto-restart grace (-auto-restart-grace, vazio=padrao)" "$(get_udpgw_conf_value "$port" AUTO_RESTART_GRACE "")")
             set_udpgw_conf_key "$port" "AUTO_RESTART_GRACE" "$val"
             ;;
-        9)
+        0) return 0 ;;
+        *) print_error "Opcao invalida: $choice" ;;
+        esac
+    done
+}
+
+prompt_udpgw_advanced_options() {
+    local port="$1"
+    local choice debug_val
+
+    UDPGW_ADV_PORT="$port"
+    while true; do
+        echo
+        refresh_menu_layout
+        print_box_open
+        print_box_heading "UDPGW AVANCADO - porta ${port}" "$CYAN"
+        print_box_divider
+        print_box_line "${GRAY}  Resumo (vazio no config = padrao do binario)${RESET}"
+        print_box_line "${WHITE}  Listen:${RESET}  ${CYAN}$(get_udpgw_conf_value "$port" LISTEN "0.0.0.0:${port}")${RESET}"
+        print_box_line "${WHITE}  Metrics:${RESET} ${CYAN}$(udpgw_conf_or_default "$port" METRICS_LISTEN)${RESET}"
+        debug_val=$(get_udpgw_conf_value "$port" DEBUG "false")
+        print_box_line "${WHITE}  Debug:${RESET}   ${CYAN}${debug_val}${RESET}"
+        print_box_divider
+        render_menu_option "1 • Rede (listen, metrics, udp-bind)"
+        render_menu_option "2 • Performance (frame, buffers)"
+        render_menu_option "3 • Limites de clientes"
+        render_menu_option "4 • Timeouts e manutencao"
+        render_menu_option "5 • Alternar debug (-debug)"
+        render_menu_option "6 • Ver ExecStart"
+        render_menu_option "7 • Salvar e aplicar systemd"
+        render_menu_option "0 • Voltar" "red"
+        print_box_close
+        echo
+
+        read -rp "$(echo -e "${BLUE}Selecione [0-7]:${RESET} ")" choice
+        case "$choice" in
+        1) udpgw_advanced_network_submenu "$port" ;;
+        2) udpgw_advanced_perf_submenu "$port" ;;
+        3) udpgw_advanced_limits_submenu "$port" ;;
+        4) udpgw_advanced_timeouts_submenu "$port" ;;
+        5)
+            if [[ "$debug_val" == "true" ]]; then
+                set_udpgw_conf_key "$port" "DEBUG" "false"
+                print_success "Debug desativado."
+            else
+                set_udpgw_conf_key "$port" "DEBUG" "true"
+                print_success "Debug ativado."
+            fi
+            ;;
+        6)
             show_udpgw_execstart_line "$port"
             pause
             ;;
-        s|S)
-            local was="false"
-            is_udpgw_port_active "$port" && was="true"
-            apply_udpgw_service "$port" "$was"
-            print_success "Configuracao aplicada na porta ${port}."
-            show_udpgw_execstart_line "$port"
-            pause
-            ;;
+        7) udpgw_apply_advanced_config "$port" ;;
         0) return 0 ;;
         *) print_error "Opcao invalida: $choice" ;;
         esac
@@ -3600,7 +3764,7 @@ udpgw_show_port_status() {
 
     print_header
     print_box_open
-    print_box_heading "STATUS — porta ${port}" "$CYAN"
+    print_box_heading "STATUS - porta ${port}" "$CYAN"
     print_box_divider
     if is_udpgw_port_active "$port"; then
         print_box_line "${WHITE}  Status: $(mark_online)${RESET}"
@@ -3664,7 +3828,7 @@ udpgw_show_metrics_for_port() {
         metrics_url=$(get_udpgw_metrics_base_url_for_port "$port")
 
         print_box_open
-        print_box_heading "METRICAS — porta ${port}" "$CYAN"
+        print_box_heading "METRICAS - porta ${port}" "$CYAN"
         print_box_divider
         if is_udpgw_port_active "$port"; then
             print_box_line "${WHITE}  Servico: $(mark_online)${RESET}"
