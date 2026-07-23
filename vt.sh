@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="2026-07-22-udpgw-metrics-fix"
+readonly MENU_REV="2026-07-22-udpgw-port-var-fix"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -3469,7 +3469,7 @@ is_udpgw_port_configured() {
 select_udpgw_port_interactive() {
     local _result_var="${1:?select_udpgw_port_interactive: variavel de retorno obrigatoria}"
     local prompt="${2:-Digite a porta TCP do gateway}"
-    local port configured
+    local selected configured
 
     configured=$(list_configured_udpgw_ports)
     if [[ -z "$configured" ]]; then
@@ -3480,28 +3480,28 @@ select_udpgw_port_interactive() {
     print_header
     echo -e "${BLUE}Portas: ${GREEN}$(format_udpgw_ports_status)${RESET}"
     echo -e "${BLUE}${prompt}:${RESET}"
-    read -rp "> " port
-    port=$(echo "$port" | tr -d '[:space:]')
+    read -rp "> " selected
+    selected=$(echo "$selected" | tr -d '[:space:]')
 
-    if [[ -z "$port" && "$configured" != *","* ]]; then
-        port="$configured"
+    if [[ -z "$selected" && "$configured" != *","* ]]; then
+        selected="$configured"
     fi
 
-    if [[ -z "$port" ]]; then
+    if [[ -z "$selected" ]]; then
         print_error "Informe a porta."
         return 1
     fi
 
-    if ! validate_port "$port"; then
+    if ! validate_port "$selected"; then
         return 1
     fi
 
-    if [[ ",${configured}," != *",${port},"* ]]; then
-        print_error "Porta ${port} nao configurada."
+    if [[ ",${configured}," != *",${selected},"* ]]; then
+        print_error "Porta ${selected} nao configurada."
         return 1
     fi
 
-    printf -v "$_result_var" '%s' "$port"
+    printf -v "$_result_var" '%s' "$selected"
     return 0
 }
 
