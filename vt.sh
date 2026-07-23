@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="2026-07-22-udpgw-multi"
+readonly MENU_REV="2026-07-22-udpgw-multi-fix"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -479,23 +479,22 @@ print_status() {
     proxy_label="${proxy_ports:-nenhuma}"
     [[ -n "$(load_proxy_token)" ]] && proxy_tok="$(mark_ok)" || proxy_tok="$(mark_fail)"
     [[ -n "$(load_proto_token)" ]] && proto_tok="$(mark_ok)" || proto_tok="$(mark_fail)"
-    if is_udpgw_active; then
-        udpgw_status="$(mark_online)"
-    else
-        udpgw_status="$(mark_offline)"
-    fi
     bound_ip=""
     [[ -f /etc/vtproxy/ip ]] && bound_ip=$(cat /etc/vtproxy/ip)
 
-    local port subnet tun
+    local port subnet tun udpgw_ports udpgw_status
     port=$(get_config_value "PORT")
     subnet=$(get_config_value "VIRTUAL_SUBNET_CIDR")
     tun=$(get_config_value "TUN_INTERFACE")
     port=${port:-8000}
     subnet=${subnet:-10.10.0.0/16}
     tun=${tun:-tun0}
-    local udpgw_ports
     udpgw_ports=$(format_udpgw_ports_status)
+    if [[ "$udpgw_ports" == *":ON"* ]] || systemctl is-active --quiet "$UDPGW_SERVICE_NAME" 2>/dev/null; then
+        udpgw_status="$(mark_online)"
+    else
+        udpgw_status="$(mark_offline)"
+    fi
 
     print_box_open
     local status_badge="${status_bg}${BOLD}${status_color} ${proto_status} ${RESET}"
@@ -3071,9 +3070,15 @@ format_udpgw_metric_line() {
 }
 
 UDPGW_ADV_PORT=""
+UDPGW_MIGRATION_CHECKED=""
 
 ensure_udpgw_dirs() {
     sudo mkdir -p /etc/udpgw "$UDPGW_CONFIG_DIR" 2>/dev/null || true
+}
+
+ensure_udpgw_dirs_quiet() {
+    [[ -d /etc/udpgw && -d "$UDPGW_CONFIG_DIR" ]] && return 0
+    ensure_udpgw_dirs
 }
 
 get_udpgw_config_file() {
@@ -3157,34 +3162,71 @@ EOF
 }
 
 migrate_legacy_udpgw_if_needed() {
-    local port=7400 listen file
+    local port=7400 listen file was_active="false" should_start="false"
+    local legacy_service="/etc/systemd/system/${UDPGW_SERVICE_NAME}.service"
+    local legacy_config="$UDPGW_CONFIG_FILE"
+    local has_legacy_service=false has_legacy_config=false
+
+    [[ -n "$UDPGW_MIGRATION_CHECKED" ]] && return 0
+    UDPGW_MIGRATION_CHECKED=1
+
+    if [[ -f /etc/udpgw/.legacy-migrated ]]; then
+        return 0
+    fi
+
+    [[ -f "$legacy_service" ]] && has_legacy_service=true
+    [[ -f "$legacy_config" ]] && has_legacy_config=true
+    [[ "$has_legacy_service" != true && "$has_legacy_config" != true ]] && return 0
 
     ensure_udpgw_dirs
-    [[ -f "$UDPGW_CONFIG_FILE" ]] || return 0
 
-    listen=$(grep '^LISTEN=' "$UDPGW_CONFIG_FILE" 2>/dev/null | head -n1 | cut -d= -f2-)
-    if [[ "$listen" =~ :([0-9]+)$ ]]; then
-        port="${BASH_REMATCH[1]}"
+    if systemctl is-active --quiet "$UDPGW_SERVICE_NAME" 2>/dev/null; then
+        was_active="true"
+    elif systemctl is-enabled --quiet "$UDPGW_SERVICE_NAME" 2>/dev/null; then
+        should_start="true"
+    fi
+    [[ "$was_active" == "true" ]] && should_start="true"
+    if [[ "$has_legacy_service" == true && -f "/etc/systemd/system/$(get_udpgw_service_name "$port").service" ]]; then
+        should_start="true"
     fi
 
-    file=$(get_udpgw_config_file "$port")
-    if [[ ! -f "$file" ]]; then
-        sudo cp "$UDPGW_CONFIG_FILE" "$file"
-        set_udpgw_conf_key "$port" "PORT" "$port"
+    if [[ "$has_legacy_config" == true ]]; then
+        listen=$(grep '^LISTEN=' "$legacy_config" 2>/dev/null | head -n1 | cut -d= -f2-)
+        if [[ "$listen" =~ :([0-9]+)$ ]]; then
+            port="${BASH_REMATCH[1]}"
+        fi
+        file=$(get_udpgw_config_file "$port")
+        if [[ ! -f "$file" ]]; then
+            sudo cp "$legacy_config" "$file"
+            set_udpgw_conf_key "$port" "PORT" "$port"
+        fi
+    else
+        file=$(ls "$UDPGW_CONFIG_DIR"/udpgw-*.conf 2>/dev/null | head -n1 || true)
+        if [[ -n "$file" ]]; then
+            port=$(basename "$file" .conf | sed -n 's/^udpgw-\([0-9]\+\)$/\1/p')
+        fi
+        [[ -z "$port" ]] && port="$UDPGW_DEFAULT_PORT"
     fi
 
-    if [[ -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service" ]]; then
-        apply_udpgw_service "$port" "false" || true
+    apply_udpgw_service "$port" "$should_start" || true
+
+    if [[ "$has_legacy_service" == true ]]; then
         sudo systemctl disable "$UDPGW_SERVICE_NAME" 2>/dev/null || true
         sudo systemctl stop "$UDPGW_SERVICE_NAME" 2>/dev/null || true
+        sudo rm -f "$legacy_service"
+        sudo systemctl daemon-reload
     fi
+
+    if [[ "$has_legacy_config" == true ]]; then
+        sudo mv "$legacy_config" "${legacy_config}.migrated.bak" 2>/dev/null || sudo rm -f "$legacy_config"
+    fi
+
+    echo "1" | sudo tee /etc/udpgw/.legacy-migrated >/dev/null
+    return 0
 }
 
 list_configured_udpgw_ports() {
     local ports=() f port service_file
-
-    migrate_legacy_udpgw_if_needed || true
-    ensure_udpgw_dirs
 
     for service_file in /etc/systemd/system/${UDPGW_SERVICE_PREFIX}-*.service; do
         [[ -f "$service_file" ]] || continue
@@ -3223,25 +3265,9 @@ is_udpgw_active() {
     return 1
 }
 
-list_active_udpgw_ports() {
-    local ports port active=""
-    ports=$(list_configured_udpgw_ports)
-    [[ -z "$ports" ]] && return 0
-    IFS=',' read -ra pa <<< "$ports"
-    for port in "${pa[@]}"; do
-        [[ -z "$port" ]] && continue
-        if is_udpgw_port_active "$port"; then
-            [[ -n "$active" ]] && active+=","
-            active+="$port"
-        fi
-    done
-    printf '%s' "$active"
-}
-
 format_udpgw_ports_status() {
-    local configured active port mark line=""
+    local configured port mark line="" active_ports=""
     configured=$(list_configured_udpgw_ports)
-    active=$(list_active_udpgw_ports)
 
     if [[ -z "$configured" ]]; then
         echo "nenhuma"
@@ -3251,8 +3277,10 @@ format_udpgw_ports_status() {
     IFS=',' read -ra pa <<< "$configured"
     for port in "${pa[@]}"; do
         [[ -z "$port" ]] && continue
-        if [[ ",${active}," == *",${port},"* ]]; then
+        if is_udpgw_port_active "$port"; then
             mark="ON"
+            [[ -n "$active_ports" ]] && active_ports+=","
+            active_ports+="$port"
         else
             mark="OFF"
         fi
@@ -3349,7 +3377,6 @@ select_udpgw_port_interactive() {
     local prompt="${1:-Selecione a porta TCP do gateway}"
     local ports=() port choice i
 
-    migrate_legacy_udpgw_if_needed || true
     ports=()
     while IFS= read -r port; do
         [[ -n "$port" ]] && ports+=("$port")
@@ -3721,7 +3748,6 @@ print_udpgw_menu() {
 }
 
 udpgw_main_menu() {
-    migrate_legacy_udpgw_if_needed || true
     while true; do
         print_header
         print_status
@@ -3960,6 +3986,23 @@ show_update_preserve_notice() {
     echo -e "${YELLOW}Serviços ativos serão reiniciados após a troca dos binários.${RESET}"
 }
 
+restart_udpgw_configured_ports() {
+    local port sn
+    for port in $(list_configured_udpgw_ports | tr ',' ' '); do
+        [[ -z "$port" ]] && continue
+        sn=$(get_udpgw_service_name "$port")
+        [[ -f "/etc/systemd/system/${sn}.service" ]] || continue
+        sudo systemctl enable "$sn" >/dev/null 2>&1 || true
+        sudo systemctl restart "$sn" 2>/dev/null || sudo systemctl start "$sn" 2>/dev/null || true
+    done
+    if [[ -f /etc/systemd/system/udpgw.service ]]; then
+        sudo systemctl disable udpgw 2>/dev/null || true
+        sudo systemctl stop udpgw 2>/dev/null || true
+        sudo rm -f /etc/systemd/system/udpgw.service
+        sudo systemctl daemon-reload 2>/dev/null || true
+    fi
+}
+
 run_system_update() {
     local args=(--update --yes)
 
@@ -3977,6 +4020,8 @@ run_system_update() {
     print_success "Atualização concluída (binários + menu)."
     echo
     print_info "Proxy: v$(get_installed_proxy_version_label) | Proto: v$(get_installed_proto_version_label) | UDPgw: v$(get_installed_udpgw_version_label)"
+
+    restart_udpgw_configured_ports || true
 
     if [[ -x "$MENU_BIN" ]]; then
         echo
@@ -4236,5 +4281,7 @@ fi
 check_token_on_startup
 
 run_quick_setup_first_time
+
+migrate_legacy_udpgw_if_needed || true
 
 initial_menu

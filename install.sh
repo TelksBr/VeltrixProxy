@@ -24,8 +24,8 @@ PROTO_CREDENTIALS_FILE="${PROTO_DATA_DIR}/credentials.json"
 PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
-INSTALLER_REV="2026-07-22-udpgw-multi"
-MENU_REV_EXPECTED="2026-07-22-udpgw-multi"
+INSTALLER_REV="2026-07-22-udpgw-multi-fix"
+MENU_REV_EXPECTED="2026-07-22-udpgw-multi-fix"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
@@ -1086,11 +1086,15 @@ restart_proto_server() {
 }
 
 restart_udpgw_server() {
-  local services=() service
+  local services=() service has_port_services=false
 
   if ! has_udpgw_service; then
     return 0
   fi
+
+  for service_file in /etc/systemd/system/udpgw-*.service; do
+    [[ -f "$service_file" ]] && has_port_services=true && break
+  done
 
   if [[ "$MODE" == "update" || "$MODE" == "reinstall" ]]; then
     read_nonempty_lines services < <(list_all_udpgw_services)
@@ -1105,6 +1109,12 @@ restart_udpgw_server() {
 
   log_info "Reiniciando ${#services[@]} serviço(s) udpgw..."
   for service in "${services[@]}"; do
+    if [[ "$service" == "udpgw.service" && "$has_port_services" == true ]]; then
+      run_privileged systemctl disable udpgw 2>/dev/null || true
+      run_privileged systemctl stop udpgw 2>/dev/null || true
+      continue
+    fi
+    run_privileged systemctl enable "$service" 2>/dev/null || true
     if ! run_privileged systemctl restart "$service"; then
       log_warn "Não foi possível reiniciar $service."
       log_info "Verifique: journalctl -u ${service%.service} -n 30 --no-pager"
