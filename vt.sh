@@ -3029,7 +3029,7 @@ fetch_latest_udpgw_release_tag() {
 
 download_udpgw_binary() {
     local tag="${1:-}"
-    local arch filename url tmp http_status
+    local arch filename url tmp http_status sums_url expected actual
 
     if [[ -z "$tag" ]]; then
         tag=$(fetch_latest_udpgw_release_tag || true)
@@ -3039,12 +3039,15 @@ download_udpgw_binary() {
         return 1
     fi
 
+    [[ "$tag" == v* ]] || tag="v${tag}"
+
     arch=$(detect_udpgw_release_arch)
     filename="udpgw-linux-${arch}"
     url="https://github.com/${UDPGW_REPO}/releases/download/${tag}/${filename}"
 
     tmp=$(mktemp)
     print_info "Baixando ${filename} (${tag})..."
+    print_info "URL: ${url}"
     http_status=$(curl -fsSL -w "%{http_code}" -o "$tmp" "$url" 2>/dev/null || true)
     if [[ "$http_status" != "200" || ! -s "$tmp" ]]; then
         rm -f "$tmp"
@@ -3052,6 +3055,24 @@ download_udpgw_binary() {
         print_info "Release: https://github.com/${UDPGW_REPO}/releases/tag/${tag}"
         return 1
     fi
+
+    sums_url="https://github.com/${UDPGW_REPO}/releases/download/${tag}/SHA256SUMS"
+    if http_status=$(curl -fsSL -w "%{http_code}" -o "${tmp}.sums" "$sums_url" 2>/dev/null || true) && [[ "$http_status" == "200" ]]; then
+        expected=$(grep -E "[[:space:]]${filename}$" "${tmp}.sums" | awk '{print $1}' | head -n1)
+        if [[ -n "$expected" ]]; then
+            actual=$(sha256sum "$tmp" 2>/dev/null | awk '{print $1}')
+            if [[ -z "$actual" ]]; then
+                actual=$(shasum -a 256 "$tmp" 2>/dev/null | awk '{print $1}')
+            fi
+            if [[ -n "$actual" && "$actual" != "$expected" ]]; then
+                rm -f "$tmp" "${tmp}.sums"
+                print_error "Checksum SHA256 inválido para ${filename}."
+                return 1
+            fi
+            print_success "Integridade SHA256 verificada."
+        fi
+    fi
+    rm -f "${tmp}.sums"
 
     sudo install -m 755 "$tmp" "$UDPGW_BIN"
     rm -f "$tmp"

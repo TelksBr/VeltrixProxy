@@ -741,7 +741,7 @@ verify_checksum() {
   local sha_file="${filename}.sha256"
   local http_status
 
-  http_status=$(curl -fsSL -w "%{http_code}" -o "$sha_file" "${DOWNLOAD_URL}.sha256" || true)
+  http_status=$(curl -fsSL -w "%{http_code}" -o "$sha_file" "${DOWNLOAD_URL}.sha256" 2>/dev/null || true)
   if [[ "$http_status" != "200" ]]; then
     log_warn "Arquivo SHA256 não encontrado. Pulando verificação..."
     return 0
@@ -752,6 +752,48 @@ verify_checksum() {
     log_error "Checksum inválido para $filename"
     exit 1
   fi
+}
+
+normalize_udpgw_release_tag() {
+  local tag="$1"
+  tag="${tag//$'\r'/}"
+  tag="${tag#"${tag%%[![:space:]]*}"}"
+  tag="${tag%"${tag##*[![:space:]]}"}"
+  [[ -z "$tag" ]] && return 1
+  [[ "$tag" == v* ]] || tag="v${tag}"
+  echo "$tag"
+}
+
+verify_udpgw_checksum() {
+  local filename="$1"
+  local tag="$2"
+  local sums_file="SHA256SUMS"
+  local sums_url expected actual http_status
+
+  tag=$(normalize_udpgw_release_tag "$tag" || echo "$tag")
+  sums_url="https://github.com/${UDPGW_REPO}/releases/download/${tag}/${sums_file}"
+
+  http_status=$(curl -fsSL -w "%{http_code}" -o "$sums_file" "$sums_url" 2>/dev/null || true)
+  if [[ "$http_status" != "200" ]]; then
+    log_warn "SHA256SUMS não encontrado em ${tag}. Pulando verificação..."
+    return 0
+  fi
+
+  expected=$(grep -E "[[:space:]]${filename}$" "$sums_file" | awk '{print $1}' | head -n1)
+  if [[ -z "$expected" ]]; then
+    log_warn "Entrada SHA256 não encontrada para ${filename}. Pulando verificação..."
+    return 0
+  fi
+
+  actual=$(file_sha256 "$filename")
+  if [[ "$actual" != "$expected" ]]; then
+    log_error "Checksum inválido para ${filename}"
+    log_info "Esperado: ${expected}"
+    log_info "Obtido:   ${actual}"
+    exit 1
+  fi
+
+  log_success "Integridade SHA256 verificada (${filename})."
 }
 
 get_proto_config_value() {
@@ -1322,32 +1364,27 @@ download_and_install_proto_binary() {
 }
 
 download_and_install_udpgw_binary() {
-  local udpgw_arch filename url http_status
+  local udpgw_arch filename tag url
 
   udpgw_arch=$(detect_udpgw_arch)
   filename="udpgw-${OS_NAME}-${udpgw_arch}"
-  url="https://github.com/${UDPGW_REPO}/releases/download/${UDPGW_VERSION}/${filename}"
+  tag=$(normalize_udpgw_release_tag "$UDPGW_VERSION" || echo "$UDPGW_VERSION")
+  url="https://github.com/${UDPGW_REPO}/releases/download/${tag}/${filename}"
 
   [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]] || TMP_DIR=$(mktemp -d)
   cd "$TMP_DIR"
 
-  log_info "Baixando binário udpgw: $filename (${UDPGW_VERSION})"
-  http_status=$(curl -fsSL -w "%{http_code}" -o "$filename" "$url" 2>/dev/null || true)
-  if [[ "$http_status" != "200" ]]; then
-    log_error "Falha ao baixar binário udpgw ${UDPGW_VERSION} (HTTP ${http_status:-404})"
-    log_info "Verifique releases em: https://github.com/${UDPGW_REPO}/releases"
-    exit 1
-  fi
-
-  DOWNLOAD_URL="$url"
-  verify_checksum "$filename"
+  log_info "Baixando binário udpgw: $filename (${tag})"
+  log_info "URL: $url"
+  download_file "$url" "$filename"
+  verify_udpgw_checksum "$filename" "$tag"
 
   log_info "Instalando binário em ${INSTALL_DIR}/${UDPGW_BINARY_NAME}..."
   run_privileged install -m 755 "$filename" "${INSTALL_DIR}/${UDPGW_BINARY_NAME}"
-  INSTALLED_UDPGW_VERSION="${UDPGW_VERSION#v}"
+  INSTALLED_UDPGW_VERSION="${tag#v}"
   echo "$INSTALLED_UDPGW_VERSION" | run_privileged tee "$UDPGW_VERSION_FILE" >/dev/null
 
-  log_success "Binário udpgw instalado: ${INSTALL_DIR}/${UDPGW_BINARY_NAME} (${UDPGW_VERSION})"
+  log_success "Binário udpgw instalado: ${INSTALL_DIR}/${UDPGW_BINARY_NAME} (${tag})"
 }
 
 install_menu_script() {
