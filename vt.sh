@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="2026-07-22-udpgw-multi-fix"
+readonly MENU_REV="2026-07-22-udpgw-port-select"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -3373,33 +3373,47 @@ EOF
     return 0
 }
 
-select_udpgw_port_interactive() {
-    local prompt="${1:-Selecione a porta TCP do gateway}"
-    local ports=() port choice i
+is_udpgw_port_configured() {
+    local port="$1"
+    [[ -f "$(get_udpgw_config_file "$port")" || -f "/etc/systemd/system/$(get_udpgw_service_name "$port").service" ]]
+}
 
-    ports=()
-    while IFS= read -r port; do
-        [[ -n "$port" ]] && ports+=("$port")
-    done < <(list_configured_udpgw_ports | tr ',' '\n' | grep -E '^[0-9]+$' || true)
-    if [[ ${#ports[@]} -eq 0 ]]; then
+select_udpgw_port_interactive() {
+    local prompt="${1:-Digite a porta TCP do gateway}"
+    local port configured
+
+    configured=$(list_configured_udpgw_ports)
+    if [[ -z "$configured" ]]; then
         print_error "Nenhuma porta udpgw configurada."
         return 1
     fi
 
+    print_header
+    echo -e "${BLUE}Portas: ${GREEN}$(format_udpgw_ports_status)${RESET}"
     echo -e "${BLUE}${prompt}:${RESET}"
-    for i in "${!ports[@]}"; do
-        port="${ports[$i]}"
-        local st="OFF"
-        is_udpgw_port_active "$port" && st="ON"
-        echo " $((i + 1))) ${port} [${st}] listen=$(get_udpgw_conf_value "$port" LISTEN "0.0.0.0:${port}")"
-    done
-    read -rp "> " choice
-    if [[ "$choice" =~ ^[1-9][0-9]*$ ]] && ((choice >= 1 && choice <= ${#ports[@]})); then
-        echo "${ports[$((choice - 1))]}"
-        return 0
+    read -rp "> " port
+    port=$(echo "$port" | tr -d '[:space:]')
+
+    if [[ -z "$port" && "$configured" != *","* ]]; then
+        port="$configured"
     fi
-    print_error "Escolha inválida."
-    return 1
+
+    if [[ -z "$port" ]]; then
+        print_error "Informe a porta."
+        return 1
+    fi
+
+    if ! validate_port "$port"; then
+        return 1
+    fi
+
+    if [[ ",${configured}," != *",${port},"* ]]; then
+        print_error "Porta ${port} nao configurada."
+        return 1
+    fi
+
+    printf '%s' "$port"
+    return 0
 }
 
 show_udpgw_execstart_line() {
