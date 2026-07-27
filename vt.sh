@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="25"
+readonly MENU_REV="26"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -852,7 +852,7 @@ write_proxy_conf() {
     local ssh_only_flag="$5"
     local http_response="$6"
     local buffer_size="$7"
-    local domain_flag="$8"
+    local domain_flag="$8" # legado (ignorado; --domain removido do binário)
     local max_connections="$9"
     local write_timeout="${10}"
     local idle_timeout="${11}"
@@ -874,7 +874,7 @@ CERT_INTERNAL=$cert_internal
 SSH_ONLY=$ssh_only_flag
 HTTP_RESPONSE=$http_response
 BUFFER_SIZE=$buffer_size
-DOMAIN=$domain_flag
+DOMAIN=false
 MAX_CONNECTIONS=$max_connections
 WRITE_TIMEOUT=$write_timeout
 IDLE_TIMEOUT=$idle_timeout
@@ -916,7 +916,7 @@ migrate_proxy_conf_from_unit_if_needed() {
 
     local ssl="false" cert="" cert_internal="true" ssh_only="false"
     local response="$DEFAULT_HTTP_RESPONSE" buffer="$DEFAULT_BUFFER_SIZE"
-    local domain="true"
+    local domain="false"
 
     [[ "$exec_line" == *":ssl"* ]] && ssl="true"
     if [[ "$exec_line" =~ --cert=([^ ]+) ]]; then
@@ -930,7 +930,6 @@ migrate_proxy_conf_from_unit_if_needed() {
     if [[ "$exec_line" =~ --buffer-size=([0-9]+) ]]; then
         buffer="${BASH_REMATCH[1]}"
     fi
-    [[ "$exec_line" != *"--domain"* ]] && domain="false"
 
     write_proxy_conf "$port" "$ssl" "$cert" "$cert_internal" "$ssh_only" "$response" \
         "$buffer" "$domain" "0" "0" "0" "info" "22" "1194" "1080" "true"
@@ -1030,7 +1029,7 @@ build_proxy_command_from_conf() {
     migrate_proxy_conf_from_unit_if_needed "$port" || true
 
     local ssl_enabled ssl_cert_path cert_internal ssh_only_flag http_response
-    local buffer_size domain_flag max_connections write_timeout idle_timeout
+    local buffer_size max_connections write_timeout idle_timeout
     local log_level ssh_port openvpn_port v2ray_port display_banner proto_port
 
     ssl_enabled=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
@@ -1039,7 +1038,6 @@ build_proxy_command_from_conf() {
     ssh_only_flag=$(get_proxy_conf_value "$port" "SSH_ONLY" "false")
     http_response=$(get_proxy_conf_value "$port" "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
     buffer_size=$(get_proxy_conf_value "$port" "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
-    domain_flag=$(get_proxy_conf_value "$port" "DOMAIN" "true")
     max_connections=$(get_proxy_conf_value "$port" "MAX_CONNECTIONS" "0")
     write_timeout=$(get_proxy_conf_value "$port" "WRITE_TIMEOUT" "0")
     idle_timeout=$(get_proxy_conf_value "$port" "IDLE_TIMEOUT" "0")
@@ -1051,10 +1049,6 @@ build_proxy_command_from_conf() {
     proto_port=$(get_proto_port)
 
     local command="$PROXY_EXECUTABLE --token=$token --buffer-size=$buffer_size --response=$http_response --log-file=$(get_proxy_log_file "$port") --log-level=$log_level --dt-proto-port=$proto_port --ssh-port=$ssh_port --openvpn-port=$openvpn_port --v2ray-port=$v2ray_port --max-connections=$max_connections --write-timeout=$write_timeout --idle-timeout=$idle_timeout"
-
-    if [[ "$domain_flag" == "true" ]]; then
-        command="$command --domain"
-    fi
 
     if [[ "$display_banner" != "true" ]]; then
         command="$command --display-banner=false"
@@ -1096,7 +1090,7 @@ build_proxy_command() {
     fi
 
     write_proxy_conf "$port" "$ssl_enabled" "$ssl_cert_path" "$cert_internal" "$ssh_only_flag" \
-        "$http_response" "$DEFAULT_BUFFER_SIZE" "true" "0" "0" "0" "info" "22" "1194" "1080" "true"
+        "$http_response" "$DEFAULT_BUFFER_SIZE" "false" "0" "0" "0" "info" "22" "1194" "1080" "true"
     build_proxy_command_from_conf "$port" "$token"
 }
 
@@ -1211,7 +1205,7 @@ start_proxy_for_port() {
     fi
 
     write_proxy_conf "$port" "$ssl_enabled" "$ssl_cert_path" "$cert_internal" "$ssh_only_flag" \
-        "$http_response" "$DEFAULT_BUFFER_SIZE" "true" "0" "0" "0" "info" "22" "1194" "1080" "true"
+        "$http_response" "$DEFAULT_BUFFER_SIZE" "false" "0" "0" "0" "info" "22" "1194" "1080" "true"
 
     apply_proxy_service "$port" "true"
 }
@@ -1227,21 +1221,20 @@ prompt_proxy_advanced_options() {
         print_box_divider
         print_box_line "${WHITE}  1 • Buffer (--buffer-size): ${CYAN}${ADV_BUFFER_SIZE}${RESET}"
         print_box_line "${WHITE}  2 • Log level: ${CYAN}${ADV_LOG_LEVEL}${RESET}"
-        print_box_line "${WHITE}  3 • Domain (--domain): ${CYAN}${ADV_DOMAIN}${RESET}"
-        print_box_line "${WHITE}  4 • Backends SSH/OVPN/V2Ray: ${CYAN}${ADV_SSH_PORT}/${ADV_OPENVPN_PORT}/${ADV_V2RAY_PORT}${RESET}"
-        print_box_line "${WHITE}  5 • Max conn / write / idle: ${CYAN}${ADV_MAX_CONNECTIONS}/${ADV_WRITE_TIMEOUT}/${ADV_IDLE_TIMEOUT}${RESET}"
-        print_box_line "${WHITE}  6 • Banner (--display-banner): ${CYAN}${ADV_DISPLAY_BANNER}${RESET}"
-        print_box_line "${WHITE}  7 • Cert interno (--cert-internal): ${CYAN}${ADV_CERT_INTERNAL}${RESET}"
+        print_box_line "${WHITE}  3 • Backends SSH/OVPN/V2Ray: ${CYAN}${ADV_SSH_PORT}/${ADV_OPENVPN_PORT}/${ADV_V2RAY_PORT}${RESET}"
+        print_box_line "${WHITE}  4 • Max conn / write / idle: ${CYAN}${ADV_MAX_CONNECTIONS}/${ADV_WRITE_TIMEOUT}/${ADV_IDLE_TIMEOUT}${RESET}"
+        print_box_line "${WHITE}  5 • Banner (--display-banner): ${CYAN}${ADV_DISPLAY_BANNER}${RESET}"
+        print_box_line "${WHITE}  6 • Cert interno (--cert-internal): ${CYAN}${ADV_CERT_INTERNAL}${RESET}"
         if [[ -n "${ADV_PORT:-}" ]]; then
-            print_box_line "${WHITE}  8 • Ver ExecStart atual${RESET}"
-            print_box_line "${WHITE}  9 • Salvar e aplicar na porta ${CYAN}${ADV_PORT}${RESET}"
+            print_box_line "${WHITE}  7 • Ver ExecStart atual${RESET}"
+            print_box_line "${WHITE}  8 • Salvar e aplicar na porta ${CYAN}${ADV_PORT}${RESET}"
         fi
         print_box_divider
         render_menu_option "0 • Concluir (voltar)" "red"
         print_box_close
         echo
 
-        read -rp "$(echo -e "${BLUE}Selecione [0-9]:${RESET} ")" choice
+        read -rp "$(echo -e "${BLUE}Selecione [0-8]:${RESET} ")" choice
         case "$choice" in
             1)
                 ADV_BUFFER_SIZE=$(prompt_with_default "Buffer size em bytes (--buffer-size)" "$ADV_BUFFER_SIZE")
@@ -1254,30 +1247,23 @@ prompt_proxy_advanced_options() {
                 ADV_LOG_LEVEL=$(prompt_with_default "Log level (debug|info|warn|error)" "$ADV_LOG_LEVEL")
                 ;;
             3)
-                if confirm_action "Gerar domínio automático (--domain)? (atual: $ADV_DOMAIN)" "$([[ "$ADV_DOMAIN" == "true" ]] && echo s || echo n)"; then
-                    ADV_DOMAIN="true"
-                else
-                    ADV_DOMAIN="false"
-                fi
-                ;;
-            4)
                 ADV_SSH_PORT=$(prompt_with_default "Porta backend SSH (--ssh-port)" "$ADV_SSH_PORT")
                 ADV_OPENVPN_PORT=$(prompt_with_default "Porta backend OpenVPN (--openvpn-port)" "$ADV_OPENVPN_PORT")
                 ADV_V2RAY_PORT=$(prompt_with_default "Porta backend V2Ray (--v2ray-port)" "$ADV_V2RAY_PORT")
                 ;;
-            5)
+            4)
                 ADV_MAX_CONNECTIONS=$(prompt_with_default "Max connections (0=ilimitado)" "$ADV_MAX_CONNECTIONS")
                 ADV_WRITE_TIMEOUT=$(prompt_with_default "Write timeout segundos (0=off)" "$ADV_WRITE_TIMEOUT")
                 ADV_IDLE_TIMEOUT=$(prompt_with_default "Idle timeout segundos (0=off)" "$ADV_IDLE_TIMEOUT")
                 ;;
-            6)
+            5)
                 if confirm_action "Exibir banner de status (--display-banner)? (atual: $ADV_DISPLAY_BANNER)" "$([[ "$ADV_DISPLAY_BANNER" == "true" ]] && echo s || echo n)"; then
                     ADV_DISPLAY_BANNER="true"
                 else
                     ADV_DISPLAY_BANNER="false"
                 fi
                 ;;
-            7)
+            6)
                 if confirm_action "Usar certificado interno (--cert-internal)? (atual: $ADV_CERT_INTERNAL)" "$([[ "$ADV_CERT_INTERNAL" == "true" ]] && echo s || echo n)"; then
                     ADV_CERT_INTERNAL="true"
                     ADV_SSL_CERT_PATH=""
@@ -1286,7 +1272,7 @@ prompt_proxy_advanced_options() {
                     ADV_SSL_CERT_PATH=$(prompt_with_default "Caminho do certificado externo" "${ADV_SSL_CERT_PATH:-/etc/ssl/cert.pem}")
                 fi
                 ;;
-            8)
+            7)
                 if [[ -z "${ADV_PORT:-}" ]]; then
                     print_warning "ExecStart só está disponível após escolher uma porta configurada."
                     pause
@@ -1295,7 +1281,7 @@ prompt_proxy_advanced_options() {
                     pause
                 fi
                 ;;
-            9)
+            8)
                 if [[ -z "${ADV_PORT:-}" ]]; then
                     print_warning "Sem porta selecionada — use 'Concluir' na criação."
                     pause
@@ -1326,7 +1312,7 @@ init_adv_defaults() {
     ADV_SSH_PORT="${6:-22}"
     ADV_OPENVPN_PORT="${7:-1194}"
     ADV_V2RAY_PORT="${8:-1080}"
-    ADV_DOMAIN="${9:-true}"
+    ADV_DOMAIN="${9:-false}"
     ADV_DISPLAY_BANNER="${10:-true}"
     ADV_CERT_INTERNAL="${11:-true}"
     ADV_SSL_CERT_PATH="${12:-}"
@@ -1345,7 +1331,7 @@ load_adv_from_port() {
     ADV_SSH_PORT=$(get_proxy_conf_value "$port" "SSH_PORT" "22")
     ADV_OPENVPN_PORT=$(get_proxy_conf_value "$port" "OPENVPN_PORT" "1194")
     ADV_V2RAY_PORT=$(get_proxy_conf_value "$port" "V2RAY_PORT" "1080")
-    ADV_DOMAIN=$(get_proxy_conf_value "$port" "DOMAIN" "true")
+    ADV_DOMAIN="false"
     ADV_DISPLAY_BANNER=$(get_proxy_conf_value "$port" "DISPLAY_BANNER" "true")
     ADV_CERT_INTERNAL=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
     ADV_SSL_CERT_PATH=$(get_proxy_conf_value "$port" "SSL_CERT_PATH" "")
@@ -1549,7 +1535,7 @@ start_proxy_service() {
         buffer_size="$DEFAULT_BUFFER_SIZE"
     fi
 
-    local domain_flag="true"
+    local domain_flag="false"
     local max_connections="0"
     local write_timeout="0"
     local idle_timeout="0"
@@ -1559,8 +1545,8 @@ start_proxy_service() {
     local v2ray_port="1080"
     local display_banner="true"
 
-    init_adv_defaults "$buffer_size" "0" "0" "0" "info" "22" "1194" "1080" "true" "true" "$cert_internal" "$ssl_cert_path"
-    if confirm_action "Abrir submenu de opções avançadas (log, domain, backends, timeouts...)?" "n"; then
+    init_adv_defaults "$buffer_size" "0" "0" "0" "info" "22" "1194" "1080" "false" "true" "$cert_internal" "$ssl_cert_path"
+    if confirm_action "Abrir submenu de opções avançadas (log, backends, timeouts...)?" "n"; then
         prompt_proxy_advanced_options
         buffer_size="$ADV_BUFFER_SIZE"
         max_connections="$ADV_MAX_CONNECTIONS"
@@ -1570,7 +1556,7 @@ start_proxy_service() {
         ssh_port="$ADV_SSH_PORT"
         openvpn_port="$ADV_OPENVPN_PORT"
         v2ray_port="$ADV_V2RAY_PORT"
-        domain_flag="$ADV_DOMAIN"
+        domain_flag="false"
         display_banner="$ADV_DISPLAY_BANNER"
         cert_internal="$ADV_CERT_INTERNAL"
         ssl_cert_path="$ADV_SSL_CERT_PATH"
@@ -1752,7 +1738,7 @@ edit_proxy_service() {
     ssh_only_flag=$(get_proxy_conf_value "$port" "SSH_ONLY" "false")
     http_response=$(get_proxy_conf_value "$port" "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
     buffer_size=$(get_proxy_conf_value "$port" "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
-    domain_flag=$(get_proxy_conf_value "$port" "DOMAIN" "true")
+    domain_flag="false"
     max_connections=$(get_proxy_conf_value "$port" "MAX_CONNECTIONS" "0")
     write_timeout=$(get_proxy_conf_value "$port" "WRITE_TIMEOUT" "0")
     idle_timeout=$(get_proxy_conf_value "$port" "IDLE_TIMEOUT" "0")
@@ -1795,7 +1781,7 @@ edit_proxy_service() {
     fi
 
     init_adv_defaults "$buffer_size" "$max_connections" "$write_timeout" "$idle_timeout" \
-        "$log_level" "$ssh_port" "$openvpn_port" "$v2ray_port" "$domain_flag" "$display_banner" \
+        "$log_level" "$ssh_port" "$openvpn_port" "$v2ray_port" "false" "$display_banner" \
         "$cert_internal" "$ssl_cert_path"
     ADV_PORT="$port"
 
@@ -1809,7 +1795,7 @@ edit_proxy_service() {
         ssh_port="$ADV_SSH_PORT"
         openvpn_port="$ADV_OPENVPN_PORT"
         v2ray_port="$ADV_V2RAY_PORT"
-        domain_flag="$ADV_DOMAIN"
+        domain_flag="false"
         display_banner="$ADV_DISPLAY_BANNER"
         cert_internal="$ADV_CERT_INTERNAL"
         ssl_cert_path="$ADV_SSL_CERT_PATH"
@@ -1885,7 +1871,6 @@ show_proxy_port_details() {
     print_box_line "${WHITE}  Timeouts W/I: ${CYAN}$(get_proxy_conf_value "$port" WRITE_TIMEOUT 0)/$(get_proxy_conf_value "$port" IDLE_TIMEOUT 0)${RESET}"
     print_box_line "${WHITE}  Log level: ${CYAN}$(get_proxy_conf_value "$port" LOG_LEVEL info)${RESET}"
     print_box_line "${WHITE}  Backends SSH/OVPN/V2Ray: ${CYAN}$(get_proxy_conf_value "$port" SSH_PORT 22)/$(get_proxy_conf_value "$port" OPENVPN_PORT 1194)/$(get_proxy_conf_value "$port" V2RAY_PORT 1080)${RESET}"
-    print_box_line "${WHITE}  Domain: ${CYAN}$(get_proxy_conf_value "$port" DOMAIN true)${RESET}"
     print_box_line "${WHITE}  dt-proto-port: ${CYAN}$(get_proto_port)${RESET}"
     print_box_line "${WHITE}  Conf: ${CYAN}$conf_file${RESET}"
     print_box_line "${WHITE}  Log/banner file: ${CYAN}$(get_proxy_log_file "$port")${RESET}"

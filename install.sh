@@ -25,7 +25,7 @@ PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
 INSTALLER_REV="25"
-MENU_REV_EXPECTED="25"
+MENU_REV_EXPECTED="26"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
@@ -1178,6 +1178,39 @@ sync_proxy_service_executables() {
   done
 }
 
+# --domain was removed from the proxy binary; old units still carry it and fail
+# with "flag provided but not defined". Strip on every update/reinstall.
+strip_legacy_proxy_flags() {
+  local service_file conf_file stripped=0
+
+  while IFS= read -r service_file; do
+    [[ -f "$service_file" ]] || continue
+    if grep -qE -- '--domain(=[^[:space:]]*)?' "$service_file"; then
+      safe_sed_inplace "$service_file" -e 's/[[:space:]]+--domain(=[^[:space:]]*)?//g' || true
+      stripped=$((stripped + 1))
+    fi
+  done < <(find_service_files_by_exec 'ExecStart=.*(/usr/local/bin/proxy-server|/usr/local/bin/proxy)( |$)')
+
+  for service_file in /etc/systemd/system/proxy-*.service; do
+    [[ -f "$service_file" ]] || continue
+    if grep -qE -- '--domain(=[^[:space:]]*)?' "$service_file"; then
+      safe_sed_inplace "$service_file" -e 's/[[:space:]]+--domain(=[^[:space:]]*)?//g' || true
+      stripped=$((stripped + 1))
+    fi
+  done
+
+  for conf_file in /etc/proxy/conf.d/proxy-*.conf; do
+    [[ -f "$conf_file" ]] || continue
+    if grep -qE '^DOMAIN=' "$conf_file"; then
+      safe_sed_inplace "$conf_file" -e 's/^DOMAIN=.*/DOMAIN=false/' || true
+    fi
+  done
+
+  if [[ "$stripped" -gt 0 ]]; then
+    log_info "Removida flag legada --domain de ${stripped} unit(s) systemd."
+  fi
+}
+
 sync_proxy_service_tokens() {
   local token="$1"
   local service_file safe_token
@@ -1314,6 +1347,7 @@ refresh_existing_services() {
   fi
 
   sync_proxy_service_executables
+  strip_legacy_proxy_flags
   [[ -n "$proxy_token" ]] && sync_proxy_service_tokens "$proxy_token"
   [[ -n "$proto_token" ]] && sync_proto_service "$proto_token"
   sync_udpgw_service
