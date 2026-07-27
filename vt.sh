@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="26"
+readonly MENU_REV="27"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -277,6 +277,26 @@ except Exception:
 PY
 }
 
+# Sessões SSH logadas (who/w), excluindo root. Conta linhas/sessões, não usuários únicos.
+get_ssh_online_users_count() {
+    local count=0
+    if command -v who >/dev/null 2>&1; then
+        count=$(who 2>/dev/null | awk 'NF >= 1 && $1 != "root" { c++ } END { print c+0 }')
+    elif command -v w >/dev/null 2>&1; then
+        count=$(w -h 2>/dev/null | awk 'NF >= 1 && $1 != "root" { c++ } END { print c+0 }')
+    fi
+    echo "${count:-0}"
+}
+
+# Onlines do proto via stats.json (/var/lib/proto-server/stats.json), só se o serviço estiver ativo.
+get_proto_online_users_count() {
+    if ! is_server_active; then
+        echo "0"
+        return
+    fi
+    get_online_users_count
+}
+
 is_online_api_active() {
     systemctl is-active --quiet "$ONLINE_API_SERVICE_NAME"
 }
@@ -475,12 +495,15 @@ print_status() {
     fi
 
     local proxy_ports proxy_label proxy_tok proto_tok udpgw_status bound_ip
+    local ssh_onlines proto_onlines
     proxy_ports=$(format_proxy_ports_status)
     proxy_label="${proxy_ports:-nenhuma}"
     [[ -n "$(load_proxy_token)" ]] && proxy_tok="$(mark_ok)" || proxy_tok="$(mark_fail)"
     [[ -n "$(load_proto_token)" ]] && proto_tok="$(mark_ok)" || proto_tok="$(mark_fail)"
     bound_ip=""
     [[ -f /etc/vtproxy/ip ]] && bound_ip=$(cat /etc/vtproxy/ip)
+    ssh_onlines=$(get_ssh_online_users_count)
+    proto_onlines=$(get_proto_online_users_count)
 
     local port subnet tun udpgw_ports udpgw_status
     port=$(get_config_value "PORT")
@@ -506,6 +529,7 @@ print_status() {
         if [[ -n "$bound_ip" ]]; then
             print_box_line "${WHITE}IP: ${CYAN}${bound_ip}${RESET}"
         fi
+        print_box_line "${WHITE}Onlines SSH:${CYAN}${ssh_onlines}${WHITE} Proto:${CYAN}${proto_onlines}${RESET}"
         print_box_line "${WHITE}Proto:${CYAN}${port}${WHITE} TUN:${CYAN}${tun}${RESET}"
         print_box_line "${WHITE}Net: ${CYAN}${subnet}${RESET}"
         print_box_line "${WHITE}UDPgw: ${udpgw_status}${WHITE} ${CYAN}${udpgw_ports}${RESET}"
@@ -516,6 +540,7 @@ print_status() {
             tokens_line+="${WHITE} | IP: ${CYAN}${bound_ip}${RESET}"
         fi
         print_box_line "$tokens_line"
+        print_box_line "${WHITE} Onlines: SSH ${CYAN}${ssh_onlines}${WHITE} | Proto ${CYAN}${proto_onlines}${RESET}"
         print_box_line "${WHITE} Porta proto: ${CYAN}${port}${WHITE} | Sub-rede: ${CYAN}${subnet}${WHITE} | TUN: ${CYAN}${tun}${RESET}"
         print_box_line "${WHITE} UDP Gateway: ${udpgw_status}${WHITE} portas ${CYAN}${udpgw_ports}${RESET}"
     fi
@@ -556,11 +581,15 @@ print_initial_menu() {
     print_box_open
     print_box_heading "MENU INICIAL"
     print_box_divider
+
+    local ssh_onlines proto_onlines
+    ssh_onlines=$(get_ssh_online_users_count)
+    proto_onlines=$(get_proto_online_users_count)
     
     local menu_items=(
         "1 • Servidor Protocolo"
         "2 • Proxy / Portas"
-        "3 • Usuarios Online"
+        "3 • Usuarios Online (SSH:${ssh_onlines} Proto:${proto_onlines})"
         "4 • Gerenciar Tokens"
         "5 • Atualizar Sistema"
         "6 • UDP Gateway (udpgw)"
@@ -4190,12 +4219,22 @@ show_online_users_details() {
         print_header
 
         local online_count
-        online_count=$(get_online_users_count)
+        online_count=$(get_proto_online_users_count)
 
         print_box_open
-        print_box_heading "USUARIOS ONLINE (${online_count})" "$CYAN"
+        print_box_heading "USUARIOS ONLINE PROTO (${online_count})" "$CYAN"
         print_box_close
         echo
+
+        if ! is_server_active; then
+            echo "Proto offline — sem estatísticas de onlines."
+            echo
+            echo -e "${YELLOW}Pressione Enter para voltar.${RESET}"
+            if read -r -t 5; then
+                break
+            fi
+            continue
+        fi
 
         python3 - "$STATS_FILE" <<'PY'
 import json
@@ -4272,8 +4311,9 @@ online_users_menu() {
         local api_status
         local api_port
         api_port=$(get_online_api_port)
-        local online_count
-        online_count=$(get_online_users_count)
+        local online_count ssh_onlines
+        online_count=$(get_proto_online_users_count)
+        ssh_onlines=$(get_ssh_online_users_count)
 
         if is_online_api_active; then
             api_status="$(mark_online)"
@@ -4288,7 +4328,8 @@ online_users_menu() {
         if [[ -n "$api_port" ]]; then
             print_box_line "${WHITE} Api porta: ${api_port}${RESET}"
         fi
-        print_box_line "${WHITE} Usuarios online: ${online_count}${RESET}"
+        print_box_line "${WHITE} SSH online (sem root): ${CYAN}${ssh_onlines}${RESET}"
+        print_box_line "${WHITE} Proto online: ${CYAN}${online_count}${RESET}"
         print_box_close
         echo
 
