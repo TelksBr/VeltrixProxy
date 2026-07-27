@@ -24,7 +24,7 @@ PROTO_CREDENTIALS_FILE="${PROTO_DATA_DIR}/credentials.json"
 PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
-INSTALLER_REV="27"
+INSTALLER_REV="28"
 MENU_REV_EXPECTED="26"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
@@ -395,8 +395,10 @@ ensure_dependencies() {
 # License v2 rejects client_ts outside ±5 minutes of API time. Local timezone
 # (e.g. America/Sao_Paulo) is fine — Unix timestamps are absolute. We only need
 # the wall clock synchronized via NTP.
+#
+# Must not abort install/update on NTP/network glitches (set -euo pipefail).
 ensure_system_clock() {
-  local pm offset_line http_date local_epoch remote_epoch skew=""
+  local pm http_date local_epoch remote_epoch skew=0
 
   log_info "Sincronizando relógio do sistema (NTP) — necessário para validação de licença..."
 
@@ -405,27 +407,27 @@ ensure_system_clock() {
   if ! command -v chronyd >/dev/null 2>&1 && ! command -v chronyc >/dev/null 2>&1; then
     case "$pm" in
     apt)
-      install_packages apt chrony || log_warn "Falha ao instalar chrony; tentando systemd-timesyncd."
+      install_packages apt chrony 2>/dev/null || log_warn "Falha ao instalar chrony; tentando systemd-timesyncd."
+      hash -r 2>/dev/null || true
       ;;
     apk)
-      install_packages apk chrony || true
+      install_packages apk chrony 2>/dev/null || true
       ;;
     dnf | yum)
-      install_packages "$pm" chrony || true
+      install_packages "$pm" chrony 2>/dev/null || true
       ;;
     pacman)
-      install_packages pacman chrony || true
+      install_packages pacman chrony 2>/dev/null || true
       ;;
     zypper)
-      install_packages zypper chrony || true
+      install_packages zypper chrony 2>/dev/null || true
       ;;
     esac
   fi
 
-  if command -v chronyd >/dev/null 2>&1 || systemctl list-unit-files chrony.service >/dev/null 2>&1; then
+  if command -v chronyd >/dev/null 2>&1 || systemctl list-unit-files chrony.service 2>/dev/null | grep -q chrony; then
     run_privileged systemctl enable chrony 2>/dev/null || run_privileged systemctl enable chronyd 2>/dev/null || true
     run_privileged systemctl restart chrony 2>/dev/null || run_privileged systemctl restart chronyd 2>/dev/null || true
-    # Allow first samples before forcing a step (large skew >5min breaks license).
     sleep 2
     if command -v chronyc >/dev/null 2>&1; then
       run_privileged chronyc -a makestep >/dev/null 2>&1 || true
@@ -435,7 +437,7 @@ ensure_system_clock() {
   elif has_systemd; then
     case "$pm" in
     apt)
-      install_packages apt systemd-timesyncd || true
+      install_packages apt systemd-timesyncd 2>/dev/null || true
       ;;
     esac
     if command -v timedatectl >/dev/null 2>&1; then
@@ -449,42 +451,50 @@ ensure_system_clock() {
   fi
 
   local_epoch=$(date -u +%s 2>/dev/null || echo 0)
-  http_date=$(curl -fsSI --max-time 8 https://www.cloudflare.com 2>/dev/null | tr -d '\r' | awk -F': ' 'tolower($1)=="date"{print $2; exit}')
+  http_date=$(curl -sSI --max-time 8 https://www.cloudflare.com 2>/dev/null | tr -d '\r' | awk -F': ' 'tolower($1)=="date"{print $2; exit}' || true)
   if [[ -z "$http_date" ]]; then
-    http_date=$(curl -fsSI --max-time 8 https://www.google.com 2>/dev/null | tr -d '\r' | awk -F': ' 'tolower($1)=="date"{print $2; exit}')
+    http_date=$(curl -sSI --max-time 8 https://www.google.com 2>/dev/null | tr -d '\r' | awk -F': ' 'tolower($1)=="date"{print $2; exit}' || true)
   fi
 
-  if [[ -n "$http_date" ]] && remote_epoch=$(date -u -d "$http_date" +%s 2>/dev/null); then
+  remote_epoch=""
+  if [[ -n "$http_date" ]]; then
+    remote_epoch=$(date -u -d "$http_date" +%s 2>/dev/null || true)
+  fi
+
+  if [[ -n "${remote_epoch}" && "$local_epoch" =~ ^[0-9]+$ && "$remote_epoch" =~ ^[0-9]+$ ]]; then
     skew=$((local_epoch - remote_epoch))
-    if [[ "$skew" -lt 0 ]]; then
+    if ((skew < 0)); then
       skew=$((-skew))
     fi
-    if [[ "$skew" -gt 240 ]]; then
+    if ((skew > 240)); then
       log_warn "Relógio ainda desalinhado (~${skew}s vs HTTP Date). Tentando makestep novamente..."
       if command -v chronyc >/dev/null 2>&1; then
         run_privileged chronyc -a makestep >/dev/null 2>&1 || true
         sleep 1
         local_epoch=$(date -u +%s 2>/dev/null || echo 0)
         skew=$((local_epoch - remote_epoch))
-        [[ "$skew" -lt 0 ]] && skew=$((-skew))
+        if ((skew < 0)); then
+          skew=$((-skew))
+        fi
       fi
     fi
-    if [[ "$skew" -gt 240 ]]; then
+    if ((skew > 240)); then
       log_warn "Offset ~${skew}s (>4min). A API de licença exige ±5min — corrija NTP/firewall UDP 123."
-      log_info "Hora local UTC: $(date -u '+%Y-%m-%d %H:%M:%S') | HTTP Date: ${http_date}"
+      log_info "Hora local UTC: $(date -u '+%Y-%m-%d %H:%M:%S' 2>/dev/null || true) | HTTP Date: ${http_date}"
     else
       log_success "Relógio sincronizado (offset ~${skew}s). Fuso local pode permanecer (ex.: America/Sao_Paulo)."
-      log_info "UTC agora: $(date -u '+%Y-%m-%d %H:%M:%S')"
+      log_info "UTC agora: $(date -u '+%Y-%m-%d %H:%M:%S' 2>/dev/null || true)"
     fi
   else
-    offset_line=$(chronyc tracking 2>/dev/null | awk -F: '/System time/{print $2; exit}' || true)
-    if [[ -n "$offset_line" ]]; then
-      log_success "Chrony ativo.${offset_line}"
+    if command -v chronyc >/dev/null 2>&1; then
+      log_success "Chrony ativo (não foi possível cruzar com HTTP Date)."
     else
       log_warn "Não foi possível validar o horário via HTTP Date; confira com: date -u && chronyc tracking"
     fi
-    log_info "UTC agora: $(date -u '+%Y-%m-%d %H:%M:%S')"
+    log_info "UTC agora: $(date -u '+%Y-%m-%d %H:%M:%S' 2>/dev/null || true)"
   fi
+
+  return 0
 }
 
 detect_platform() {
@@ -1737,7 +1747,7 @@ main() {
   parse_args "$@"
   print_header
   ensure_dependencies
-  ensure_system_clock
+  ensure_system_clock || log_warn "Sincronização de relógio falhou — a licença pode rejeitar client_ts (±5min)."
   detect_platform
   show_current_installation
   capture_active_services
