@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="27"
+readonly MENU_REV="28"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -277,15 +277,20 @@ except Exception:
 PY
 }
 
-# Sessões SSH logadas (who/w), excluindo root. Conta linhas/sessões, não usuários únicos.
+# Usuários SSH únicos com sessão sshd (filhos sshd:), excluindo root.
 get_ssh_online_users_count() {
-    local count=0
-    if command -v who >/dev/null 2>&1; then
-        count=$(who 2>/dev/null | awk 'NF >= 1 && $1 != "root" { c++ } END { print c+0 }')
-    elif command -v w >/dev/null 2>&1; then
-        count=$(w -h 2>/dev/null | awk 'NF >= 1 && $1 != "root" { c++ } END { print c+0 }')
-    fi
-    echo "${count:-0}"
+    local count
+    count=$(
+        pgrep -f 'sshd:' 2>/dev/null \
+            | xargs -r ps -o user= 2>/dev/null \
+            | grep -v '^root$' \
+            | sort -u \
+            | wc -l \
+        || true
+    )
+    count=$(printf '%s' "$count" | tr -d '[:space:]')
+    [[ "$count" =~ ^[0-9]+$ ]] || count=0
+    echo "$count"
 }
 
 # Onlines do proto via stats.json (/var/lib/proto-server/stats.json), só se o serviço estiver ativo.
