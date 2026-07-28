@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="28"
+readonly MENU_REV="29"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -807,12 +807,11 @@ ensure_proto_for_proxy() {
         return 0
     fi
 
-    print_warning "Servidor protocolo (${SERVICE_NAME}) não está ativo."
-    print_info "O proxy depende de --dt-proto-port=$(get_proto_port)."
-    if confirm_action "Continuar mesmo assim?" "n"; then
-        return 0
-    fi
-    return 1
+    # Proto é extensão opcional (DT-Proto). Proxy SSH/OpenVPN/V2Ray/xhttp
+    # funciona sem o proto-server ativo.
+    print_warning "Protocolo (proto-server) não está ativo — extensão opcional."
+    print_info "O proxy principal não depende do proto. Configure depois em: Menu → Servidor Protocolo."
+    return 0
 }
 
 escape_sed_replacement() {
@@ -2090,23 +2089,40 @@ save_token() {
 
 validate_token() {
     local token="$1"
+    local output=""
+    local rc=0
+
     if [ -z "$token" ]; then
         print_error "Token vazio. Não pode ser validado."
         return 1
     fi
 
-    print_info "Validando token..."
-    
+    print_info "Validando token proto..."
+
     if [ ! -f "$PROTO_SERVER_BIN" ]; then
-        print_error "Binário do servidor não encontrado."
+        print_error "Binário do servidor protocolo não encontrado."
         return 1
     fi
-    
-    if sudo "$PROTO_SERVER_BIN" --token "$token" --validate; then
+
+    # Captura FATAL/timeout da API remota (protocol.dtunnel.com.br) sem abortar o menu.
+    set +e
+    output=$(sudo "$PROTO_SERVER_BIN" --token "$token" --validate 2>&1)
+    rc=$?
+    set -e
+
+    if [[ $rc -eq 0 ]]; then
+        [[ -n "$output" ]] && echo "$output"
         return 0
-    else
-        return 1
     fi
+
+    [[ -n "$output" ]] && echo "$output"
+
+    if echo "$output" | grep -qiE 'timeout|deadline exceeded|connection refused|no such host|network is unreachable|temporary failure|i/o timeout|TLS handshake timeout'; then
+        print_warning "API de validação do proto inacessível no momento (rede/timeout)."
+        return 2
+    fi
+
+    return 1
 }
 
 is_server_active() {
@@ -2257,6 +2273,13 @@ start_server() {
     
     ensure_data_structure
     check_or_set_proto_token
+
+    if [[ -z "$(load_proto_token)" ]]; then
+        print_warning "Sem token proto — não é possível iniciar o proto-server."
+        print_info "O proxy VT continua utilizável. Configure o proto depois em Gerenciar Tokens."
+        pause
+        return 0
+    fi
 
     local port=$(get_config_value "PORT")
     local subnet=$(get_config_value "VIRTUAL_SUBNET_CIDR")
@@ -2782,23 +2805,48 @@ change_token_menu() {
     print_header
 
     local new_token
+    local rc=0
+    print_info "Token proto é opcional. Enter vazio cancela."
     while true; do
-        echo -e "${BLUE}Insira o token proto:${RESET}"
+        echo -e "${BLUE}Insira o token proto (Enter cancela):${RESET}"
         read -rp "> " new_token
 
         new_token=$(echo "$new_token" | tr -d '\000-\037')
 
         if [[ -z "$new_token" ]]; then
-            print_error "Token não pode ser vazio."
-            continue
+            print_info "Configuração de token proto cancelada."
+            pause
+            return 0
         fi
 
-        if validate_token "$new_token"; then
+        set +e
+        validate_token "$new_token"
+        rc=$?
+        set -e
+
+        if [[ $rc -eq 0 ]]; then
             save_proto_token "$new_token"
             print_success "Token proto salvo!"
             break
+        elif [[ $rc -eq 2 ]]; then
+            print_warning "Não foi possível validar online (API proto fora do ar / timeout)."
+            if confirm_action "Salvar o token mesmo assim (sem validação online)?" "s"; then
+                save_proto_token "$new_token"
+                print_success "Token proto salvo offline. Valide depois quando a API voltar."
+                break
+            fi
+            if confirm_action "Cancelar configuração do proto?" "s"; then
+                print_info "Proto não configurado."
+                pause
+                return 0
+            fi
         else
-            print_error "Token proto inválido. Tente novamente."
+            print_error "Token proto inválido."
+            if ! confirm_action "Tentar outro token?" "s"; then
+                print_info "Configuração de token proto cancelada."
+                pause
+                return 0
+            fi
         fi
     done
 
@@ -2817,29 +2865,35 @@ change_token_menu() {
 check_or_set_proto_token() {
     local current_token
     current_token=$(load_proto_token)
-    
-    if [[ -z "$current_token" ]]; then
-        print_warning "Token proto não encontrado."
+
+    if [[ -n "$current_token" ]]; then
+        return 0
+    fi
+
+    print_warning "Token proto não encontrado (opcional — o proxy funciona sem ele)."
+    if confirm_action "Configurar token proto agora?" "n"; then
         change_token_menu
+    else
+        print_info "Proto pulado. Configure depois em: Menu → Gerenciar Tokens."
     fi
 }
 
 check_token_on_startup() {
-    if [[ -z "$(load_proto_token)" ]]; then
-        print_warning "Token proto não encontrado!"
-        print_info "Configure em: Menu inicial → Gerenciar Tokens [4]"
+    if [[ -z "$(load_proxy_token)" ]]; then
+        print_warning "Token proxy (licença) não encontrado!"
+        print_info "Obrigatório para o proxy. Configure em: Menu inicial → Gerenciar Tokens [4]"
         echo
     fi
 
-    if [[ -z "$(load_proxy_token)" ]]; then
-        print_warning "Token proxy (licença) não encontrado!"
-        print_info "Configure em: Menu inicial → Gerenciar Tokens [4]"
+    if [[ -z "$(load_proto_token)" ]]; then
+        print_info "Token proto não configurado (opcional)."
         echo
     fi
 }
 
 run_quick_setup_first_time() {
-    if [[ -n "$(load_proxy_token)" && -n "$(load_proto_token)" ]]; then
+    # Proxy token basta para considerar setup "completo"; proto é opcional.
+    if [[ -n "$(load_proxy_token)" ]]; then
         if [[ ! -f "$FIRST_RUN_MARKER" ]]; then
             set_config_value "$QUICK_SETUP_ASKED_KEY" "true"
             sudo mkdir -p "$(dirname "$FIRST_RUN_MARKER")"
@@ -2872,24 +2926,34 @@ run_quick_setup_first_time() {
     echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${RESET}"
     echo -e "${BLUE}║${CYAN}                  INSTALAÇÃO RÁPIDA INICIAL                   ${BLUE}║${RESET}"
     echo -e "${BLUE}╠══════════════════════════════════════════════════════════════╣${RESET}"
-    echo -e "${BLUE}║${WHITE}  Esta instalação ativa TCP, UDP e QUIC.                      ${BLUE}║${RESET}"
+    echo -e "${BLUE}║${WHITE}  Proxy é obrigatório. Protocolo (proto) é opcional.          ${BLUE}║${RESET}"
     echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${RESET}"
     echo
 
     ensure_data_structure "true"
-    check_or_set_proto_token
     prompt_for_proxy_token_if_missing
+    check_or_set_proto_token
 
     local base_port=8000
     local quic_port=8001
-    local required_ports=(80 443 8000 8001)
+    local required_ports=(80 443)
     local all_ports_free="true"
+    local want_proto="false"
 
-    print_warning "Antes de continuar, as portas abaixo precisam estar livres e serão ativadas nos seguintes serviços:"
+    if [[ -n "$(load_proto_token)" ]]; then
+        want_proto="true"
+        required_ports+=(8000 8001)
+    fi
+
+    print_warning "Antes de continuar, as portas abaixo precisam estar livres:"
     echo -e "${WHITE}  • ${CYAN}80${WHITE}   -> ${PROJECT_NAME}${RESET}"
     echo -e "${WHITE}  • ${CYAN}443${WHITE}  -> ${PROJECT_NAME} SSL${RESET}"
-    echo -e "${WHITE}  • ${CYAN}8000${WHITE} -> Protocolo TCP/UDP${RESET}"
-    echo -e "${WHITE}  • ${CYAN}8001${WHITE} -> Protocolo QUIC${RESET}"
+    if [[ "$want_proto" == "true" ]]; then
+        echo -e "${WHITE}  • ${CYAN}8000${WHITE} -> Protocolo TCP/UDP${RESET}"
+        echo -e "${WHITE}  • ${CYAN}8001${WHITE} -> Protocolo QUIC${RESET}"
+    else
+        print_info "Proto não configurado — pulando portas 8000/8001."
+    fi
     echo -e "${BLUE}Status das portas:${RESET}"
     for port in "${required_ports[@]}"; do
         if is_port_free "$port"; then
@@ -2921,35 +2985,35 @@ run_quick_setup_first_time() {
         fi
     done
 
-    local subnet
-    local tun
-    subnet=$(get_config_value "VIRTUAL_SUBNET_CIDR")
-    tun=$(get_config_value "TUN_INTERFACE")
-    subnet=${subnet:-10.10.0.0/16}
-    tun=${tun:-tun0}
+    if [[ "$want_proto" == "true" ]]; then
+        local subnet
+        local tun
+        subnet=$(get_config_value "VIRTUAL_SUBNET_CIDR")
+        tun=$(get_config_value "TUN_INTERFACE")
+        subnet=${subnet:-10.10.0.0/16}
+        tun=${tun:-tun0}
 
-    local protocol_components="tcp:$base_port,udp:$base_port,quic:$quic_port"
-    set_config_value "PORT" "$base_port"
-    set_config_value "VIRTUAL_SUBNET_CIDR" "$subnet"
-    set_config_value "TUN_INTERFACE" "$tun"
-    set_config_value "PROTOCOL_CONFIG" "$protocol_components"
+        local protocol_components="tcp:$base_port,udp:$base_port,quic:$quic_port"
+        set_config_value "PORT" "$base_port"
+        set_config_value "VIRTUAL_SUBNET_CIDR" "$subnet"
+        set_config_value "TUN_INTERFACE" "$tun"
+        set_config_value "PROTOCOL_CONFIG" "$protocol_components"
 
-    print_info "Aplicando configuração automática..."
-    if create_systemd_service; then
-        if sudo systemctl start "$SERVICE_NAME"; then
-            sudo systemctl enable "$SERVICE_NAME" > /dev/null 2>&1
-            print_success "Servidor protocolo iniciado com sucesso!"
-            print_success "Protocolos: $protocol_components"
+        print_info "Aplicando configuração do protocolo..."
+        if create_systemd_service; then
+            if sudo systemctl start "$SERVICE_NAME"; then
+                sudo systemctl enable "$SERVICE_NAME" > /dev/null 2>&1
+                print_success "Servidor protocolo iniciado com sucesso!"
+                print_success "Protocolos: $protocol_components"
+            else
+                print_warning "Falha ao iniciar o serviço protocolo (proxy segue normalmente)."
+                print_info "Verifique os logs: sudo journalctl -u $SERVICE_NAME -f"
+            fi
         else
-            print_error "Falha ao iniciar o serviço protocolo."
-            print_info "Verifique os logs: sudo journalctl -u $SERVICE_NAME -f"
-            pause
-            return 1
+            print_warning "Falha ao criar serviço systemd do protocolo (proxy segue normalmente)."
         fi
     else
-        print_error "Falha ao criar serviço systemd."
-        pause
-        return 1
+        print_info "Pulando start do proto-server."
     fi
 
     init_proxy_dirs
