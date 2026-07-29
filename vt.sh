@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="29"
+readonly MENU_REV="31"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -3253,7 +3253,15 @@ UDPGW_ADV_PORT=""
 UDPGW_MIGRATION_CHECKED=""
 
 ensure_udpgw_dirs() {
-    sudo mkdir -p /etc/udpgw "$UDPGW_CONFIG_DIR" 2>/dev/null || true
+    if ! mkdir -p /etc/udpgw "$UDPGW_CONFIG_DIR" 2>/dev/null; then
+        if command -v sudo >/dev/null 2>&1; then
+            sudo mkdir -p /etc/udpgw "$UDPGW_CONFIG_DIR" || return 1
+        else
+            print_error "Não foi possível criar ${UDPGW_CONFIG_DIR}"
+            return 1
+        fi
+    fi
+    return 0
 }
 
 ensure_udpgw_dirs_quiet() {
@@ -3403,12 +3411,18 @@ udpgw_metrics_conflict_with() {
 
 write_udpgw_conf_new() {
     local port="$1"
-    local metrics_listen listen
+    local metrics_listen listen config_file
 
     metrics_listen=$(suggest_udpgw_metrics_listen "$port")
     listen="0.0.0.0:${port}"
+    config_file=$(get_udpgw_config_file "$port")
 
-    sudo tee "$(get_udpgw_config_file "$port")" >/dev/null <<EOF
+    if ! ensure_udpgw_dirs; then
+        print_error "Falha ao preparar diretório de configuração udpgw."
+        return 1
+    fi
+
+    if ! tee "$config_file" >/dev/null <<EOF
 PORT=${port}
 LISTEN=${listen}
 DEBUG=false
@@ -3427,6 +3441,13 @@ MAX_CLIENTS=
 AUTO_RESTART_INTERVAL=
 AUTO_RESTART_GRACE=
 EOF
+    then
+        print_error "Falha ao criar config: ${config_file}"
+        return 1
+    fi
+
+    chmod 644 "$config_file" 2>/dev/null || true
+    return 0
 }
 
 migrate_legacy_udpgw_if_needed() {
@@ -3982,7 +4003,10 @@ udpgw_create_port() {
             pause
             return 1
         fi
-        write_udpgw_conf_new "$port"
+        if ! write_udpgw_conf_new "$port"; then
+            pause
+            return 1
+        fi
         print_success "Config criada: $(get_udpgw_config_file "$port")"
     fi
 

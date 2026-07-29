@@ -24,8 +24,8 @@ PROTO_CREDENTIALS_FILE="${PROTO_DATA_DIR}/credentials.json"
 PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
-INSTALLER_REV="28"
-MENU_REV_EXPECTED="29"
+INSTALLER_REV="29"
+MENU_REV_EXPECTED="31"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
@@ -270,6 +270,34 @@ get_missing_commands() {
   has_command python3 || missing+=("python3")
   if [[ ${#missing[@]} -gt 0 ]]; then
     printf '%s\n' "${missing[@]}"
+  fi
+}
+
+needs_sudo_install() {
+  [[ "${EUID:-$(id -u)}" -eq 0 ]] && ! has_command sudo
+}
+
+ensure_sudo() {
+  local pm
+
+  needs_sudo_install || return 0
+
+  pm=$(detect_package_manager)
+  if [[ "$pm" == "unknown" ]]; then
+    log_warn "sudo não encontrado e gerenciador de pacotes desconhecido — instale sudo manualmente."
+    return 0
+  fi
+
+  log_info "sudo não encontrado — instalando via ${pm}..."
+  if install_packages "$pm" sudo; then
+    hash -r 2>/dev/null || true
+    if has_command sudo; then
+      log_success "sudo instalado."
+    else
+      log_warn "Pacote sudo instalado, mas comando ainda não disponível no PATH."
+    fi
+  else
+    log_warn "Falha ao instalar sudo automaticamente."
   fi
 }
 
@@ -1746,6 +1774,7 @@ print_finish_message() {
 main() {
   parse_args "$@"
   print_header
+  ensure_sudo
   ensure_dependencies
   ensure_system_clock || log_warn "Sincronização de relógio falhou — a licença pode rejeitar client_ts (±5min)."
   detect_platform
