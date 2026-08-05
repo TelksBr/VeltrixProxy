@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="36"
+readonly MENU_REV="37"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly DEFAULT_PROTO_VERSION="v2.0.1"
@@ -699,7 +699,9 @@ detect_public_ipv4() {
 refresh_proto_license_from_api() {
     local quiet="${1:-false}"
     local force="${2:-false}"
-    local public_ip response proto_token api_error payload
+    local public_ip response proto_token api_error payload old_token
+
+    old_token=$(load_proto_token | tr -d '\r\n[:space:]')
 
     public_ip=$(detect_public_ipv4 || true)
     if [[ -z "$public_ip" ]]; then
@@ -764,14 +766,17 @@ PY
     )
 
     if [[ -n "$proto_token" ]]; then
+        if [[ "$proto_token" == "$old_token" ]]; then
+            sync_proto_systemd_token "$proto_token" "$quiet" || true
+            return 0
+        fi
+
         save_proto_token "$proto_token"
         [[ "$quiet" != true ]] && print_success "Licença proto renovada e salva."
-        if create_systemd_service; then
+        if sync_proto_systemd_token "$proto_token" "$quiet"; then
             if is_server_active; then
                 sudo systemctl restart "$SERVICE_NAME" 2>/dev/null || true
                 [[ "$quiet" != true ]] && print_success "Serviço proto-server reiniciado com nova licença."
-            else
-                [[ "$quiet" != true ]] && print_info "Unit proto-server atualizado (serviço parado)."
             fi
         fi
         return 0
@@ -2298,7 +2303,34 @@ EOF
     fi
 }
 
+sync_proto_systemd_token() {
+    local token="$1"
+    local quiet="${2:-false}"
+    local service_file="/etc/systemd/system/$SERVICE_NAME.service"
+    local current_in_unit=""
+
+    [[ -n "$token" ]] || return 1
+
+    if [[ -f "$service_file" ]]; then
+        current_in_unit=$(
+            grep -oE '--token=[^ ]+' "$service_file" 2>/dev/null \
+                | head -1 \
+                | sed 's/^--token=//' || true
+        )
+        if [[ "$current_in_unit" == "$token" ]]; then
+            return 0
+        fi
+        sudo sed -Ei "s|--token=[^ ]+|--token=${token}|g" "$service_file"
+        sudo systemctl daemon-reload 2>/dev/null || true
+        [[ "$quiet" != true ]] && print_success "Unit proto-server atualizado com novo token."
+        return 0
+    fi
+
+    create_systemd_service "$quiet"
+}
+
 create_systemd_service() {
+    local quiet="${1:-false}"
     local current_token=$(load_token)
     local port=$(get_config_value "PORT")
     local subnet=$(get_config_value "VIRTUAL_SUBNET_CIDR")
@@ -2318,7 +2350,7 @@ create_systemd_service() {
         return 1
     fi
 
-    print_info "Criando serviço systemd..."
+    [[ "$quiet" != true ]] && print_info "Criando serviço systemd..."
 
     protocol_config=$(normalize_protocol_config "$protocol_config")
 
@@ -2375,7 +2407,7 @@ WantedBy=multi-user.target
 EOF
 
     sudo systemctl daemon-reload
-    print_success "Serviço systemd configurado."
+    [[ "$quiet" != true ]] && print_success "Serviço systemd configurado."
 }
 
 start_server() {
@@ -2996,8 +3028,6 @@ check_token_on_startup() {
         print_info "Obrigatório para o proxy. Configure em: Menu inicial → Gerenciar Tokens [4]"
         echo
     fi
-
-    refresh_proto_license_from_api true || true
 
     if [[ -z "$(load_proto_token)" ]]; then
         print_info "Token proto não configurado (opcional)."
