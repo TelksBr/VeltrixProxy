@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="31"
+readonly MENU_REV="32"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
@@ -4523,7 +4523,7 @@ restart_udpgw_configured_ports() {
 }
 
 run_system_update() {
-    local args=(--update --yes)
+    local args=(--update --yes --proto-version v2.0.1 --refresh-proto-token)
 
     print_info "Baixando e executando instalador oficial..."
     echo -e "${GRAY}curl -fsSL ${INSTALL_URL} | bash -s -- ${args[*]}${RESET}"

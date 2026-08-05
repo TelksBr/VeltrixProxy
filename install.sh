@@ -24,8 +24,8 @@ PROTO_CREDENTIALS_FILE="${PROTO_DATA_DIR}/credentials.json"
 PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
-INSTALLER_REV="29"
-MENU_REV_EXPECTED="31"
+INSTALLER_REV="30"
+MENU_REV_EXPECTED="32"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
@@ -56,6 +56,9 @@ PROXY_TOKEN=""
 PROTO_TOKEN=""
 INSTALL_IP=""
 SKIP_UDPGW=false
+REFRESH_PROTO_TOKEN=false
+DEFAULT_PROTO_VERSION="v2.0.1"
+LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -102,7 +105,7 @@ Uso: $0 [opções]
 Modos:
   (padrão)        Instalação interativa (detecta e atualiza serviços existentes)
   --install       Mesmo que o padrão
-  --update        Atualiza para a versão mais recente (reinicia serviços ativos)
+  --update        Atualiza proxy (latest) e proto (v2.0.1) + renova licença proto
   --reinstall     Reinstala binários e menu vt (interativo ou com --latest)
 
 Opções:
@@ -114,6 +117,7 @@ Opções:
   --binary-only   Instala/atualiza apenas os binários (não baixa vt.sh)
   --proxy-token T Token da licença proxy (VT)
   --proto-token T Token do servidor de protocolo
+  --refresh-proto-token  Obtém nova licença proto via API (proxy token + IP da VPS)
   --ip IP         IP da VPS vinculado à licença
   --yes, -y       Sem confirmações interativas
   --quiet, -q     Menos saída visual (não limpa a tela)
@@ -122,6 +126,7 @@ Opções:
 Exemplos:
   $0
   $0 --update --yes
+  $0 --update --yes --refresh-proto-token
   $0 --reinstall --latest --yes
   $0 --version v2.1.0 --proto-version v2.0.1 --yes
   $0 -- --proxy-token 'VT-XXXX' --proto-token 'abc123' --ip '1.2.3.4' --yes
@@ -179,6 +184,7 @@ parse_args() {
       PROTO_TOKEN="${1:-}"
       [[ -n "$PROTO_TOKEN" ]] || { log_error "Use --proto-token TOKEN"; exit 1; }
       ;;
+    --refresh-proto-token) REFRESH_PROTO_TOKEN=true ;;
     --ip)
       shift
       INSTALL_IP="${1:-}"
@@ -204,8 +210,9 @@ parse_args() {
   case "$MODE" in
   update)
     [[ -z "$VERSION" ]] && VERSION="latest"
-    [[ -z "$PROTO_VERSION" ]] && PROTO_VERSION="latest"
+    [[ -z "$PROTO_VERSION" ]] && PROTO_VERSION="$DEFAULT_PROTO_VERSION"
     [[ -z "$UDPGW_VERSION" ]] && UDPGW_VERSION="latest"
+    REFRESH_PROTO_TOKEN=true
     ASSUME_YES=true
     ;;
   reinstall)
@@ -1293,6 +1300,80 @@ load_saved_proto_token() {
   fi
 }
 
+detect_public_ipv4() {
+  local ip=""
+  for url in "https://ipv4.icanhazip.com/" "https://api.ipify.org"; do
+    ip=$(curl -fsSL --max-time 10 "$url" 2>/dev/null | tr -d '\r\n[:space:]')
+    if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      printf '%s' "$ip"
+      return 0
+    fi
+  done
+  return 1
+}
+
+refresh_proto_token_from_api() {
+  [[ "$REFRESH_PROTO_TOKEN" == true ]] || return 0
+
+  local proxy_token public_ip response proto_token
+  proxy_token=$(load_saved_proxy_token || true)
+  if [[ -z "$proxy_token" ]]; then
+    log_warn "Sem token proxy salvo — pulando renovação automática da licença proto."
+    return 0
+  fi
+
+  public_ip=$(detect_public_ipv4 || true)
+  if [[ -z "$public_ip" ]]; then
+    log_warn "Não foi possível detectar o IP público — pulando renovação da licença proto."
+    return 0
+  fi
+
+  log_info "Renovando licença proto via ${LICENSE_API_URL} (IP ${public_ip})..."
+
+  response=$(
+    python3 - "$LICENSE_API_URL" "$proxy_token" "$public_ip" <<'PY' 2>/dev/null || true
+import json
+import sys
+import urllib.error
+import urllib.request
+
+base_url, token, ip_address = sys.argv[1:4]
+payload = json.dumps({"token": token, "ip_address": ip_address}).encode()
+req = urllib.request.Request(
+    f"{base_url.rstrip('/')}/api/v1/license/proto-refresh",
+    data=payload,
+    headers={"Content-Type": "application/json", "Accept": "application/json"},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        print(resp.read().decode())
+except urllib.error.HTTPError as exc:
+    print(exc.read().decode(), file=sys.stderr)
+    sys.exit(1)
+except Exception as exc:
+    print(str(exc), file=sys.stderr)
+    sys.exit(1)
+PY
+  )
+
+  if [[ -z "$response" ]]; then
+    log_warn "Falha ao contactar API de licença para renovar proto (rede/timeout)."
+    return 0
+  fi
+
+  proto_token=$(
+    printf '%s' "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print((d.get('data') or {}).get('proto_token',''))" 2>/dev/null || true
+  )
+
+  if [[ -n "$proto_token" ]]; then
+    PROTO_TOKEN="$proto_token"
+    log_success "Nova licença proto obtida e será aplicada."
+  else
+    log_warn "API não retornou proto_token (licença inválida, IP incorreto ou sem Telegram vinculado)."
+  fi
+}
+
 sync_proxy_service_executables() {
   local service_file new_bin="${INSTALL_DIR}/${BINARY_NAME}"
 
@@ -1803,6 +1884,7 @@ main() {
   fi
   configure_sysctl
   install_menu_script
+  refresh_proto_token_from_api
   install_provided_tokens
   refresh_existing_services
 
