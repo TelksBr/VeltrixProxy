@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="35"
+readonly MENU_REV="36"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly DEFAULT_PROTO_VERSION="v2.0.1"
@@ -695,8 +695,10 @@ detect_public_ipv4() {
 }
 
 # Renova licença proto via API usando apenas o IP público da VPS.
+# $1 = quiet (true/false); $2 = force (true = pede novo token na API protocol)
 refresh_proto_license_from_api() {
     local quiet="${1:-false}"
+    local force="${2:-false}"
     local public_ip response proto_token api_error payload
 
     public_ip=$(detect_public_ipv4 || true)
@@ -708,7 +710,9 @@ refresh_proto_license_from_api() {
     [[ "$quiet" != true ]] && print_info "Obtendo licença proto para IP ${public_ip} em ${LICENSE_API_URL}..."
 
     payload=$(
-        IP="$public_ip" python3 -c 'import json,os; print(json.dumps({"ip_address":os.environ["IP"]}))' 2>/dev/null || true
+        IP="$public_ip" FORCE="$force" python3 -c 'import json,os; p={"ip_address":os.environ["IP"]};
+if os.environ.get("FORCE")=="true": p["force"]=True
+print(json.dumps(p))' 2>/dev/null || true
     )
 
     if [[ -z "$payload" ]]; then
@@ -762,10 +766,12 @@ PY
     if [[ -n "$proto_token" ]]; then
         save_proto_token "$proto_token"
         [[ "$quiet" != true ]] && print_success "Licença proto renovada e salva."
-        if is_server_active; then
-            if create_systemd_service; then
+        if create_systemd_service; then
+            if is_server_active; then
                 sudo systemctl restart "$SERVICE_NAME" 2>/dev/null || true
                 [[ "$quiet" != true ]] && print_success "Serviço proto-server reiniciado com nova licença."
+            else
+                [[ "$quiet" != true ]] && print_info "Unit proto-server atualizado (serviço parado)."
             fi
         fi
         return 0
@@ -2378,9 +2384,7 @@ start_server() {
     ensure_data_structure
     check_or_set_proto_token
 
-    if [[ -n "$(load_proxy_token)" ]]; then
-        refresh_proto_license_from_api false || true
-    fi
+    refresh_proto_license_from_api false true || true
 
     if [[ -z "$(load_proto_token)" ]]; then
         print_warning "Sem token proto — não é possível iniciar o proto-server."
@@ -4639,7 +4643,7 @@ run_system_update() {
     local args=(--update --yes --proto-version "$DEFAULT_PROTO_VERSION" --refresh-proto-token)
 
     print_info "Renovando licença proto antes da atualização..."
-    refresh_proto_license_from_api false || print_warning "Renovação proto falhou — o instalador tentará novamente."
+    refresh_proto_license_from_api false true || print_warning "Renovação proto falhou — o instalador tentará novamente."
 
     print_info "Baixando e executando instalador oficial..."
     echo -e "${GRAY}curl -fsSL ${INSTALL_URL} | bash -s -- ${args[*]}${RESET}"
@@ -4874,7 +4878,7 @@ tokens_menu() {
             1) change_proxy_token_menu ;;
             2) change_token_menu ;;
             3)
-                refresh_proto_license_from_api false || true
+                refresh_proto_license_from_api false true || true
                 pause
                 ;;
             0) return 0 ;;
