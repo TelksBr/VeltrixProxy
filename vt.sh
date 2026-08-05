@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="34"
+readonly MENU_REV="35"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly DEFAULT_PROTO_VERSION="v2.0.1"
@@ -694,16 +694,10 @@ detect_public_ipv4() {
     return 1
 }
 
-# Renova licença proto via API (proxy token + IP). quiet=true suprime avisos de falha.
+# Renova licença proto via API usando apenas o IP público da VPS.
 refresh_proto_license_from_api() {
     local quiet="${1:-false}"
-    local proxy_token public_ip response proto_token api_error payload
-
-    proxy_token=$(load_proxy_token)
-    if [[ -z "$proxy_token" ]]; then
-        [[ "$quiet" != true ]] && print_warning "Sem token proxy — não é possível renovar licença proto."
-        return 2
-    fi
+    local public_ip response proto_token api_error payload
 
     public_ip=$(detect_public_ipv4 || true)
     if [[ -z "$public_ip" ]]; then
@@ -711,10 +705,10 @@ refresh_proto_license_from_api() {
         return 1
     fi
 
-    [[ "$quiet" != true ]] && print_info "Renovando licença proto em ${LICENSE_API_URL} (IP ${public_ip})..."
+    [[ "$quiet" != true ]] && print_info "Obtendo licença proto para IP ${public_ip} em ${LICENSE_API_URL}..."
 
     payload=$(
-        TOKEN="$proxy_token" IP="$public_ip" python3 -c 'import json,os; print(json.dumps({"token":os.environ["TOKEN"],"ip_address":os.environ["IP"]}))' 2>/dev/null || true
+        IP="$public_ip" python3 -c 'import json,os; print(json.dumps({"ip_address":os.environ["IP"]}))' 2>/dev/null || true
     )
 
     if [[ -z "$payload" ]]; then
@@ -731,14 +725,14 @@ refresh_proto_license_from_api() {
         ) || response=""
     else
         response=$(
-            LICENSE_API_URL="$LICENSE_API_URL" TOKEN="$proxy_token" IP="$public_ip" python3 - <<'PY' 2>&1 || true
+            LICENSE_API_URL="$LICENSE_API_URL" IP="$public_ip" python3 - <<'PY' 2>&1 || true
 import json
 import os
 import urllib.error
 import urllib.request
 
 base_url = os.environ.get("LICENSE_API_URL", "").rstrip("/")
-payload = json.dumps({"token": os.environ["TOKEN"], "ip_address": os.environ["IP"]}).encode()
+payload = json.dumps({"ip_address": os.environ["IP"]}).encode()
 req = urllib.request.Request(
     f"{base_url}/api/v1/license/proto-refresh",
     data=payload,
@@ -2997,9 +2991,9 @@ check_token_on_startup() {
         print_warning "Token proxy (licença) não encontrado!"
         print_info "Obrigatório para o proxy. Configure em: Menu inicial → Gerenciar Tokens [4]"
         echo
-    else
-        refresh_proto_license_from_api true || true
     fi
+
+    refresh_proto_license_from_api true || true
 
     if [[ -z "$(load_proto_token)" ]]; then
         print_info "Token proto não configurado (opcional)."

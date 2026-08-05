@@ -25,7 +25,7 @@ PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
 INSTALLER_REV="30"
-MENU_REV_EXPECTED="34"
+MENU_REV_EXPECTED="35"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
@@ -1315,23 +1315,17 @@ detect_public_ipv4() {
 refresh_proto_token_from_api() {
   [[ "$REFRESH_PROTO_TOKEN" == true ]] || return 0
 
-  local proxy_token public_ip response proto_token api_error payload
-  proxy_token=$(load_saved_proxy_token || true)
-  if [[ -z "$proxy_token" ]]; then
-    log_warn "Sem token proxy salvo — pulando renovação automática da licença proto."
-    return 0
-  fi
-
+  local public_ip response proto_token api_error payload
   public_ip=$(detect_public_ipv4 || true)
   if [[ -z "$public_ip" ]]; then
     log_warn "Não foi possível detectar o IP público — pulando renovação da licença proto."
     return 0
   fi
 
-  log_info "Renovando licença proto via ${LICENSE_API_URL} (IP ${public_ip})..."
+  log_info "Obtendo licença proto para IP ${public_ip} em ${LICENSE_API_URL}..."
 
   payload=$(
-    TOKEN="$proxy_token" IP="$public_ip" python3 -c 'import json,os; print(json.dumps({"token":os.environ["TOKEN"],"ip_address":os.environ["IP"]}))' 2>/dev/null || true
+    IP="$public_ip" python3 -c 'import json,os; print(json.dumps({"ip_address":os.environ["IP"]}))' 2>/dev/null || true
   )
 
   if [[ -z "$payload" ]]; then
@@ -1348,14 +1342,14 @@ refresh_proto_token_from_api() {
     ) || response=""
   else
     response=$(
-      LICENSE_API_URL="$LICENSE_API_URL" TOKEN="$proxy_token" IP="$public_ip" python3 - <<'PY' 2>&1 || true
+      LICENSE_API_URL="$LICENSE_API_URL" IP="$public_ip" python3 - <<'PY' 2>&1 || true
 import json
 import os
 import urllib.error
 import urllib.request
 
 base_url = os.environ.get("LICENSE_API_URL", "").rstrip("/")
-payload = json.dumps({"token": os.environ["TOKEN"], "ip_address": os.environ["IP"]}).encode()
+payload = json.dumps({"ip_address": os.environ["IP"]}).encode()
 req = urllib.request.Request(
     f"{base_url}/api/v1/license/proto-refresh",
     data=payload,
