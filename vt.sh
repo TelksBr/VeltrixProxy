@@ -3,8 +3,10 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="32"
+readonly MENU_REV="33"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
+readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
+readonly DEFAULT_PROTO_VERSION="v2.0.1"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
 readonly PROTO_VERSION_FILE="/etc/proto-server-version"
@@ -678,6 +680,91 @@ save_proto_token() {
     sudo mkdir -p "$(dirname "$TOKEN_FILE")"
     printf '%s' "$token" | sudo tee "$TOKEN_FILE" >/dev/null
     sudo chmod 600 "$TOKEN_FILE" 2>/dev/null || true
+}
+
+detect_public_ipv4() {
+    local ip=""
+    for url in "https://ipv4.icanhazip.com/" "https://api.ipify.org"; do
+        ip=$(curl -fsSL --max-time 10 "$url" 2>/dev/null | tr -d '\r\n[:space:]')
+        if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf '%s' "$ip"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Renova licença proto via API (proxy token + IP). quiet=true suprime avisos de falha.
+refresh_proto_license_from_api() {
+    local quiet="${1:-false}"
+    local proxy_token public_ip response proto_token
+
+    proxy_token=$(load_proxy_token)
+    if [[ -z "$proxy_token" ]]; then
+        [[ "$quiet" != true ]] && print_warning "Sem token proxy — não é possível renovar licença proto."
+        return 2
+    fi
+
+    public_ip=$(detect_public_ipv4 || true)
+    if [[ -z "$public_ip" ]]; then
+        [[ "$quiet" != true ]] && print_warning "Não foi possível detectar IP público — renovação proto ignorada."
+        return 1
+    fi
+
+    [[ "$quiet" != true ]] && print_info "Renovando licença proto em ${LICENSE_API_URL} (IP ${public_ip})..."
+
+    response=$(
+        python3 - "$LICENSE_API_URL" "$proxy_token" "$public_ip" <<'PY' 2>/dev/null || true
+import json
+import sys
+import urllib.error
+import urllib.request
+
+base_url, token, ip_address = sys.argv[1:4]
+payload = json.dumps({"token": token, "ip_address": ip_address}).encode()
+req = urllib.request.Request(
+    f"{base_url.rstrip('/')}/api/v1/license/proto-refresh",
+    data=payload,
+    headers={"Content-Type": "application/json", "Accept": "application/json"},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        print(resp.read().decode())
+except urllib.error.HTTPError as exc:
+    print(exc.read().decode(), file=sys.stderr)
+    sys.exit(1)
+except Exception as exc:
+    print(str(exc), file=sys.stderr)
+    sys.exit(1)
+PY
+    )
+
+    if [[ -z "$response" ]]; then
+        [[ "$quiet" != true ]] && print_warning "API de licença indisponível ou timeout — tente novamente após o backend atualizar."
+        return 1
+    fi
+
+    proto_token=$(
+        printf '%s' "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print((d.get('data') or {}).get('proto_token',''))" 2>/dev/null || true
+    )
+
+    if [[ -z "$proto_token" ]]; then
+        [[ "$quiet" != true ]] && print_warning "API não retornou nova licença proto (licença/IP inválidos ou usuário sem Telegram)."
+        return 1
+    fi
+
+    save_proto_token "$proto_token"
+    [[ "$quiet" != true ]] && print_success "Licença proto renovada e salva."
+
+    if is_server_active; then
+        if create_systemd_service; then
+            sudo systemctl restart "$SERVICE_NAME" 2>/dev/null || true
+            [[ "$quiet" != true ]] && print_success "Serviço proto-server reiniciado com nova licença."
+        fi
+    fi
+
+    return 0
 }
 
 validate_proxy_token() {
@@ -2274,6 +2361,10 @@ start_server() {
     ensure_data_structure
     check_or_set_proto_token
 
+    if [[ -n "$(load_proxy_token)" ]]; then
+        refresh_proto_license_from_api false || true
+    fi
+
     if [[ -z "$(load_proto_token)" ]]; then
         print_warning "Sem token proto — não é possível iniciar o proto-server."
         print_info "O proxy VT continua utilizável. Configure o proto depois em Gerenciar Tokens."
@@ -2883,6 +2974,8 @@ check_token_on_startup() {
         print_warning "Token proxy (licença) não encontrado!"
         print_info "Obrigatório para o proxy. Configure em: Menu inicial → Gerenciar Tokens [4]"
         echo
+    else
+        refresh_proto_license_from_api true || true
     fi
 
     if [[ -z "$(load_proto_token)" ]]; then
@@ -4496,11 +4589,14 @@ show_update_preserve_notice() {
     echo -e "${CYAN}  • Menu vt (este menu)${RESET}"
     echo
     echo -e "${WHITE}O que é PRESERVADO:${RESET}"
-    echo -e "${GREEN}  • Tokens proxy e proto${RESET}"
+    echo -e "${GREEN}  • Token proxy (licença VT)${RESET}"
     echo -e "${GREEN}  • Units systemd e configs de portas (/etc/proxy/conf.d)${RESET}"
     echo -e "${GREEN}  • Config do proto (/etc/proto-server)${RESET}"
     echo -e "${GREEN}  • Config do udpgw (/etc/udpgw)${RESET}"
     echo -e "${GREEN}  • Credenciais, certs e dados${RESET}"
+    echo
+    echo -e "${CYAN}  • Licença proto: renovada automaticamente via ${LICENSE_API_URL}${RESET}"
+    echo -e "${CYAN}  • Proto-server: versão ${DEFAULT_PROTO_VERSION} (proxy permanece em latest)${RESET}"
     echo
     echo -e "${YELLOW}Serviços ativos serão reiniciados após a troca dos binários.${RESET}"
 }
@@ -4523,7 +4619,10 @@ restart_udpgw_configured_ports() {
 }
 
 run_system_update() {
-    local args=(--update --yes --proto-version v2.0.1 --refresh-proto-token)
+    local args=(--update --yes --proto-version "$DEFAULT_PROTO_VERSION" --refresh-proto-token)
+
+    print_info "Renovando licença proto antes da atualização..."
+    refresh_proto_license_from_api false || print_warning "Renovação proto falhou — o instalador tentará novamente."
 
     print_info "Baixando e executando instalador oficial..."
     echo -e "${GRAY}curl -fsSL ${INSTALL_URL} | bash -s -- ${args[*]}${RESET}"
@@ -4747,15 +4846,20 @@ tokens_menu() {
         print_box_divider
         render_menu_option "1 • Configurar token Proxy"
         render_menu_option "2 • Configurar token Proto"
+        render_menu_option "3 • Renovar licença Proto (API)"
         render_menu_option "0 • Voltar" "red"
         print_box_close
         echo
 
         local option
-        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-2]:${RESET} ")" option
+        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-3]:${RESET} ")" option
         case "$option" in
             1) change_proxy_token_menu ;;
             2) change_token_menu ;;
+            3)
+                refresh_proto_license_from_api false || true
+                pause
+                ;;
             0) return 0 ;;
             *) print_error "Opção inválida: $option"; pause ;;
         esac
