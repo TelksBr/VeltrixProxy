@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="33"
+readonly MENU_REV="34"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly DEFAULT_PROTO_VERSION="v2.0.1"
@@ -697,7 +697,7 @@ detect_public_ipv4() {
 # Renova licença proto via API (proxy token + IP). quiet=true suprime avisos de falha.
 refresh_proto_license_from_api() {
     local quiet="${1:-false}"
-    local proxy_token public_ip response proto_token
+    local proxy_token public_ip response proto_token api_error payload
 
     proxy_token=$(load_proxy_token)
     if [[ -z "$proxy_token" ]]; then
@@ -713,35 +713,51 @@ refresh_proto_license_from_api() {
 
     [[ "$quiet" != true ]] && print_info "Renovando licença proto em ${LICENSE_API_URL} (IP ${public_ip})..."
 
-    response=$(
-        python3 - "$LICENSE_API_URL" "$proxy_token" "$public_ip" <<'PY' 2>/dev/null || true
+    payload=$(
+        TOKEN="$proxy_token" IP="$public_ip" python3 -c 'import json,os; print(json.dumps({"token":os.environ["TOKEN"],"ip_address":os.environ["IP"]}))' 2>/dev/null || true
+    )
+
+    if [[ -z "$payload" ]]; then
+        [[ "$quiet" != true ]] && print_warning "python3 não disponível para montar requisição JSON."
+        return 1
+    fi
+
+    if command -v curl >/dev/null 2>&1; then
+        response=$(
+            curl -sS --max-time 90 -X POST "${LICENSE_API_URL%/}/api/v1/license/proto-refresh" \
+                -H "Content-Type: application/json" \
+                -H "Accept: application/json" \
+                --data-binary "$payload" 2>&1
+        ) || response=""
+    else
+        response=$(
+            LICENSE_API_URL="$LICENSE_API_URL" TOKEN="$proxy_token" IP="$public_ip" python3 - <<'PY' 2>&1 || true
 import json
-import sys
+import os
 import urllib.error
 import urllib.request
 
-base_url, token, ip_address = sys.argv[1:4]
-payload = json.dumps({"token": token, "ip_address": ip_address}).encode()
+base_url = os.environ.get("LICENSE_API_URL", "").rstrip("/")
+payload = json.dumps({"token": os.environ["TOKEN"], "ip_address": os.environ["IP"]}).encode()
 req = urllib.request.Request(
-    f"{base_url.rstrip('/')}/api/v1/license/proto-refresh",
+    f"{base_url}/api/v1/license/proto-refresh",
     data=payload,
     headers={"Content-Type": "application/json", "Accept": "application/json"},
     method="POST",
 )
 try:
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=90) as resp:
         print(resp.read().decode())
 except urllib.error.HTTPError as exc:
-    print(exc.read().decode(), file=sys.stderr)
-    sys.exit(1)
+    print(exc.read().decode())
 except Exception as exc:
-    print(str(exc), file=sys.stderr)
-    sys.exit(1)
+    print(json.dumps({"error": str(exc)}))
 PY
-    )
+        )
+    fi
 
     if [[ -z "$response" ]]; then
-        [[ "$quiet" != true ]] && print_warning "API de licença indisponível ou timeout — tente novamente após o backend atualizar."
+        [[ "$quiet" != true ]] && print_warning "Falha ao contactar API de licença (rede/timeout/DNS)."
         return 1
     fi
 
@@ -749,22 +765,29 @@ PY
         printf '%s' "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print((d.get('data') or {}).get('proto_token',''))" 2>/dev/null || true
     )
 
-    if [[ -z "$proto_token" ]]; then
-        [[ "$quiet" != true ]] && print_warning "API não retornou nova licença proto (licença/IP inválidos ou usuário sem Telegram)."
-        return 1
-    fi
-
-    save_proto_token "$proto_token"
-    [[ "$quiet" != true ]] && print_success "Licença proto renovada e salva."
-
-    if is_server_active; then
-        if create_systemd_service; then
-            sudo systemctl restart "$SERVICE_NAME" 2>/dev/null || true
-            [[ "$quiet" != true ]] && print_success "Serviço proto-server reiniciado com nova licença."
+    if [[ -n "$proto_token" ]]; then
+        save_proto_token "$proto_token"
+        [[ "$quiet" != true ]] && print_success "Licença proto renovada e salva."
+        if is_server_active; then
+            if create_systemd_service; then
+                sudo systemctl restart "$SERVICE_NAME" 2>/dev/null || true
+                [[ "$quiet" != true ]] && print_success "Serviço proto-server reiniciado com nova licença."
+            fi
         fi
+        return 0
     fi
 
-    return 0
+    api_error=$(
+        printf '%s' "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error',''))" 2>/dev/null || true
+    )
+
+    if [[ -n "$api_error" ]]; then
+        [[ "$quiet" != true ]] && print_warning "API proto: ${api_error}"
+    else
+        [[ "$quiet" != true ]] && print_warning "API não retornou proto_token (licença/IP inválidos ou usuário sem Telegram)."
+        [[ "$quiet" != true ]] && print_info "Resposta: ${response}"
+    fi
+    return 1
 }
 
 validate_proxy_token() {

@@ -25,7 +25,7 @@ PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
 INSTALLER_REV="30"
-MENU_REV_EXPECTED="33"
+MENU_REV_EXPECTED="34"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
@@ -1315,7 +1315,7 @@ detect_public_ipv4() {
 refresh_proto_token_from_api() {
   [[ "$REFRESH_PROTO_TOKEN" == true ]] || return 0
 
-  local proxy_token public_ip response proto_token
+  local proxy_token public_ip response proto_token api_error payload
   proxy_token=$(load_saved_proxy_token || true)
   if [[ -z "$proxy_token" ]]; then
     log_warn "Sem token proxy salvo — pulando renovação automática da licença proto."
@@ -1330,35 +1330,51 @@ refresh_proto_token_from_api() {
 
   log_info "Renovando licença proto via ${LICENSE_API_URL} (IP ${public_ip})..."
 
-  response=$(
-    python3 - "$LICENSE_API_URL" "$proxy_token" "$public_ip" <<'PY' 2>/dev/null || true
+  payload=$(
+    TOKEN="$proxy_token" IP="$public_ip" python3 -c 'import json,os; print(json.dumps({"token":os.environ["TOKEN"],"ip_address":os.environ["IP"]}))' 2>/dev/null || true
+  )
+
+  if [[ -z "$payload" ]]; then
+    log_warn "python3 não disponível para renovar licença proto."
+    return 0
+  fi
+
+  if has_command curl; then
+    response=$(
+      curl -sS --max-time 90 -X POST "${LICENSE_API_URL%/}/api/v1/license/proto-refresh" \
+        -H "Content-Type: application/json" \
+        -H "Accept: application/json" \
+        --data-binary "$payload" 2>&1
+    ) || response=""
+  else
+    response=$(
+      LICENSE_API_URL="$LICENSE_API_URL" TOKEN="$proxy_token" IP="$public_ip" python3 - <<'PY' 2>&1 || true
 import json
-import sys
+import os
 import urllib.error
 import urllib.request
 
-base_url, token, ip_address = sys.argv[1:4]
-payload = json.dumps({"token": token, "ip_address": ip_address}).encode()
+base_url = os.environ.get("LICENSE_API_URL", "").rstrip("/")
+payload = json.dumps({"token": os.environ["TOKEN"], "ip_address": os.environ["IP"]}).encode()
 req = urllib.request.Request(
-    f"{base_url.rstrip('/')}/api/v1/license/proto-refresh",
+    f"{base_url}/api/v1/license/proto-refresh",
     data=payload,
     headers={"Content-Type": "application/json", "Accept": "application/json"},
     method="POST",
 )
 try:
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=90) as resp:
         print(resp.read().decode())
 except urllib.error.HTTPError as exc:
-    print(exc.read().decode(), file=sys.stderr)
-    sys.exit(1)
+    print(exc.read().decode())
 except Exception as exc:
-    print(str(exc), file=sys.stderr)
-    sys.exit(1)
+    print(json.dumps({"error": str(exc)}))
 PY
-  )
+    )
+  fi
 
   if [[ -z "$response" ]]; then
-    log_warn "Falha ao contactar API de licença para renovar proto (rede/timeout)."
+    log_warn "Falha ao contactar API de licença para renovar proto (rede/timeout/DNS)."
     return 0
   fi
 
@@ -1369,8 +1385,18 @@ PY
   if [[ -n "$proto_token" ]]; then
     PROTO_TOKEN="$proto_token"
     log_success "Nova licença proto obtida e será aplicada."
+    return 0
+  fi
+
+  api_error=$(
+    printf '%s' "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error',''))" 2>/dev/null || true
+  )
+
+  if [[ -n "$api_error" ]]; then
+    log_warn "API proto: ${api_error}"
   else
-    log_warn "API não retornou proto_token (licença inválida, IP incorreto ou sem Telegram vinculado)."
+    log_warn "API não retornou proto_token (licença/IP inválidos ou sem Telegram)."
+    log_info "Resposta: ${response}"
   fi
 }
 
