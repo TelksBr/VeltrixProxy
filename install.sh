@@ -25,7 +25,7 @@ PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
 INSTALLER_REV="30"
-MENU_REV_EXPECTED="38"
+MENU_REV_EXPECTED="39"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
@@ -106,7 +106,7 @@ Uso: $0 [opções]
 Modos:
   (padrão)        Instalação interativa (detecta e atualiza serviços existentes)
   --install       Mesmo que o padrão
-  --update        Atualiza proxy (latest) e proto (v2.0.1) + renova licença proto
+  --update        Atualiza proxy (latest) e proto (v2.0.1) + sincroniza licença proto
   --reinstall     Reinstala binários e menu vt (interativo ou com --latest)
 
 Opções:
@@ -118,7 +118,7 @@ Opções:
   --binary-only   Instala/atualiza apenas os binários (não baixa vt.sh)
   --proxy-token T Token da licença proxy (VT)
   --proto-token T Token do servidor de protocolo
-  --refresh-proto-token  Obtém nova licença proto via API (IP público da VPS)
+  --refresh-proto-token  Sincroniza licença proto via API (IP público da VPS)
   --ip IP         IP da VPS vinculado à licença
   --yes, -y       Sem confirmações interativas
   --quiet, -q     Menos saída visual (não limpa a tela)
@@ -185,7 +185,7 @@ parse_args() {
       PROTO_TOKEN="${1:-}"
       [[ -n "$PROTO_TOKEN" ]] || { log_error "Use --proto-token TOKEN"; exit 1; }
       ;;
-    --refresh-proto-token) REFRESH_PROTO_TOKEN=true; REFRESH_PROTO_FORCE=true ;;
+    --refresh-proto-token) REFRESH_PROTO_TOKEN=true ;;
     --ip)
       shift
       INSTALL_IP="${1:-}"
@@ -214,7 +214,6 @@ parse_args() {
     [[ -z "$PROTO_VERSION" ]] && PROTO_VERSION="$DEFAULT_PROTO_VERSION"
     [[ -z "$UDPGW_VERSION" ]] && UDPGW_VERSION="latest"
     REFRESH_PROTO_TOKEN=true
-    REFRESH_PROTO_FORCE=true
     ASSUME_YES=true
     ;;
   reinstall)

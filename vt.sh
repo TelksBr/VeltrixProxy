@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="38"
+readonly MENU_REV="39"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly DEFAULT_PROTO_VERSION="v2.0.1"
@@ -4670,12 +4670,9 @@ restart_udpgw_configured_ports() {
 }
 
 run_system_update() {
-    local args=(--update --yes --proto-version "$DEFAULT_PROTO_VERSION" --refresh-proto-token)
+    local args=(--update --yes --proto-version "$DEFAULT_PROTO_VERSION")
 
-    print_info "Renovando licença proto antes da atualização..."
-    refresh_proto_license_from_api false true || print_warning "Renovação proto falhou — o instalador tentará novamente."
-
-    print_info "Baixando e executando instalador oficial..."
+    print_info "Baixando e executando instalador oficial (inclui sync da licença proto)..."
     echo -e "${GRAY}curl -fsSL ${INSTALL_URL} | bash -s -- ${args[*]}${RESET}"
     echo
 
