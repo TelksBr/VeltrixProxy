@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="37"
+readonly MENU_REV="38"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly DEFAULT_PROTO_VERSION="v2.0.1"
@@ -671,7 +671,7 @@ save_proxy_token() {
 
 load_proto_token() {
     if [[ -f "$TOKEN_FILE" ]]; then
-        sudo cat "$TOKEN_FILE"
+        sudo tr -d '\r\n[:space:]' <"$TOKEN_FILE"
     fi
 }
 
