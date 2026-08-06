@@ -24,8 +24,8 @@ PROTO_CREDENTIALS_FILE="${PROTO_DATA_DIR}/credentials.json"
 PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
 PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
 PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
-INSTALLER_REV="30"
-MENU_REV_EXPECTED="39"
+INSTALLER_REV="31"
+MENU_REV_EXPECTED="40"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 PROTO_VERSION_FILE="/etc/proto-server-version"
@@ -1301,6 +1301,26 @@ load_saved_proto_token() {
   fi
 }
 
+proto_server_bin_path() {
+  echo "${INSTALL_DIR}/${PROTO_BINARY_NAME}"
+}
+
+proto_server_version_label() {
+  local bin="${1:-$(proto_server_bin_path)}"
+  [[ -x "$bin" ]] || return 0
+  "$bin" -version 2>/dev/null | head -n1 | tr -d '\r\n'
+}
+
+# v2.0.1 não suporta -version; v3+ gerencia licença sem arquivo/unit --token
+proto_token_sync_allowed() {
+  local bin="${1:-$(proto_server_bin_path)}"
+  [[ -x "$bin" ]] || return 0
+  if "$bin" -version >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+
 detect_public_ipv4() {
   local ip=""
   for url in "https://ipv4.icanhazip.com/" "https://api.ipify.org"; do
@@ -1315,6 +1335,11 @@ detect_public_ipv4() {
 
 refresh_proto_token_from_api() {
   [[ "$REFRESH_PROTO_TOKEN" == true ]] || return 0
+
+  if ! proto_token_sync_allowed; then
+    log_info "proto-server $(proto_server_version_label) — sync de token via API ignorado (binário v3+)."
+    return 0
+  fi
 
   local public_ip response proto_token api_error payload force_flag="false"
   [[ "$REFRESH_PROTO_FORCE" == true ]] && force_flag="true"
@@ -1563,6 +1588,12 @@ sync_proto_service() {
   }
 
   [[ -n "$token" ]] || return 0
+
+  if ! proto_token_sync_allowed "$proto_bin"; then
+    log_info "proto-server $(proto_server_version_label "$proto_bin") — token do unit não será alterado."
+    return 0
+  fi
+
   safe_token=$(escape_sed_replacement "$token")
   safe_sed_inplace "$service_file" "s|--token=[^ ]+|--token=${safe_token}|g" || true
 }
@@ -1589,7 +1620,12 @@ refresh_existing_services() {
   sync_proxy_service_executables
   strip_legacy_proxy_flags
   [[ -n "$proxy_token" ]] && sync_proxy_service_tokens "$proxy_token"
-  [[ -n "$proto_token" ]] && sync_proto_service "$proto_token"
+  if proto_token_sync_allowed; then
+    [[ -n "$proto_token" ]] && sync_proto_service "$proto_token"
+  else
+    sync_proto_service ""
+    log_info "proto-server $(proto_server_version_label) — apenas binário do unit será sincronizado."
+  fi
   sync_udpgw_service
 
   if has_systemd; then
@@ -1838,10 +1874,14 @@ install_provided_tokens() {
   fi
 
   if [[ -n "$PROTO_TOKEN" ]]; then
-    run_privileged mkdir -p /etc/proto-server
-    printf '%s' "$PROTO_TOKEN" | run_privileged tee /etc/proto-server/token >/dev/null
-    chmod 600 /etc/proto-server/token 2>/dev/null || true
-    log_success "Token proto salvo."
+    if ! proto_token_sync_allowed; then
+      log_info "proto-server $(proto_server_version_label) — token em arquivo não será alterado."
+    else
+      run_privileged mkdir -p /etc/proto-server
+      printf '%s' "$PROTO_TOKEN" | run_privileged tee /etc/proto-server/token >/dev/null
+      chmod 600 /etc/proto-server/token 2>/dev/null || true
+      log_success "Token proto salvo."
+    fi
   fi
 
   if [[ -n "$INSTALL_IP" ]]; then

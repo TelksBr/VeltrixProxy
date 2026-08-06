@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="39"
+readonly MENU_REV="40"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly DEFAULT_PROTO_VERSION="v2.0.1"
@@ -675,8 +675,28 @@ load_proto_token() {
     fi
 }
 
+# proto-server v2.0.1 não implementa -version; v3+ retorna ex. "DTunnel Protocol Server v3.1.2"
+proto_server_version_label() {
+    local bin="${1:-$PROTO_SERVER_BIN}"
+    [[ -x "$bin" ]] || return 0
+    "$bin" -version 2>/dev/null | head -n1 | tr -d '\r\n'
+}
+
+proto_token_sync_allowed() {
+    local bin="${1:-$PROTO_SERVER_BIN}"
+    [[ -x "$bin" ]] || return 0
+    if "$bin" -version >/dev/null 2>&1; then
+        return 1
+    fi
+    return 0
+}
+
 save_proto_token() {
     local token="$1"
+    if ! proto_token_sync_allowed; then
+        print_warning "proto-server $(proto_server_version_label) gerencia licença internamente — token em arquivo não é alterado."
+        return 1
+    fi
     sudo mkdir -p "$(dirname "$TOKEN_FILE")"
     printf '%s' "$token" | sudo tee "$TOKEN_FILE" >/dev/null
     sudo chmod 600 "$TOKEN_FILE" 2>/dev/null || true
@@ -700,6 +720,11 @@ refresh_proto_license_from_api() {
     local quiet="${1:-false}"
     local force="${2:-false}"
     local public_ip response proto_token api_error payload old_token
+
+    if ! proto_token_sync_allowed; then
+        [[ "$quiet" != true ]] && print_info "proto-server $(proto_server_version_label) — sync de token via API ignorado (binário v3+)."
+        return 0
+    fi
 
     old_token=$(load_proto_token | tr -d '\r\n[:space:]')
 
@@ -2311,6 +2336,11 @@ sync_proto_systemd_token() {
 
     [[ -n "$token" ]] || return 1
 
+    if ! proto_token_sync_allowed; then
+        [[ "$quiet" != true ]] && print_info "proto-server $(proto_server_version_label) — unit systemd: token não alterado."
+        return 0
+    fi
+
     if [[ -f "$service_file" ]]; then
         current_in_unit=$(
             grep -oE '--token=[^ ]+' "$service_file" 2>/dev/null \
@@ -2947,6 +2977,13 @@ change_port() {
 
 change_token_menu() {
     print_header
+
+    if ! proto_token_sync_allowed; then
+        print_warning "proto-server $(proto_server_version_label) não usa token em arquivo."
+        print_info "Binários v3+ gerenciam a licença internamente — nada a configurar aqui."
+        pause
+        return 0
+    fi
 
     local new_token
     local rc=0
