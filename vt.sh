@@ -3,33 +3,20 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="37"
+readonly MENU_REV="38"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
-readonly DEFAULT_PROTO_VERSION="v2.0.1"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
-readonly PROTO_VERSION_FILE="/etc/proto-server-version"
 readonly UDPGW_VERSION_FILE="/etc/udpgw-version"
 readonly UDPGW_REPO="TelksBr/VeltrixUPGW"
+readonly QUICK_SETUP_MARKER="/etc/vtproxy/.quick-setup-done"
+readonly QUICK_SETUP_ASKED_MARKER="/etc/vtproxy/.quick-setup-asked"
+readonly LEGACY_PROTO_SERVICE="proto-server"
+readonly LEGACY_ONLINE_API_SERVICE="proto-online-api"
 
 # Largura interna da caixa (sem as bordas ║). Recalculada por refresh_menu_layout.
 MENU_BOX_WIDTH=$MENU_BOX_MAX
-
-PROTO_SERVER_BIN="/usr/local/bin/proto-server"
-TOKEN_FILE="/etc/proto-server/token"
-CONFIG_FILE="/etc/proto-server/config.conf"
-DATA_DIR="/var/lib/proto-server"
-CREDENTIALS_FILE="$DATA_DIR/credentials.json"
-STATS_FILE="$DATA_DIR/stats.json"
-CERTIFICATE_SSL_FILE="$DATA_DIR/cert.pem"
-PRIVATE_KEY_SSL_FILE="$DATA_DIR/key.pem"
-SERVICE_NAME="proto-server"
-FIRST_RUN_MARKER="$DATA_DIR/.quick-setup-done"
-QUICK_SETUP_ASKED_KEY="QUICK_SETUP_ASKED"
-ONLINE_API_SERVICE_NAME="proto-online-api"
-ONLINE_API_SCRIPT="/usr/local/bin/proto_online_api.py"
-ONLINE_API_PORT_FILE="/etc/proto-server/online_api_port"
 
 UDPGW_BIN="/usr/local/bin/udpgw"
 UDPGW_CONFIG_DIR="/etc/udpgw/conf.d"
@@ -59,11 +46,6 @@ resolve_proxy_executable() {
 }
 
 PROXY_EXECUTABLE="$(resolve_proxy_executable)"
-
-AUTH_MODE_FILE="file"
-AUTH_MODE_URL="url"
-AUTH_MODE_SSH="ssh"
-AUTH_MODE_NONE="none"
 
 DEFAULT_BUFFER_SIZE=32768
 DEFAULT_HTTP_RESPONSE="$PROJECT_NAME"
@@ -248,35 +230,12 @@ print_header() {
     ((title_right < 0)) && title_right=0
     print_box_line "${BG_BLUE}${WHITE}$(printf '%*s%s%*s' "$title_left" "" "$title" "$title_right")${RESET}"
     if is_narrow_menu; then
-        print_box_heading "Proxy + Protocolo"
+        print_box_heading "Proxy + UDP Gateway"
     else
-        print_box_heading "Proxy + Protocolo integrados"
+        print_box_heading "Proxy + UDP Gateway integrados"
     fi
     print_box_close
     echo
-}
-
-get_online_users_count() {
-    if [[ ! -f "$STATS_FILE" ]]; then
-        echo "0"
-        return
-    fi
-
-    python3 - "$STATS_FILE" <<'PY'
-import json
-import sys
-
-path = sys.argv[1]
-try:
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    if isinstance(data, dict):
-        print(len(data))
-    else:
-        print(0)
-except Exception:
-    print(0)
-PY
 }
 
 # Usuários SSH únicos com sessão sshd (filhos sshd:), excluindo root.
@@ -295,230 +254,17 @@ get_ssh_online_users_count() {
     echo "$count"
 }
 
-# Onlines do proto via stats.json (/var/lib/proto-server/stats.json), só se o serviço estiver ativo.
-get_proto_online_users_count() {
-    if ! is_server_active; then
-        echo "0"
-        return
-    fi
-    get_online_users_count
-}
-
-is_online_api_active() {
-    systemctl is-active --quiet "$ONLINE_API_SERVICE_NAME"
-}
-
-get_online_api_port() {
-    if [[ -f "$ONLINE_API_PORT_FILE" ]]; then
-        cat "$ONLINE_API_PORT_FILE"
-    else
-        echo ""
-    fi
-}
-
-create_online_api_script() {
-    sudo tee "$ONLINE_API_SCRIPT" > /dev/null <<'PY'
-#!/usr/bin/env python3
-import argparse
-import json
-from datetime import datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
-def fmt_bytes(value):
-    try:
-        value = float(value)
-    except Exception:
-        return "0 B"
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if value < 1024 or unit == "TB":
-            return f"{value:.2f} {unit}"
-        value /= 1024
-
-def fmt_duration(seconds):
-    seconds = max(0, int(seconds))
-    h = seconds // 3600
-    m = (seconds % 3600) // 60
-    s = seconds % 60
-    return f"{h:02d}:{m:02d}:{s:02d}"
-
-def load_onlines(path):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not isinstance(data, dict):
-            return []
-    except Exception:
-        return []
-
-    rows = []
-    for ip, info in data.items():
-        if not isinstance(info, dict):
-            continue
-        user = info.get("id") or ip
-        up = info.get("traffic_up", 0)
-        down = info.get("traffic_down", 0)
-        connected_at = info.get("connected_at")
-        last_seen_at = info.get("last_seen_at")
-        connected_time = "N/A"
-        if connected_at and last_seen_at:
-            try:
-                c = datetime.strptime(connected_at, "%Y-%m-%d %H:%M:%S")
-                l = datetime.strptime(last_seen_at, "%Y-%m-%d %H:%M:%S")
-                connected_time = fmt_duration((l - c).total_seconds())
-            except Exception:
-                pass
-        rows.append({
-            "user": user,
-            "ip": ip,
-            "traffic_up": fmt_bytes(up),
-            "traffic_down": fmt_bytes(down),
-            "connected_at": connected_at,
-            "last_seen_at": last_seen_at,
-            "connected_time": connected_time
-        })
-    return rows
-
-class Handler(BaseHTTPRequestHandler):
-    stats_file = ""
-    server_version = "DTProtoOnline"
-    sys_version = ""
-
-    def do_GET(self):
-        if self.path != "/onlines":
-            self.send_response(404)
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
-        body = json.dumps(load_onlines(self.stats_file), ensure_ascii=False).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _method_not_allowed(self):
-        self.send_response(405)
-        self.send_header("Allow", "GET")
-        self.send_header("Content-Length", "0")
-        self.end_headers()
-
-    def log_message(self, fmt, *args):
-        return
-
-for method in ("POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"):
-    setattr(Handler, f"do_{method}", Handler._method_not_allowed)
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, required=True)
-    parser.add_argument("--stats-file", required=True)
-    args = parser.parse_args()
-    Handler.stats_file = args.stats_file
-    HTTPServer(("0.0.0.0", args.port), Handler).serve_forever()
-
-if __name__ == "__main__":
-    main()
-PY
-    sudo chmod +x "$ONLINE_API_SCRIPT"
-}
-
-activate_online_api() {
-    if is_online_api_active; then
-        print_warning "API já está ativa."
-        pause
-        return
-    fi
-
-    local api_port
-    echo -e "${BLUE}Digite a porta para API de onlines:${RESET}"
-    read -rp "> " api_port
-    api_port=$(echo "$api_port" | tr -d '[:space:]')
-
-    if ! validate_port "$api_port"; then
-        pause
-        return
-    fi
-
-    if ! check_port_available "$api_port"; then
-        pause
-        return
-    fi
-
-    create_online_api_script
-    sudo mkdir -p "$(dirname "$ONLINE_API_PORT_FILE")"
-    echo "$api_port" | sudo tee "$ONLINE_API_PORT_FILE" > /dev/null
-
-    sudo tee "/etc/systemd/system/$ONLINE_API_SERVICE_NAME.service" > /dev/null <<EOF
-[Unit]
-Description=DTProto Online API
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3 $ONLINE_API_SCRIPT --port=$api_port --stats-file=$STATS_FILE
-Restart=always
-RestartSec=2
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    sudo systemctl daemon-reload
-    if sudo systemctl start "$ONLINE_API_SERVICE_NAME"; then
-        sudo systemctl enable "$ONLINE_API_SERVICE_NAME" > /dev/null 2>&1
-        print_success "API de onlines ativada na porta $api_port."
-        print_info "JSON: http://SEU_IP:$api_port/onlines"
-    else
-        print_error "Falha ao ativar API de onlines."
-    fi
-    pause
-}
-
-deactivate_online_api() {
-    if ! is_online_api_active; then
-        print_warning "API já está desativada."
-        pause
-        return
-    fi
-
-    sudo systemctl stop "$ONLINE_API_SERVICE_NAME"
-    sudo systemctl disable "$ONLINE_API_SERVICE_NAME" > /dev/null 2>&1
-    sudo rm -f "/etc/systemd/system/$ONLINE_API_SERVICE_NAME.service"
-    sudo systemctl daemon-reload
-    print_success "API de onlines desativada."
-    pause
-}
-
 print_status() {
-    local proto_status="OFFLINE"
-    local status_bg=$BG_RED
-    local status_color=$WHITE
+    local proxy_ports proxy_label proxy_tok udpgw_status bound_ip ssh_onlines
 
-    if is_server_active; then
-        proto_status="ONLINE "
-        status_bg=$BG_GREEN
-    else
-        proto_status="OFFLINE"
-    fi
-
-    local proxy_ports proxy_label proxy_tok proto_tok udpgw_status bound_ip
-    local ssh_onlines proto_onlines
     proxy_ports=$(format_proxy_ports_status)
     proxy_label="${proxy_ports:-nenhuma}"
     [[ -n "$(load_proxy_token)" ]] && proxy_tok="$(mark_ok)" || proxy_tok="$(mark_fail)"
-    [[ -n "$(load_proto_token)" ]] && proto_tok="$(mark_ok)" || proto_tok="$(mark_fail)"
     bound_ip=""
     [[ -f /etc/vtproxy/ip ]] && bound_ip=$(cat /etc/vtproxy/ip)
     ssh_onlines=$(get_ssh_online_users_count)
-    proto_onlines=$(get_proto_online_users_count)
 
-    local port subnet tun udpgw_ports udpgw_status
-    port=$(get_config_value "PORT")
-    subnet=$(get_config_value "VIRTUAL_SUBNET_CIDR")
-    tun=$(get_config_value "TUN_INTERFACE")
-    port=${port:-8000}
-    subnet=${subnet:-10.10.0.0/16}
-    tun=${tun:-tun0}
+    local udpgw_ports
     udpgw_ports=$(format_udpgw_ports_status)
     if [[ "$udpgw_ports" == *":ON"* ]] || systemctl is-active --quiet "$UDPGW_SERVICE_NAME" 2>/dev/null; then
         udpgw_status="$(mark_online)"
@@ -527,59 +273,25 @@ print_status() {
     fi
 
     print_box_open
-    local status_badge="${status_bg}${BOLD}${status_color} ${proto_status} ${RESET}"
 
     if is_narrow_menu; then
-        print_box_line "${WHITE}Proto: ${status_badge}${RESET}"
         print_box_line "${WHITE}Proxy: ${CYAN}${proxy_label}${RESET}"
-        print_box_line "${WHITE}Tok P/R: ${proxy_tok} ${proto_tok}${RESET}"
+        print_box_line "${WHITE}Token: ${proxy_tok}${RESET}"
         if [[ -n "$bound_ip" ]]; then
             print_box_line "${WHITE}IP: ${CYAN}${bound_ip}${RESET}"
         fi
-        print_box_line "${WHITE}Onlines SSH:${CYAN}${ssh_onlines}${WHITE} Proto:${CYAN}${proto_onlines}${RESET}"
-        print_box_line "${WHITE}Proto:${CYAN}${port}${WHITE} TUN:${CYAN}${tun}${RESET}"
-        print_box_line "${WHITE}Net: ${CYAN}${subnet}${RESET}"
+        print_box_line "${WHITE}Onlines SSH:${CYAN}${ssh_onlines}${RESET}"
         print_box_line "${WHITE}UDPgw: ${udpgw_status}${WHITE} ${CYAN}${udpgw_ports}${RESET}"
     else
-        print_box_line "${WHITE} Proto: ${status_badge}${BLUE} | Proxy: ${CYAN}${proxy_label}${RESET}"
-        local tokens_line="${WHITE} Tokens proxy: ${proxy_tok}  proto: ${proto_tok}"
+        print_box_line "${WHITE} Proxy: ${CYAN}${proxy_label}${RESET}"
+        local tokens_line="${WHITE} Token proxy: ${proxy_tok}"
         if [[ -n "$bound_ip" ]]; then
             tokens_line+="${WHITE} | IP: ${CYAN}${bound_ip}${RESET}"
         fi
         print_box_line "$tokens_line"
-        print_box_line "${WHITE} Onlines: SSH ${CYAN}${ssh_onlines}${WHITE} | Proto ${CYAN}${proto_onlines}${RESET}"
-        print_box_line "${WHITE} Porta proto: ${CYAN}${port}${WHITE} | Sub-rede: ${CYAN}${subnet}${WHITE} | TUN: ${CYAN}${tun}${RESET}"
+        print_box_line "${WHITE} Onlines SSH: ${CYAN}${ssh_onlines}${RESET}"
         print_box_line "${WHITE} UDP Gateway: ${udpgw_status}${WHITE} portas ${CYAN}${udpgw_ports}${RESET}"
     fi
-    print_box_close
-    echo
-}
-
-print_main_menu() {
-    print_box_open
-    print_box_heading "MENU PRINCIPAL"
-    print_box_divider
-    
-    local menu_items=(
-        "1 • Iniciar Servidor"
-        "2 • Parar Servidor" 
-        "3 • Reiniciar Servidor"
-        "4 • Status & Configuração"
-        "5 • Visualizar Logs"
-        "6 • Alterar Porta"
-        "7 • Gerenciar Tokens"
-        "8 • Modo de Autenticação"
-        "0 • Voltar ao Menu Inicial"
-    )
-    
-    for item in "${menu_items[@]}"; do
-        if [[ $item == *"Voltar"* ]]; then
-            render_menu_option "$item" "red"
-        else
-            render_menu_option "$item"
-        fi
-    done
-    
     print_box_close
     echo
 }
@@ -589,18 +301,16 @@ print_initial_menu() {
     print_box_heading "MENU INICIAL"
     print_box_divider
 
-    local ssh_onlines proto_onlines
+    local ssh_onlines
     ssh_onlines=$(get_ssh_online_users_count)
-    proto_onlines=$(get_proto_online_users_count)
     
     local menu_items=(
-        "1 • Servidor Protocolo"
-        "2 • Proxy / Portas"
-        "3 • Usuarios Online (SSH:${ssh_onlines} Proto:${proto_onlines})"
-        "4 • Gerenciar Tokens"
-        "5 • Atualizar Sistema"
-        "6 • UDP Gateway (udpgw)"
-        "7 • Remover Instalação"
+        "1 • Proxy / Portas"
+        "2 • Usuarios Online (SSH:${ssh_onlines})"
+        "3 • Gerenciar Tokens"
+        "4 • Atualizar Sistema"
+        "5 • UDP Gateway (udpgw)"
+        "6 • Remover Instalação"
         "0 • Sair"
     )
     
@@ -667,132 +377,6 @@ save_proxy_token() {
     printf '%s' "$token" >"$PROXY_TOKEN_HOME"
     sudo chmod 600 "$PROXY_TOKEN_VTPROXY" "$PROXY_TOKEN_FILE" 2>/dev/null || true
     chmod 600 "$PROXY_TOKEN_HOME" 2>/dev/null || true
-}
-
-load_proto_token() {
-    if [[ -f "$TOKEN_FILE" ]]; then
-        sudo cat "$TOKEN_FILE"
-    fi
-}
-
-save_proto_token() {
-    local token="$1"
-    sudo mkdir -p "$(dirname "$TOKEN_FILE")"
-    printf '%s' "$token" | sudo tee "$TOKEN_FILE" >/dev/null
-    sudo chmod 600 "$TOKEN_FILE" 2>/dev/null || true
-}
-
-detect_public_ipv4() {
-    local ip=""
-    for url in "https://ipv4.icanhazip.com/" "https://api.ipify.org"; do
-        ip=$(curl -fsSL --max-time 10 "$url" 2>/dev/null | tr -d '\r\n[:space:]')
-        if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            printf '%s' "$ip"
-            return 0
-        fi
-    done
-    return 1
-}
-
-# Renova licença proto via API usando apenas o IP público da VPS.
-# $1 = quiet (true/false); $2 = force (true = pede novo token na API protocol)
-refresh_proto_license_from_api() {
-    local quiet="${1:-false}"
-    local force="${2:-false}"
-    local public_ip response proto_token api_error payload old_token
-
-    old_token=$(load_proto_token | tr -d '\r\n[:space:]')
-
-    public_ip=$(detect_public_ipv4 || true)
-    if [[ -z "$public_ip" ]]; then
-        [[ "$quiet" != true ]] && print_warning "Não foi possível detectar IP público — renovação proto ignorada."
-        return 1
-    fi
-
-    [[ "$quiet" != true ]] && print_info "Obtendo licença proto para IP ${public_ip} em ${LICENSE_API_URL}..."
-
-    payload=$(
-        IP="$public_ip" FORCE="$force" python3 -c 'import json,os; p={"ip_address":os.environ["IP"]};
-if os.environ.get("FORCE")=="true": p["force"]=True
-print(json.dumps(p))' 2>/dev/null || true
-    )
-
-    if [[ -z "$payload" ]]; then
-        [[ "$quiet" != true ]] && print_warning "python3 não disponível para montar requisição JSON."
-        return 1
-    fi
-
-    if command -v curl >/dev/null 2>&1; then
-        response=$(
-            curl -sS --max-time 90 -X POST "${LICENSE_API_URL%/}/api/v1/license/proto-refresh" \
-                -H "Content-Type: application/json" \
-                -H "Accept: application/json" \
-                --data-binary "$payload" 2>&1
-        ) || response=""
-    else
-        response=$(
-            LICENSE_API_URL="$LICENSE_API_URL" IP="$public_ip" python3 - <<'PY' 2>&1 || true
-import json
-import os
-import urllib.error
-import urllib.request
-
-base_url = os.environ.get("LICENSE_API_URL", "").rstrip("/")
-payload = json.dumps({"ip_address": os.environ["IP"]}).encode()
-req = urllib.request.Request(
-    f"{base_url}/api/v1/license/proto-refresh",
-    data=payload,
-    headers={"Content-Type": "application/json", "Accept": "application/json"},
-    method="POST",
-)
-try:
-    with urllib.request.urlopen(req, timeout=90) as resp:
-        print(resp.read().decode())
-except urllib.error.HTTPError as exc:
-    print(exc.read().decode())
-except Exception as exc:
-    print(json.dumps({"error": str(exc)}))
-PY
-        )
-    fi
-
-    if [[ -z "$response" ]]; then
-        [[ "$quiet" != true ]] && print_warning "Falha ao contactar API de licença (rede/timeout/DNS)."
-        return 1
-    fi
-
-    proto_token=$(
-        printf '%s' "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print((d.get('data') or {}).get('proto_token',''))" 2>/dev/null || true
-    )
-
-    if [[ -n "$proto_token" ]]; then
-        if [[ "$proto_token" == "$old_token" ]]; then
-            sync_proto_systemd_token "$proto_token" "$quiet" || true
-            return 0
-        fi
-
-        save_proto_token "$proto_token"
-        [[ "$quiet" != true ]] && print_success "Licença proto renovada e salva."
-        if sync_proto_systemd_token "$proto_token" "$quiet"; then
-            if is_server_active; then
-                sudo systemctl restart "$SERVICE_NAME" 2>/dev/null || true
-                [[ "$quiet" != true ]] && print_success "Serviço proto-server reiniciado com nova licença."
-            fi
-        fi
-        return 0
-    fi
-
-    api_error=$(
-        printf '%s' "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error',''))" 2>/dev/null || true
-    )
-
-    if [[ -n "$api_error" ]]; then
-        [[ "$quiet" != true ]] && print_warning "API proto: ${api_error}"
-    else
-        [[ "$quiet" != true ]] && print_warning "API não retornou proto_token (licença/IP inválidos ou usuário sem Telegram)."
-        [[ "$quiet" != true ]] && print_info "Resposta: ${response}"
-    fi
-    return 1
 }
 
 validate_proxy_token() {
@@ -915,18 +499,6 @@ format_proxy_ports_status() {
 is_port_in_use() {
     local port="$1"
     command -v ss >/dev/null 2>&1 && ss -tuln | grep -q ":$port "
-}
-
-ensure_proto_for_proxy() {
-    if is_server_active; then
-        return 0
-    fi
-
-    # Proto é extensão opcional (DT-Proto). Proxy SSH/OpenVPN/V2Ray/xhttp
-    # funciona sem o proto-server ativo.
-    print_warning "Protocolo (proto-server) não está ativo — extensão opcional."
-    print_info "O proxy principal não depende do proto. Configure depois em: Menu → Servidor Protocolo."
-    return 0
 }
 
 escape_sed_replacement() {
@@ -1144,32 +716,6 @@ prompt_with_default() {
     printf '%s' "$value"
 }
 
-get_proto_port() {
-    local proto_port=$(get_config_value "PORT")
-    echo "${proto_port:-8000}"
-}
-
-normalize_protocol_config() {
-    local input="$1"
-    local output=""
-    local part
-
-    IFS=',' read -ra parts <<< "$input"
-    for part in "${parts[@]}"; do
-        case "$part" in
-            tcp:*|udp:*|quic:*)
-                if [[ -n "$output" ]]; then
-                    output="$output,$part"
-                else
-                    output="$part"
-                fi
-                ;;
-        esac
-    done
-
-    echo "$output"
-}
-
 build_proxy_command_from_conf() {
     local port="$1"
     local token="$2"
@@ -1178,7 +724,7 @@ build_proxy_command_from_conf() {
 
     local ssl_enabled ssl_cert_path cert_internal ssh_only_flag http_response
     local buffer_size max_connections write_timeout idle_timeout
-    local log_level ssh_port openvpn_port v2ray_port display_banner proto_port
+    local log_level ssh_port openvpn_port v2ray_port display_banner
 
     ssl_enabled=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
     ssl_cert_path=$(get_proxy_conf_value "$port" "SSL_CERT_PATH" "")
@@ -1194,9 +740,8 @@ build_proxy_command_from_conf() {
     openvpn_port=$(get_proxy_conf_value "$port" "OPENVPN_PORT" "1194")
     v2ray_port=$(get_proxy_conf_value "$port" "V2RAY_PORT" "1080")
     display_banner=$(get_proxy_conf_value "$port" "DISPLAY_BANNER" "true")
-    proto_port=$(get_proto_port)
 
-    local command="$PROXY_EXECUTABLE --token=$token --buffer-size=$buffer_size --response=$http_response --log-file=$(get_proxy_log_file "$port") --log-level=$log_level --dt-proto-port=$proto_port --ssh-port=$ssh_port --openvpn-port=$openvpn_port --v2ray-port=$v2ray_port --max-connections=$max_connections --write-timeout=$write_timeout --idle-timeout=$idle_timeout"
+    local command="$PROXY_EXECUTABLE --token=$token --buffer-size=$buffer_size --response=$http_response --log-file=$(get_proxy_log_file "$port") --log-level=$log_level --ssh-port=$ssh_port --openvpn-port=$openvpn_port --v2ray-port=$v2ray_port --max-connections=$max_connections --write-timeout=$write_timeout --idle-timeout=$idle_timeout"
 
     if [[ "$display_banner" != "true" ]]; then
         command="$command --display-banner=false"
@@ -1251,8 +796,7 @@ write_proxy_systemd_unit() {
     sudo tee "/etc/systemd/system/$service_name.service" > /dev/null <<EOF
 [Unit]
 Description=${PROJECT_NAME} Proxy Server na porta $port
-After=network.target ${SERVICE_NAME}.service
-Wants=${SERVICE_NAME}.service
+After=network.target
 
 [Service]
 ExecStart=$proxy_command
@@ -1344,8 +888,6 @@ start_proxy_for_port() {
         print_error "Token proxy não configurado. Use Gerenciar Tokens no menu inicial."
         return 1
     fi
-
-    ensure_proto_for_proxy || return 1
 
     local cert_internal="true"
     if [[ "$ssl_enabled" == "true" && -n "$ssl_cert_path" ]]; then
@@ -1612,27 +1154,6 @@ change_proxy_status() {
     change_proxy_http_response
 }
 
-sync_proxy_dtproto_port() {
-    local new_proto_port="$1"
-    local port updated_any="false"
-
-    for port in $(list_configured_proxy_ports | tr ',' ' '); do
-        [[ -z "$port" ]] && continue
-        migrate_proxy_conf_from_unit_if_needed "$port" || true
-        if [[ -f "$(get_proxy_config_file "$port")" ]]; then
-            if apply_proxy_service "$port" "false"; then
-                updated_any="true"
-                if systemctl is-active --quiet "$(get_proxy_service_name "$port")" 2>/dev/null; then
-                    sudo systemctl restart "$(get_proxy_service_name "$port")" 2>/dev/null || true
-                fi
-            fi
-        fi
-    done
-
-    [[ "$updated_any" == "true" ]] && sudo systemctl daemon-reload
-    _="$new_proto_port"
-}
-
 start_proxy_service() {
     print_header
     
@@ -1714,7 +1235,6 @@ start_proxy_service() {
     fi
     
     print_info "Iniciando proxy na porta $port..."
-    ensure_proto_for_proxy || { pause; return; }
 
     local token
     token=$(load_proxy_token)
@@ -1828,7 +1348,6 @@ start_configured_proxy_service() {
     fi
 
     migrate_proxy_conf_from_unit_if_needed "$port" || true
-    ensure_proto_for_proxy || { pause; return; }
 
     local service_name
     service_name=$(get_proxy_service_name "$port")
@@ -2019,7 +1538,6 @@ show_proxy_port_details() {
     print_box_line "${WHITE}  Timeouts W/I: ${CYAN}$(get_proxy_conf_value "$port" WRITE_TIMEOUT 0)/$(get_proxy_conf_value "$port" IDLE_TIMEOUT 0)${RESET}"
     print_box_line "${WHITE}  Log level: ${CYAN}$(get_proxy_conf_value "$port" LOG_LEVEL info)${RESET}"
     print_box_line "${WHITE}  Backends SSH/OVPN/V2Ray: ${CYAN}$(get_proxy_conf_value "$port" SSH_PORT 22)/$(get_proxy_conf_value "$port" OPENVPN_PORT 1194)/$(get_proxy_conf_value "$port" V2RAY_PORT 1080)${RESET}"
-    print_box_line "${WHITE}  dt-proto-port: ${CYAN}$(get_proto_port)${RESET}"
     print_box_line "${WHITE}  Conf: ${CYAN}$conf_file${RESET}"
     print_box_line "${WHITE}  Log/banner file: ${CYAN}$(get_proxy_log_file "$port")${RESET}"
     print_box_divider
@@ -2170,883 +1688,24 @@ connection_menu() {
     done
 }
 
-get_config_value() {
-    local key="$1"
-    if [ -f "$CONFIG_FILE" ]; then
-        grep "^$key=" "$CONFIG_FILE" | cut -d'=' -f2
-    else
-        echo ""
-    fi
-}
-
-set_config_value() {
-    local key="$1"
-    local value="$2"
-    local temp_file=$(mktemp)
-
-    sudo mkdir -p "$(dirname "$CONFIG_FILE")"
-
-    if [ -f "$CONFIG_FILE" ]; then
-        grep -v "^$key=" "$CONFIG_FILE" > "$temp_file"
-    fi
-    echo "$key=$value" >> "$temp_file"
-    sudo mv "$temp_file" "$CONFIG_FILE"
-}
-
-load_token() {
-    load_proto_token
-}
-
-save_token() {
-    local token="$1"
-    save_proto_token "$token"
-}
-
-validate_token() {
-    local token="$1"
-    local output=""
-    local rc=0
-
-    if [ -z "$token" ]; then
-        print_error "Token vazio. Não pode ser validado."
-        return 1
-    fi
-
-    print_info "Validando token proto..."
-
-    if [ ! -f "$PROTO_SERVER_BIN" ]; then
-        print_error "Binário do servidor protocolo não encontrado."
-        return 1
-    fi
-
-    # Captura FATAL/timeout da API remota (protocol.dtunnel.com.br) sem abortar o menu.
-    set +e
-    output=$(sudo "$PROTO_SERVER_BIN" --token "$token" --validate 2>&1)
-    rc=$?
-    set -e
-
-    if [[ $rc -eq 0 ]]; then
-        [[ -n "$output" ]] && echo "$output"
-        return 0
-    fi
-
-    [[ -n "$output" ]] && echo "$output"
-
-    if echo "$output" | grep -qiE 'timeout|deadline exceeded|connection refused|no such host|network is unreachable|temporary failure|i/o timeout|TLS handshake timeout'; then
-        print_warning "API de validação do proto inacessível no momento (rede/timeout)."
-        return 2
-    fi
-
-    return 1
-}
-
-is_server_active() {
-    systemctl is-active "$SERVICE_NAME" &> /dev/null
-}
-
-CURRENT_AUTH_MODE=$(get_config_value "AUTH_MODE")
-CURRENT_AUTH_MODE=${CURRENT_AUTH_MODE:-$AUTH_MODE_FILE}
-CURRENT_AUTH_URL=$(get_config_value "AUTH_URL")
-
-ensure_data_structure() {
-    local quiet_mode="${1:-false}"
-
-    if [ ! -d "$DATA_DIR" ]; then
-        sudo mkdir -p "$DATA_DIR"
-        if [[ "$quiet_mode" != "true" ]]; then
-            print_success "Diretório de dados criado: $DATA_DIR"
-        fi
-    fi
-
-    if [[ ! -f "$CERTIFICATE_SSL_FILE" ]] || [[ ! -f "$PRIVATE_KEY_SSL_FILE" ]]; then
-        if [[ "$quiet_mode" != "true" ]]; then
-            print_info "Generating TLS certificates..."
-        fi
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-            -keyout "$PRIVATE_KEY_SSL_FILE" \
-            -out "$CERTIFICATE_SSL_FILE" \
-            -subj "/C=BR/ST=State/L=City/O=ProtoServer/CN=proto-server" \
-            2>/dev/null
-        chmod 600 "$PRIVATE_KEY_SSL_FILE"
-        chmod 644 "$CERTIFICATE_SSL_FILE"
-    fi
-
-    if [ ! -f "$CREDENTIALS_FILE" ]; then
-        if [[ "$quiet_mode" != "true" ]]; then
-            print_info "Criando arquivo de credenciais..."
-        fi
-        sudo cat > "$CREDENTIALS_FILE" <<EOF
-{
-  "credentials": [
-    {
-      "user": "Dtunnel",
-      "pass": "Dtunnel"
-    }
-  ]
-}
-EOF
-        sudo chmod 644 "$CREDENTIALS_FILE"
-        if [[ "$quiet_mode" != "true" ]]; then
-            print_success "Arquivo credentials.json criado com credenciais padrão."
-        fi
-    fi
-
-    if [ ! -f "$STATS_FILE" ]; then
-        if [[ "$quiet_mode" != "true" ]]; then
-            print_info "Criando arquivo de estatísticas..."
-        fi
-        echo "{}" > "$STATS_FILE"
-        sudo chmod 644 "$STATS_FILE"
-        if [[ "$quiet_mode" != "true" ]]; then
-            print_success "Arquivo stats.json criado."
-        fi
-    fi
-}
-
-sync_proto_systemd_token() {
-    local token="$1"
-    local quiet="${2:-false}"
-    local service_file="/etc/systemd/system/$SERVICE_NAME.service"
-    local current_in_unit=""
-
-    [[ -n "$token" ]] || return 1
-
-    if [[ -f "$service_file" ]]; then
-        current_in_unit=$(
-            grep -oE '--token=[^ ]+' "$service_file" 2>/dev/null \
-                | head -1 \
-                | sed 's/^--token=//' || true
-        )
-        if [[ "$current_in_unit" == "$token" ]]; then
-            return 0
-        fi
-        sudo sed -Ei "s|--token=[^ ]+|--token=${token}|g" "$service_file"
-        sudo systemctl daemon-reload 2>/dev/null || true
-        [[ "$quiet" != true ]] && print_success "Unit proto-server atualizado com novo token."
-        return 0
-    fi
-
-    create_systemd_service "$quiet"
-}
-
-create_systemd_service() {
-    local quiet="${1:-false}"
-    local current_token=$(load_token)
-    local port=$(get_config_value "PORT")
-    local subnet=$(get_config_value "VIRTUAL_SUBNET_CIDR")
-    local tun=$(get_config_value "TUN_INTERFACE")
-    local auth_flag=$(get_auth_flag)
-    local protocol_config=$(get_config_value "PROTOCOL_CONFIG")
-    local client_cleanup=$(get_config_value "CLIENT_CLEANUP_INTERVAL")
-    local client_timeout=$(get_config_value "CLIENT_INACTIVE_TIMEOUT")
-    local tun_buffer=$(get_config_value "TUN_BUFFER_SIZE")
-
-    if [ -z "$current_token" ]; then
-        print_error "Token não configurado."
-        return 1
-    fi
-    if [ -z "$port" ] || [ -z "$subnet" ] || [ -z "$tun" ]; then
-        print_error "Configurações incompletas."
-        return 1
-    fi
-
-    [[ "$quiet" != true ]] && print_info "Criando serviço systemd..."
-
-    protocol_config=$(normalize_protocol_config "$protocol_config")
-
-    local service_command="$PROTO_SERVER_BIN \\
-    --token=$current_token \\
-    --virtual-subnet-cidr=$subnet \\
-    --tun=$tun \\
-    --quic-cert=$CERTIFICATE_SSL_FILE \\
-    --quic-key=$PRIVATE_KEY_SSL_FILE \\
-    --stats-file=$STATS_FILE"
-
-    if [[ -n "$protocol_config" ]]; then
-        service_command="$service_command \\
-    --protocol=$protocol_config"
-    else
-        service_command="$service_command \\
-    --protocol=tcp:$port"
-    fi
-
-    if [[ -n "$client_cleanup" ]]; then
-        service_command="$service_command \\
-    --client-cleanup-interval=$client_cleanup"
-    fi
-
-    if [[ -n "$client_timeout" ]]; then
-        service_command="$service_command \\
-    --client-inactive-timeout=$client_timeout"
-    fi
-
-    if [[ -n "$tun_buffer" ]]; then
-        service_command="$service_command \\
-    --tun-buffer-size=$tun_buffer"
-    fi
-
-    if [[ -n "$auth_flag" ]]; then
-        service_command="$service_command \\
-    $auth_flag"
-    fi
-
-    sudo cat > "/etc/systemd/system/$SERVICE_NAME.service" <<EOF
-[Unit]
-Description=${PROJECT_NAME} Proto Server
-After=network.target
-
-[Service]
-Type=simple
-User=root
-Group=root
-ExecStart=$service_command
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    sudo systemctl daemon-reload
-    [[ "$quiet" != true ]] && print_success "Serviço systemd configurado."
-}
-
-start_server() {
-    print_header
-    
-    ensure_data_structure
-    check_or_set_proto_token
-
-    refresh_proto_license_from_api false true || true
-
-    if [[ -z "$(load_proto_token)" ]]; then
-        print_warning "Sem token proto — não é possível iniciar o proto-server."
-        print_info "O proxy VT continua utilizável. Configure o proto depois em Gerenciar Tokens."
-        pause
-        return 0
-    fi
-
-    local port=$(get_config_value "PORT")
-    local subnet=$(get_config_value "VIRTUAL_SUBNET_CIDR")
-    local tun=$(get_config_value "TUN_INTERFACE")
-    local protocol_config=$(get_config_value "PROTOCOL_CONFIG")
-
-    port=${port:-8000}
-    subnet=${subnet:-10.10.0.0/16}
-    tun=${tun:-tun0}
-
-    print_box_open
-    print_box_line "${CYAN}  CONFIGURACOES ATUAIS${RESET}"
-    print_box_divider
-    print_box_line "${WHITE}  Porta: ${BLUE}${port}${RESET}"
-    print_box_line "${WHITE}  Sub-rede: ${BLUE}${subnet}${RESET}"
-    print_box_line "${WHITE}  Interface TUN: ${BLUE}${tun}${RESET}"
-    if [[ -n "$protocol_config" ]]; then
-        print_box_line "${WHITE}  Protocolos: ${BLUE}${protocol_config}${RESET}"
-    fi
-    print_box_close
-    echo
-
-    while true; do
-        echo -e "${BLUE}Porta (Enter para manter [$port]):${RESET}"
-        read -rp "> " new_port_input
-        
-        if [ -z "$new_port_input" ]; then
-            break
-        fi
-        
-        if validate_port "$new_port_input" && check_port_available "$new_port_input"; then
-            port="$new_port_input"
-            print_success "Porta $port validada com sucesso!"
-            break
-        else
-            print_warning "Por favor, insira uma porta válida e disponível."
-            echo
-        fi
-    done
-
-    echo -e "${BLUE}Sub-rede CIDR (Enter para manter [$subnet]):${RESET}"
-    read -rp "> " new_subnet_input
-    
-    echo -e "${BLUE}Interface TUN (Enter para manter [$tun]):${RESET}"
-    read -rp "> " new_tun_input
-
-    if [ -n "$new_subnet_input" ]; then
-        subnet="$new_subnet_input"
-    fi
-    if [ -n "$new_tun_input" ]; then
-        tun="$new_tun_input"
-    fi
-
-    echo
-    print_info "Configuração de protocolos:"
-    echo -e "${BLUE}TCP será ativado obrigatoriamente na porta $port${RESET}"
-    
-    local protocol_components="tcp:$port"
-    
-    if confirm_action "Deseja ativar UDP na mesma porta?" "n"; then
-        protocol_components="$protocol_components,udp:$port"
-        print_success "UDP ativado na porta $port"
-    fi
-    
-    local quic_port=""
-    if confirm_action "Deseja ativar QUIC?" "n"; then
-        while true; do
-            echo -e "${BLUE}Porta para QUIC (Enter para $((port + 1))):${RESET}"
-            read -rp "> " quic_port_input
-            quic_port=${quic_port_input:-$((port + 1))}
-            
-            if validate_port "$quic_port" && check_port_available "$quic_port"; then
-                protocol_components="$protocol_components,quic:$quic_port"
-                print_success "QUIC ativado na porta $quic_port"
-                break
-            else
-                print_warning "Porta QUIC inválida ou indisponível."
-            fi
-        done
-    fi
-
-    set_config_value "PORT" "$port"
-    set_config_value "VIRTUAL_SUBNET_CIDR" "$subnet"
-    set_config_value "TUN_INTERFACE" "$tun"
-    set_config_value "PROTOCOL_CONFIG" "$protocol_components"
-    
-    print_success "Configurações salvas!"
-
-    if create_systemd_service; then
-        print_info "Iniciando servidor..."
-        if sudo systemctl start "$SERVICE_NAME"; then
-            sudo systemctl enable "$SERVICE_NAME" &> /dev/null
-            print_success "Servidor protocolo iniciado com sucesso!"
-            
-            sleep 2
-            if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
-                print_success "Servidor está ativo e rodando!"
-                echo -e "${BLUE}Protocolos configurados: $protocol_components${RESET}"
-            else
-                print_error "Servidor pode não ter iniciado corretamente."
-                print_info "Verifique os logs: ${BLUE}sudo journalctl -u $SERVICE_NAME -f${RESET}"
-            fi
-        else
-            print_error "Falha ao iniciar o serviço."
-            print_info "Verifique os logs: ${BLUE}sudo journalctl -u $SERVICE_NAME -f${RESET}"
-        fi
-    fi
-    pause
-}
-
-stop_server() {
-    
-    if is_server_active; then
-        print_info "Parando serviço $SERVICE_NAME..."
-        sudo systemctl stop "$SERVICE_NAME"
-        print_success "Servidor parado."
-    else
-        print_error "Servidor não está ativo."
-    fi
-    pause
-}
-
-restart_server() {
-    
-    if is_server_active; then
-        print_info "Reiniciando serviço $SERVICE_NAME..."
-        sudo systemctl restart "$SERVICE_NAME"
-        print_success "Servidor reiniciado."
-    else
-        print_error "Servidor não está ativo."
-    fi
-    pause
-}
-
-show_server_status() {
-    print_header
-    
-    print_box_open
-    print_box_line "${CYAN}  STATUS DO SISTEMA${RESET}"
-    print_box_divider
-    
-    local port=$(get_config_value 'PORT')
-    local subnet=$(get_config_value 'VIRTUAL_SUBNET_CIDR')
-    local tun=$(get_config_value 'TUN_INTERFACE')
-    local auth_mode=$(get_config_value 'AUTH_MODE')
-    auth_mode=${auth_mode:-$AUTH_MODE_FILE}
-    local auth_url=$(get_config_value 'AUTH_URL')
-    local protocol_config=$(get_config_value 'PROTOCOL_CONFIG')
-    local token_status
-    if [[ -f "$TOKEN_FILE" ]]; then
-        token_status="$(mark_ok)"
-    else
-        token_status="$(mark_fail)"
-    fi
-    
-    if is_server_active; then
-        print_box_line "${WHITE}  Status: $(mark_online)${RESET}"
-    else
-        print_box_line "${WHITE}  Status: $(mark_offline)${RESET}"
-    fi
-    
-    print_box_line "${WHITE}  Porta: ${BLUE}${port:-8000}${RESET}"
-    print_box_line "${WHITE}  Sub-rede: ${BLUE}${subnet:-10.10.0.0/16}${RESET}"
-    print_box_line "${WHITE}  TUN: ${BLUE}${tun:-tun0}${RESET}"
-    if [[ -n "$protocol_config" ]]; then
-        print_box_line "${WHITE}  Protocolos: ${BLUE}${protocol_config}${RESET}"
-    fi
-    print_box_line "${WHITE}  Token: ${token_status}${RESET}"
-    
-    local auth_display=""
-    case "$auth_mode" in
-        $AUTH_MODE_FILE) auth_display="Arquivo" ;;
-        $AUTH_MODE_URL) auth_display="URL ($auth_url)" ;;
-        $AUTH_MODE_SSH) auth_display="SSH/PAM" ;; 
-        $AUTH_MODE_NONE) auth_display="Nenhuma" ;;
-        *) auth_display="Arquivo" ;;
-    esac
-    print_box_line "${WHITE}  Auth: ${BLUE}${auth_display}${RESET}"
-    
-    print_box_close
-    echo
-
-    pause
-}
-
-view_logs() {
-    
-    print_info "Exibindo logs (Ctrl+C para sair)..."
-    echo
-    sudo journalctl -u "$SERVICE_NAME" -f
-    pause
-}
-
-get_auth_flag() {
-    local auth_mode=$(get_config_value "AUTH_MODE")
-    auth_mode=${auth_mode:-$AUTH_MODE_FILE}
-    local auth_url=$(get_config_value "AUTH_URL")
-    
-    case "$auth_mode" in
-        $AUTH_MODE_URL)
-            if [[ -n "$auth_url" ]]; then
-                echo "--auth-url=$auth_url"
-            else
-                echo "--auth-file=$CREDENTIALS_FILE"
-            fi
-            ;;
-        $AUTH_MODE_SSH)
-            echo "--auth-url=http://127.0.0.1:6328/auth"
-            ;;
-        $AUTH_MODE_FILE)
-            echo "--auth-file=$CREDENTIALS_FILE"
-            ;;
-        $AUTH_MODE_NONE)
-            echo ""
-            ;;
-        *)
-            echo "--auth-file=$CREDENTIALS_FILE"
-            ;;
-    esac
-}
-
-setup_ssh_auth() {
-    print_info "Configurando autenticação SSH/PAM..."
-    
-    local SCRIPT_PATH="/usr/local/bin/ssh_auth.py"
-    local VENV_PATH="/usr/local/bin/ssh_auth_venv"
-    local SSH_AUTH_SERVICE="ssh-auth-api"
-    local SERVICE_FILE="/etc/systemd/system/ssh-auth-api.service"
-    
-    echo ">>> Atualizando pacotes..."
-    sudo apt update -y
-
-    echo ">>> Instalando dependências..."
-    sudo apt install -y python3 python3-venv python3-pip curl systemd
-
-    echo ">>> Instalando módulo PAM..."
-    if ! sudo apt install -y python3-pam; then
-        echo ">>> Pacote python3-pam não disponível, tentando via pip..."
-        sudo pip3 install python-pam || sudo pip3 install pam
-    fi
-
-    echo ">>> Criando script ssh_auth.py..."
-    sudo tee "$SCRIPT_PATH" > /dev/null << 'EOF'
-import logging
-from flask import Flask, request, jsonify
-import pam
-
-app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
-
-p = pam.pam()
-
-@app.route('/auth', methods=['POST'])
-def auth():
-    if not request.json:
-        return jsonify({'success': False, 'message': 'invalid request'}), 400
-
-    username = request.json.get('username')
-    password = request.json.get('password')
-
-    if not username or not password:
-        return jsonify({'success': False, 'message': 'username and password required'}), 400
-
-    logging.info('Authentication request for user: %s', username)
-
-    try:
-        if p.authenticate(username, password):
-            logging.info('Authentication successful for user: %s', username)
-            return jsonify({'success': True, 'message': 'Authentication successful'}), 200
-        else:
-            logging.info('Authentication failed for user: %s', username)
-            return jsonify({'success': False, 'message': 'invalid credentials'}), 401
-    except Exception as e:
-        logging.error('PAM error: %s', e)
-        return jsonify({'success': False, 'message': 'authentication error'}), 500
-
-if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=6328, debug=False)
-EOF
-
-    sudo chmod +x "$SCRIPT_PATH"
-
-    echo ">>> Criando ambiente virtual..."
-    sudo python3 -m venv "$VENV_PATH"
-    sudo "$VENV_PATH/bin/pip" install --upgrade pip
-
-    echo ">>> Instalando dependências no ambiente virtual..."
-    sudo "$VENV_PATH/bin/pip" install flask six python-pam || sudo "$VENV_PATH/bin/pip" install flask six pam
-
-    echo ">>> Criando serviço systemd..."
-    sudo tee "$SERVICE_FILE" > /dev/null <<EOF
-[Unit]
-Description=SSH Auth Python Service
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=${VENV_PATH}/bin/python ${SCRIPT_PATH}
-WorkingDirectory=/usr/local/bin
-Restart=on-failure
-RestartSec=5
-Environment=PYTHONUNBUFFERED=1
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    echo ">>> Recarregando e iniciando serviço..."
-    sudo systemctl daemon-reload
-    sudo systemctl enable "$SSH_AUTH_SERVICE"
-    sudo systemctl restart "$SSH_AUTH_SERVICE"
-
-    sleep 2
-    
-    echo ">>> Verificando status do serviço..."
-    if sudo systemctl is-active --quiet "$SSH_AUTH_SERVICE"; then
-        print_success "Serviço SSH Auth API criado e iniciado com sucesso!"
-        print_info "API rodando em: http://127.0.0.1:6328/auth"
-        
-        set_config_value "AUTH_MODE" "$AUTH_MODE_SSH"
-        set_config_value "AUTH_URL" "http://127.0.0.1:6328/auth"
-        
-        print_success "Autenticação SSH/PAM configurada com sucesso!"
-    else
-        print_error "Falha ao iniciar o serviço SSH Auth API."
-        print_info "Verifique os logs: sudo journalctl -u ssh-auth-api -f"
-        return 1
-    fi
-}
-
-change_auth_mode() {
-    print_header
-    
-    local current_mode=$(get_config_value "AUTH_MODE")
-    current_mode=${current_mode:-$AUTH_MODE_FILE}
-    local current_url=$(get_config_value "AUTH_URL")
-    
-    print_box_open
-    print_box_heading "ALTERAR MODO DE AUTENTICAÇÃO" "$CYAN"
-    print_box_divider
-    
-    print_box_line "${WHITE}  Modo atual: ${GREEN}${current_mode}${RESET}"
-    
-    if [[ "$current_mode" == "$AUTH_MODE_URL" && -n "$current_url" ]]; then
-        print_box_line "${WHITE}  URL atual: ${CYAN}${current_url}${RESET}"
-    fi
-    
-    print_box_divider
-    
-    local menu_items=(
-        "1 • Arquivo ($CREDENTIALS_FILE)"
-        "2 • URL personalizada"
-        "3 • SSH" 
-        "4 • Sem autenticação"
-        "0 • Voltar"
-    )
-    
-    for item in "${menu_items[@]}"; do
-        if [[ $item == *"Voltar"* ]]; then
-            render_menu_option "$item" "red"
-        else
-            render_menu_option "$item"
-        fi
-    done
-    
-    print_box_close
-    echo
-    
-    local option
-    read -rp "$(echo -e "${BLUE}Selecione uma opção [0-4]:${RESET} ")" option 
-    
-    case "$option" in
-        1)
-            set_config_value "AUTH_MODE" "$AUTH_MODE_FILE"
-            set_config_value "AUTH_URL" ""
-            print_success "Modo de autenticação alterado para: Arquivo"
-            ;;
-        2)
-            echo -e "${BLUE}Digite a URL de autenticação:${RESET}"
-            read -rp "> " auth_url
-            if [[ -n "$auth_url" ]]; then
-                set_config_value "AUTH_MODE" "$AUTH_MODE_URL"
-                set_config_value "AUTH_URL" "$auth_url"
-                print_success "Modo de autenticação alterado para: URL ($auth_url)"
-            else
-                print_error "URL não pode ser vazia!"
-            fi
-            ;;
-        3) 
-            setup_ssh_auth
-            ;;
-        4) 
-            set_config_value "AUTH_MODE" "$AUTH_MODE_NONE"
-            set_config_value "AUTH_URL" ""
-            print_success "Autenticação desativada"
-            ;;
-        0)
-            return
-            ;;
-        *)
-            print_error "Opção inválida!"
-            ;;
-    esac
-    
-    if is_server_active; then
-        echo
-        print_info "Reiniciando serviço para aplicar mudanças..."
-        if create_systemd_service; then
-            sudo systemctl restart "$SERVICE_NAME"
-            print_success "Serviço reiniciado com nova configuração de autenticação!"
-        else
-            print_error "Falha ao atualizar o serviço."
-        fi
-    fi
-    
-    pause
-}
-
-change_port() {
-    print_header
-    
-    local current_port
-    current_port=$(get_config_value "PORT")
-    local current_protocol
-    current_protocol=$(get_config_value "PROTOCOL_CONFIG")
-    local is_running="false"
-    if is_server_active; then
-        is_running="true"
-    fi
-
-    current_port=${current_port:-8000}
-    echo -e "${WHITE}Porta atual: ${BLUE}$current_port${RESET}"
-    if [[ -n "$current_protocol" ]]; then
-        echo -e "${WHITE}Protocolos atuais: ${BLUE}$current_protocol${RESET}"
-    fi
-
-    local new_port
-    while true; do
-        echo -e "${BLUE}Nova porta (1-65535):${RESET}"
-        read -rp "> " new_port
-        
-        new_port=$(echo "$new_port" | tr -d '\000-\037')
-
-        if [[ "$new_port" == "$current_port" ]]; then
-            print_warning "Esta já é a porta atual!"
-            continue
-        fi
-        
-        if validate_port "$new_port" && check_port_available "$new_port"; then
-            print_success "Porta $new_port validada com sucesso!"
-            break
-        else
-            print_warning "Por favor, insira uma porta válida e disponível."
-            echo
-        fi
-    done
-
-    echo
-    echo -e "${YELLOW}Alterar a porta de $current_port para $new_port${RESET}"
-    echo -e "${YELLOW}Isso afetará todos os clientes conectados.${RESET}"
-    
-    if confirm_action "Deseja continuar?"; then
-        local new_protocol_config=""
-        
-        if [[ -n "$current_protocol" ]]; then
-            new_protocol_config=$(echo "$current_protocol" | sed "s/tcp:$current_port/tcp:$new_port/g" | sed "s/udp:$current_port/udp:$new_port/g")
-            
-            local quic_port=$(echo "$current_protocol" | grep -o "quic:[0-9]*" | cut -d: -f2)
-            if [[ -n "$quic_port" ]]; then
-                local new_quic_port=$((new_port + 1))
-                if check_port_available "$new_quic_port"; then
-                    new_protocol_config=$(echo "$new_protocol_config" | sed "s/quic:$quic_port/quic:$new_quic_port/g")
-                    print_success "Porta QUIC atualizada para $new_quic_port"
-                else
-                    print_warning "Porta QUIC $new_quic_port indisponível, mantendo configuração anterior"
-                    new_protocol_config=$(echo "$new_protocol_config" | sed "s/quic:$quic_port//g" | sed 's/,,/,/g' | sed 's/^,//' | sed 's/,$//')
-                fi
-            fi
-
-            new_protocol_config=$(normalize_protocol_config "$new_protocol_config")
-        else
-            new_protocol_config="tcp:$new_port"
-        fi
-
-        set_config_value "PORT" "$new_port"
-        set_config_value "PROTOCOL_CONFIG" "$new_protocol_config"
-        sync_proxy_dtproto_port "$new_port"
-        print_success "Porta atualizada para $new_port"
-        print_success "Protocolos atualizados: $new_protocol_config"
-
-        if [ "$is_running" == "true" ]; then
-            print_info "Reiniciando servidor com nova configuração..."
-            if create_systemd_service; then
-                if sudo systemctl restart "$SERVICE_NAME"; then
-                    print_success "Servidor reiniciado com sucesso!"
-                    
-                    sleep 2
-                    if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
-                        print_success "Servidor está ativo e rodando na nova porta $new_port"
-                        echo -e "${BLUE}Protocolos configurados: $new_protocol_config${RESET}"
-                    else
-                        print_error "Servidor pode não ter reiniciado corretamente."
-                        print_info "Verifique os logs: ${BLUE}sudo journalctl -u $SERVICE_NAME -f${RESET}"
-                    fi
-                else
-                    print_error "Falha ao reiniciar o serviço."
-                    print_info "Verifique os logs: ${BLUE}sudo journalctl -u $SERVICE_NAME -f${RESET}"
-                fi
-            else
-                print_error "Falha ao atualizar o serviço systemd."
-            fi
-        else
-            print_info "Servidor não está em execução. A nova porta será usada no próximo início."
-        fi
-    else
-        print_info "Alteração de porta cancelada."
-    fi
-    
-    pause
-}
-
-change_token_menu() {
-    print_header
-
-    local new_token
-    local rc=0
-    print_info "Token proto é opcional. Enter vazio cancela."
-    while true; do
-        echo -e "${BLUE}Insira o token proto (Enter cancela):${RESET}"
-        read -rp "> " new_token
-
-        new_token=$(echo "$new_token" | tr -d '\000-\037')
-
-        if [[ -z "$new_token" ]]; then
-            print_info "Configuração de token proto cancelada."
-            pause
-            return 0
-        fi
-
-        set +e
-        validate_token "$new_token"
-        rc=$?
-        set -e
-
-        if [[ $rc -eq 0 ]]; then
-            save_proto_token "$new_token"
-            print_success "Token proto salvo!"
-            break
-        elif [[ $rc -eq 2 ]]; then
-            print_warning "Não foi possível validar online (API proto fora do ar / timeout)."
-            if confirm_action "Salvar o token mesmo assim (sem validação online)?" "s"; then
-                save_proto_token "$new_token"
-                print_success "Token proto salvo offline. Valide depois quando a API voltar."
-                break
-            fi
-            if confirm_action "Cancelar configuração do proto?" "s"; then
-                print_info "Proto não configurado."
-                pause
-                return 0
-            fi
-        else
-            print_error "Token proto inválido."
-            if ! confirm_action "Tentar outro token?" "s"; then
-                print_info "Configuração de token proto cancelada."
-                pause
-                return 0
-            fi
-        fi
-    done
-
-    if is_server_active; then
-        print_info "Reiniciando servidor com novo token..."
-        if create_systemd_service; then
-            sudo systemctl restart "$SERVICE_NAME"
-            print_success "Servidor reiniciado com novo token!"
-        else
-            print_error "Falha ao reiniciar o serviço."
-        fi
-    fi
-    pause
-}
-
-check_or_set_proto_token() {
-    local current_token
-    current_token=$(load_proto_token)
-
-    if [[ -n "$current_token" ]]; then
-        return 0
-    fi
-
-    print_warning "Token proto não encontrado (opcional — o proxy funciona sem ele)."
-    if confirm_action "Configurar token proto agora?" "n"; then
-        change_token_menu
-    else
-        print_info "Proto pulado. Configure depois em: Menu → Gerenciar Tokens."
-    fi
-}
-
 check_token_on_startup() {
     if [[ -z "$(load_proxy_token)" ]]; then
         print_warning "Token proxy (licença) não encontrado!"
-        print_info "Obrigatório para o proxy. Configure em: Menu inicial → Gerenciar Tokens [4]"
-        echo
-    fi
-
-    if [[ -z "$(load_proto_token)" ]]; then
-        print_info "Token proto não configurado (opcional)."
+        print_info "Obrigatório para o proxy. Configure em: Menu inicial → Gerenciar Tokens [3]"
         echo
     fi
 }
 
 run_quick_setup_first_time() {
-    # Proxy token basta para considerar setup "completo"; proto é opcional.
     if [[ -n "$(load_proxy_token)" ]]; then
-        if [[ ! -f "$FIRST_RUN_MARKER" ]]; then
-            set_config_value "$QUICK_SETUP_ASKED_KEY" "true"
-            sudo mkdir -p "$(dirname "$FIRST_RUN_MARKER")"
-            sudo touch "$FIRST_RUN_MARKER"
+        if [[ ! -f "$QUICK_SETUP_MARKER" ]]; then
+            sudo mkdir -p "$(dirname "$QUICK_SETUP_MARKER")"
+            sudo touch "$QUICK_SETUP_MARKER"
         fi
         return 0
     fi
 
-    if [[ -f "$FIRST_RUN_MARKER" ]] || [[ "$(get_config_value "$QUICK_SETUP_ASKED_KEY")" == "true" ]]; then
+    if [[ -f "$QUICK_SETUP_MARKER" ]] || [[ -f "$QUICK_SETUP_ASKED_MARKER" ]]; then
         return 0
     fi
 
@@ -3059,9 +1718,9 @@ run_quick_setup_first_time() {
     echo
 
     if ! confirm_action "Executar instalação rápida na primeira execução?" "s"; then
-        set_config_value "$QUICK_SETUP_ASKED_KEY" "true"
-        sudo mkdir -p "$(dirname "$FIRST_RUN_MARKER")"
-        sudo touch "$FIRST_RUN_MARKER"
+        sudo mkdir -p "$(dirname "$QUICK_SETUP_ASKED_MARKER")"
+        sudo touch "$QUICK_SETUP_ASKED_MARKER"
+        sudo touch "$QUICK_SETUP_MARKER"
         print_info "Instalação rápida pulada. Indo para o menu inicial..."
         return 0
     fi
@@ -3070,34 +1729,18 @@ run_quick_setup_first_time() {
     echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${RESET}"
     echo -e "${BLUE}║${CYAN}                  INSTALAÇÃO RÁPIDA INICIAL                   ${BLUE}║${RESET}"
     echo -e "${BLUE}╠══════════════════════════════════════════════════════════════╣${RESET}"
-    echo -e "${BLUE}║${WHITE}  Proxy é obrigatório. Protocolo (proto) é opcional.          ${BLUE}║${RESET}"
+    echo -e "${BLUE}║${WHITE}  Configura proxy nas portas 80 e 443 automaticamente.        ${BLUE}║${RESET}"
     echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${RESET}"
     echo
 
-    ensure_data_structure "true"
     prompt_for_proxy_token_if_missing
-    check_or_set_proto_token
 
-    local base_port=8000
-    local quic_port=8001
     local required_ports=(80 443)
     local all_ports_free="true"
-    local want_proto="false"
-
-    if [[ -n "$(load_proto_token)" ]]; then
-        want_proto="true"
-        required_ports+=(8000 8001)
-    fi
 
     print_warning "Antes de continuar, as portas abaixo precisam estar livres:"
     echo -e "${WHITE}  • ${CYAN}80${WHITE}   -> ${PROJECT_NAME}${RESET}"
     echo -e "${WHITE}  • ${CYAN}443${WHITE}  -> ${PROJECT_NAME} SSL${RESET}"
-    if [[ "$want_proto" == "true" ]]; then
-        echo -e "${WHITE}  • ${CYAN}8000${WHITE} -> Protocolo TCP/UDP${RESET}"
-        echo -e "${WHITE}  • ${CYAN}8001${WHITE} -> Protocolo QUIC${RESET}"
-    else
-        print_info "Proto não configurado — pulando portas 8000/8001."
-    fi
     echo -e "${BLUE}Status das portas:${RESET}"
     for port in "${required_ports[@]}"; do
         if is_port_free "$port"; then
@@ -3129,37 +1772,6 @@ run_quick_setup_first_time() {
         fi
     done
 
-    if [[ "$want_proto" == "true" ]]; then
-        local subnet
-        local tun
-        subnet=$(get_config_value "VIRTUAL_SUBNET_CIDR")
-        tun=$(get_config_value "TUN_INTERFACE")
-        subnet=${subnet:-10.10.0.0/16}
-        tun=${tun:-tun0}
-
-        local protocol_components="tcp:$base_port,udp:$base_port,quic:$quic_port"
-        set_config_value "PORT" "$base_port"
-        set_config_value "VIRTUAL_SUBNET_CIDR" "$subnet"
-        set_config_value "TUN_INTERFACE" "$tun"
-        set_config_value "PROTOCOL_CONFIG" "$protocol_components"
-
-        print_info "Aplicando configuração do protocolo..."
-        if create_systemd_service; then
-            if sudo systemctl start "$SERVICE_NAME"; then
-                sudo systemctl enable "$SERVICE_NAME" > /dev/null 2>&1
-                print_success "Servidor protocolo iniciado com sucesso!"
-                print_success "Protocolos: $protocol_components"
-            else
-                print_warning "Falha ao iniciar o serviço protocolo (proxy segue normalmente)."
-                print_info "Verifique os logs: sudo journalctl -u $SERVICE_NAME -f"
-            fi
-        else
-            print_warning "Falha ao criar serviço systemd do protocolo (proxy segue normalmente)."
-        fi
-    else
-        print_info "Pulando start do proto-server."
-    fi
-
     init_proxy_dirs
     print_info "Configurando proxies automáticos: 80 (sem SSL) e 443 (com SSL)..."
 
@@ -3175,12 +1787,13 @@ run_quick_setup_first_time() {
         print_warning "Não foi possível ativar proxy automático na porta 443."
     fi
 
-    set_config_value "$QUICK_SETUP_ASKED_KEY" "true"
-    sudo mkdir -p "$(dirname "$FIRST_RUN_MARKER")"
-    sudo touch "$FIRST_RUN_MARKER"
+    sudo mkdir -p "$(dirname "$QUICK_SETUP_ASKED_MARKER")"
+    sudo touch "$QUICK_SETUP_ASKED_MARKER"
+    sudo touch "$QUICK_SETUP_MARKER"
     print_success "Instalação rápida inicial concluída!"
     pause
 }
+
 
 is_udpgw_installed() {
     [[ -x "$UDPGW_BIN" ]]
@@ -4421,186 +3034,52 @@ udpgw_main_menu() {
         esac
     done
 }
-protocol_main_menu() {
-    while true; do
-        print_header
-        print_status
-        print_main_menu
-        
-        local option
-        read -rp "$(echo -e "${BLUE}Selecione uma opção [1-8]:${RESET} ")" option
-        
-        case "$option" in
-            1) start_server ;;
-            2) stop_server ;;
-            3) restart_server ;;
-            4) show_server_status ;;
-            5) view_logs ;;
-            6) change_port ;;
-            7)
-                print_info "Redirecionando para Gerenciar Tokens..."
-                tokens_menu
-                ;;
-            8) change_auth_mode ;; 
-            0) return 0 ;;
-            *) 
-                print_error "Opção inválida: $option"
-                pause 
-                ;;
-        esac
-    done
-}
+show_ssh_online_users_details() {
+    print_header
 
-show_online_users_details() {
-    while :; do
-        print_header
+    local ssh_onlines
+    ssh_onlines=$(get_ssh_online_users_count)
 
-        local online_count
-        online_count=$(get_proto_online_users_count)
+    print_box_open
+    print_box_heading "USUARIOS ONLINE SSH (${ssh_onlines})" "$CYAN"
+    print_box_close
+    echo
 
-        print_box_open
-        print_box_heading "USUARIOS ONLINE PROTO (${online_count})" "$CYAN"
-        print_box_close
-        echo
+    if [[ "$ssh_onlines" == "0" ]]; then
+        echo "Nenhum usuario SSH online (excluindo root)."
+    else
+        pgrep -f 'sshd:' 2>/dev/null \
+            | xargs -r ps -o user=,pid=,etime= 2>/dev/null \
+            | grep -v '^root ' \
+            | sort -u \
+            | while read -r user pid etime; do
+                printf 'Usuario: %s | PID: %s | Tempo: %s\n' "$user" "$pid" "$etime"
+            done
+    fi
 
-        if ! is_server_active; then
-            echo "Proto offline — sem estatísticas de onlines."
-            echo
-            echo -e "${YELLOW}Pressione Enter para voltar.${RESET}"
-            if read -r -t 5; then
-                break
-            fi
-            continue
-        fi
-
-        python3 - "$STATS_FILE" <<'PY'
-import json
-import sys
-from datetime import datetime
-
-path = sys.argv[1]
-
-def fmt_bytes(value):
-    try:
-        value = float(value)
-    except Exception:
-        return "0 B"
-    units = ["B", "KB", "MB", "GB", "TB"]
-    idx = 0
-    while value >= 1024 and idx < len(units) - 1:
-        value /= 1024
-        idx += 1
-    return f"{value:.2f} {units[idx]}"
-
-def fmt_duration(seconds):
-    seconds = max(0, int(seconds))
-    h = seconds // 3600
-    m = (seconds % 3600) // 60
-    s = seconds % 60
-    return f"{h:02d}:{m:02d}:{s:02d}"
-
-try:
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-except Exception:
-    data = {}
-
-if not isinstance(data, dict) or not data:
-    print("Nenhum usuario online.")
-    sys.exit(0)
-
-for ip, info in data.items():
-    if not isinstance(info, dict):
-        continue
-    user = info.get("id") or ip
-    up = fmt_bytes(info.get("traffic_up", 0))
-    down = fmt_bytes(info.get("traffic_down", 0))
-    connected_at = info.get("connected_at")
-    last_seen_at = info.get("last_seen_at")
-    elapsed = "N/A"
-    if connected_at and last_seen_at:
-        try:
-            c = datetime.strptime(connected_at, "%Y-%m-%d %H:%M:%S")
-            l = datetime.strptime(last_seen_at, "%Y-%m-%d %H:%M:%S")
-            elapsed = fmt_duration((l - c).total_seconds())
-        except Exception:
-            pass
-
-    print(f"Usuário: {user}")
-    print(f"IP: {ip}")
-    print(f"Tráfego Up: {up}")
-    print(f"Tráfego Down: {down}")
-    print(f"Tempo conectado: {elapsed}")
-    print("-" * 62)
-PY
-        echo
-        echo -e "${YELLOW}Pressione Enter para voltar.${RESET}"
-        if read -r -t 5; then
-            break
-        fi
-    done
+    echo
+    pause
 }
 
 online_users_menu() {
     while true; do
         print_header
 
-        local api_status
-        local api_port
-        api_port=$(get_online_api_port)
-        local online_count ssh_onlines
-        online_count=$(get_proto_online_users_count)
+        local ssh_onlines
         ssh_onlines=$(get_ssh_online_users_count)
 
-        if is_online_api_active; then
-            api_status="$(mark_online)"
-        else
-            api_status="$(mark_offline)"
-        fi
-
         print_box_open
-        print_box_heading "PAINEL DE ONLINES"
+        print_box_heading "USUARIOS ONLINE SSH (${ssh_onlines})" "$CYAN"
         print_box_divider
-        print_box_line "${WHITE} Api status: ${api_status}${RESET}"
-        if [[ -n "$api_port" ]]; then
-            print_box_line "${WHITE} Api porta: ${api_port}${RESET}"
-        fi
-        print_box_line "${WHITE} SSH online (sem root): ${CYAN}${ssh_onlines}${RESET}"
-        print_box_line "${WHITE} Proto online: ${CYAN}${online_count}${RESET}"
-        print_box_close
-        echo
-
-        print_box_open
-        print_box_heading "MENU"
-        print_box_divider
-        local menu_items=("1 • Listar Onlines")
-        if is_online_api_active; then
-            menu_items+=("2 • Desativar API")
-        else
-            menu_items+=("2 • Ativar API")
-        fi
-        menu_items+=("0 • Voltar")
-        for item in "${menu_items[@]}"; do
-            if [[ $item == 0* ]]; then
-                render_menu_option "$item" "red"
-            else
-                render_menu_option "$item"
-            fi
-        done
+        render_menu_option "1 • Listar usuarios SSH online"
+        render_menu_option "0 • Voltar" "red"
         print_box_close
         echo
 
         local option
-        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-2]:${RESET} ")" option
+        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-1]:${RESET} ")" option
         case "$option" in
-            1) show_online_users_details ;;
-            2)
-                if is_online_api_active; then
-                    deactivate_online_api
-                else
-                    activate_online_api
-                fi
-                ;;
+            1) show_ssh_online_users_details ;;
             0) return 0 ;;
             *)
                 print_error "Opção inválida: $option"
@@ -4621,33 +3100,16 @@ get_installed_proxy_version_label() {
     echo "${ver:-desconhecida}"
 }
 
-get_installed_proto_version_label() {
-    local ver=""
-    if [[ -x "$PROTO_SERVER_BIN" ]]; then
-        ver=$("$PROTO_SERVER_BIN" --version 2>/dev/null | awk '{print $NF}' | tr -d 'v' || true)
-    fi
-    if [[ -z "$ver" && -f "$PROTO_VERSION_FILE" ]]; then
-        ver=$(tr -d '\r\n' <"$PROTO_VERSION_FILE")
-    fi
-    echo "${ver:-desconhecida}"
-}
-
 show_update_preserve_notice() {
     echo -e "${WHITE}O que será atualizado:${RESET}"
     echo -e "${CYAN}  • Binário proxy-server${RESET}"
-    echo -e "${CYAN}  • Binário proto-server${RESET}"
     echo -e "${CYAN}  • Binário udpgw (UDP Gateway)${RESET}"
     echo -e "${CYAN}  • Menu vt (este menu)${RESET}"
     echo
     echo -e "${WHITE}O que é PRESERVADO:${RESET}"
     echo -e "${GREEN}  • Token proxy (licença VT)${RESET}"
     echo -e "${GREEN}  • Units systemd e configs de portas (/etc/proxy/conf.d)${RESET}"
-    echo -e "${GREEN}  • Config do proto (/etc/proto-server)${RESET}"
     echo -e "${GREEN}  • Config do udpgw (/etc/udpgw)${RESET}"
-    echo -e "${GREEN}  • Credenciais, certs e dados${RESET}"
-    echo
-    echo -e "${CYAN}  • Licença proto: renovada automaticamente via ${LICENSE_API_URL}${RESET}"
-    echo -e "${CYAN}  • Proto-server: versão ${DEFAULT_PROTO_VERSION} (proxy permanece em latest)${RESET}"
     echo
     echo -e "${YELLOW}Serviços ativos serão reiniciados após a troca dos binários.${RESET}"
 }
@@ -4670,10 +3132,7 @@ restart_udpgw_configured_ports() {
 }
 
 run_system_update() {
-    local args=(--update --yes --proto-version "$DEFAULT_PROTO_VERSION" --refresh-proto-token)
-
-    print_info "Renovando licença proto antes da atualização..."
-    refresh_proto_license_from_api false true || print_warning "Renovação proto falhou — o instalador tentará novamente."
+    local args=(--update --yes)
 
     print_info "Baixando e executando instalador oficial..."
     echo -e "${GRAY}curl -fsSL ${INSTALL_URL} | bash -s -- ${args[*]}${RESET}"
@@ -4688,7 +3147,7 @@ run_system_update() {
 
     print_success "Atualização concluída (binários + menu)."
     echo
-    print_info "Proxy: v$(get_installed_proxy_version_label) | Proto: v$(get_installed_proto_version_label) | UDPgw: v$(get_installed_udpgw_version_label)"
+    print_info "Proxy: v$(get_installed_proxy_version_label) | UDPgw: v$(get_installed_udpgw_version_label)"
 
     restart_udpgw_configured_ports || true
 
@@ -4706,16 +3165,14 @@ run_system_update() {
 update_system_menu() {
     print_header
 
-    local proxy_ver proto_ver udpgw_ver
+    local proxy_ver udpgw_ver
     proxy_ver=$(get_installed_proxy_version_label)
-    proto_ver=$(get_installed_proto_version_label)
     udpgw_ver=$(get_installed_udpgw_version_label)
 
     print_box_open
     print_box_heading "ATUALIZAR SISTEMA" "$CYAN"
     print_box_divider
     print_box_line "${WHITE}  Proxy instalado: ${GREEN}v${proxy_ver}${RESET}"
-    print_box_line "${WHITE}  Proto instalado: ${GREEN}v${proto_ver}${RESET}"
     print_box_line "${WHITE}  UDPgw instalado: ${GREEN}v${udpgw_ver}${RESET}"
     print_box_close
     echo
@@ -4723,7 +3180,7 @@ update_system_menu() {
     show_update_preserve_notice
     echo
 
-    if ! confirm_action "Atualizar binários (proxy/proto/udpgw) e o menu vt agora?" "s"; then
+    if ! confirm_action "Atualizar binários (proxy/udpgw) e o menu vt agora?" "s"; then
         print_info "Atualização cancelada."
         pause
         return 0
@@ -4741,12 +3198,11 @@ remove_completely() {
     echo -e "${RED}╚══════════════════════════════════════════════════════════════╝${RESET}"
     echo
     echo -e "${YELLOW}Itens que serão removidos:${RESET}"
-    echo -e "${WHITE}  • Serviço protocolo (proto-server)${RESET}"
     echo -e "${WHITE}  • Serviço UDP Gateway (udpgw)${RESET}"
     echo -e "${WHITE}  • Todos os serviços Proxy ativos${RESET}"
     echo -e "${WHITE}  • Serviço SSH Auth API${RESET}"
     echo -e "${WHITE}  • Ambiente virtual SSH Auth${RESET}"
-    echo -e "${WHITE}  • Serviço Online API${RESET}"
+    echo -e "${WHITE}  • Resíduos legados de proto-server (se existirem)${RESET}"
     echo -e "${WHITE}  • Binários do sistema${RESET}"
     echo -e "${WHITE}  • Arquivos de configuração${RESET}"
     echo -e "${WHITE}  • Arquivos de dados e logs${RESET}"
@@ -4760,12 +3216,21 @@ remove_completely() {
     fi
     
     print_info "Iniciando remoção completa..."
-    
-    if is_server_active; then
-        print_info "Parando serviço $SERVICE_NAME..."
-        sudo systemctl stop "$SERVICE_NAME"
-        sudo systemctl disable "$SERVICE_NAME" 2>/dev/null
+
+    if systemctl is-active --quiet "$LEGACY_PROTO_SERVICE" 2>/dev/null; then
+        print_info "Parando serviço legado $LEGACY_PROTO_SERVICE..."
+        sudo systemctl stop "$LEGACY_PROTO_SERVICE"
+        sudo systemctl disable "$LEGACY_PROTO_SERVICE" 2>/dev/null
     fi
+
+    if systemctl is-active --quiet "$LEGACY_ONLINE_API_SERVICE" 2>/dev/null; then
+        print_info "Parando serviço legado $LEGACY_ONLINE_API_SERVICE..."
+        sudo systemctl stop "$LEGACY_ONLINE_API_SERVICE"
+        sudo systemctl disable "$LEGACY_ONLINE_API_SERVICE" 2>/dev/null
+    fi
+    sudo rm -f "/etc/systemd/system/${LEGACY_ONLINE_API_SERVICE}.service"
+    sudo rm -f "/usr/local/bin/proto_online_api.py"
+    sudo rm -f "/etc/proto-server/online_api_port"
 
     if systemctl is-active --quiet "$UDPGW_SERVICE_NAME" 2>/dev/null; then
         print_info "Parando serviço legado $UDPGW_SERVICE_NAME..."
@@ -4794,15 +3259,6 @@ remove_completely() {
     sudo rm -f "/usr/local/bin/ssh_auth.py"
     sudo rm -rf "/usr/local/bin/ssh_auth_venv"
 
-    print_info "Parando serviço Online API..."
-    if systemctl is-active --quiet "$ONLINE_API_SERVICE_NAME"; then
-        sudo systemctl stop "$ONLINE_API_SERVICE_NAME"
-    fi
-    sudo systemctl disable "$ONLINE_API_SERVICE_NAME" 2>/dev/null
-    sudo rm -f "/etc/systemd/system/$ONLINE_API_SERVICE_NAME.service"
-    sudo rm -f "$ONLINE_API_SCRIPT"
-    sudo rm -f "$ONLINE_API_PORT_FILE"
-    
     print_info "Parando todos os serviços proxy..."
     for service in $(systemctl list-units --type=service --no-legend | grep "$PROXY_SERVICE_PREFIX" | awk '{print $1}'); do
         if systemctl is-active --quiet "$service"; then
@@ -4815,23 +3271,23 @@ remove_completely() {
     sudo systemctl daemon-reload
     sudo systemctl reset-failed
     
-    sudo rm -f "/etc/systemd/system/$SERVICE_NAME.service"
+    sudo rm -f "/etc/systemd/system/${LEGACY_PROTO_SERVICE}.service"
     sudo rm -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service"
     
     print_info "Removendo binários..."
-    sudo rm -f "$PROTO_SERVER_BIN"
+    sudo rm -f "/usr/local/bin/proto-server"
     sudo rm -f "$UDPGW_BIN"
     sudo rm -f "$PROXY_EXECUTABLE"
     sudo rm -f "/usr/local/bin/vt"
     sudo rm -f "/usr/local/bin/main"
     sudo rm -f "/usr/local/bin/proto"
     print_info "Removendo configurações e dados..."
-    sudo rm -rf "$(dirname "$TOKEN_FILE")"
-    sudo rm -rf "$(dirname "$CONFIG_FILE")"
+    sudo rm -rf /etc/proto-server
+    sudo rm -rf /var/lib/proto-server
+    sudo rm -f /etc/proto-server-version
     sudo rm -rf /etc/udpgw
     sudo rm -f "$UDPGW_VERSION_FILE"
     sudo rm -rf "$(dirname "$PROXY_TOKEN_VTPROXY")"
-    sudo rm -rf "$DATA_DIR"
     sudo rm -rf "$PROXY_DIR"
     sudo rm -rf "$PROXY_LOG_DIR"
     sudo rm -f "$PROXY_TOKEN_HOME"
@@ -4877,40 +3333,27 @@ change_proxy_token_menu() {
 tokens_menu() {
     while true; do
         print_header
-        local proxy_status proto_status
+        local proxy_status
         if [[ -n "$(load_proxy_token)" ]]; then
             proxy_status="$(mark_ok)"
         else
             proxy_status="$(mark_fail)"
-        fi
-        if [[ -n "$(load_proto_token)" ]]; then
-            proto_status="$(mark_ok)"
-        else
-            proto_status="$(mark_fail)"
         fi
 
         print_box_open
         print_box_heading "GERENCIAR TOKENS"
         print_box_divider
         print_box_line "${WHITE}  Proxy (licença): ${proxy_status}${RESET}"
-        print_box_line "${WHITE}  Proto (protocolo): ${proto_status}${RESET}"
         print_box_divider
         render_menu_option "1 • Configurar token Proxy"
-        render_menu_option "2 • Configurar token Proto"
-        render_menu_option "3 • Renovar licença Proto (API)"
         render_menu_option "0 • Voltar" "red"
         print_box_close
         echo
 
         local option
-        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-3]:${RESET} ")" option
+        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-1]:${RESET} ")" option
         case "$option" in
             1) change_proxy_token_menu ;;
-            2) change_token_menu ;;
-            3)
-                refresh_proto_license_from_api false true || true
-                pause
-                ;;
             0) return 0 ;;
             *) print_error "Opção inválida: $option"; pause ;;
         esac
@@ -4924,16 +3367,15 @@ initial_menu() {
         print_initial_menu
         
         local option
-        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-7]:${RESET} ")" option
+        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-6]:${RESET} ")" option
         
         case "$option" in
-            1) protocol_main_menu ;;
-            2) connection_menu ;;
-            3) online_users_menu ;;
-            4) tokens_menu ;;
-            5) update_system_menu ;;
-            6) udpgw_main_menu ;;
-            7) remove_completely ;;
+            1) connection_menu ;;
+            2) online_users_menu ;;
+            3) tokens_menu ;;
+            4) update_system_menu ;;
+            5) udpgw_main_menu ;;
+            6) remove_completely ;;
             0)
                 print_info "Saindo..."
                 exit 0

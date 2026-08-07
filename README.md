@@ -50,4 +50,4 @@ Após instalar, execute:
 vt
 ```
 
-(`main` e `proto` são symlinks para `vt` na instalação padrão.)
+(`main` é symlink para `vt` na instalação padrão.)

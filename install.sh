@@ -7,28 +7,16 @@ INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install
 MENU_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/vt.sh"
 # Artefato proxy no GitHub (padrão original): proxy-linux-amd64
 RELEASE_BINARY_PREFIX="proxy"
-# Artefato proto: proto-server-linux-amd64
-PROTO_RELEASE_BINARY_PREFIX="proto-server"
-PROTO_REPO="${PROTO_REPO:-TelksBr/VeltrixProxy}"
-PROTO_FALLBACK_REPO="${PROTO_FALLBACK_REPO:-DTunnel0/DTProto-Server-Releases}"
 UDPGW_REPO="${UDPGW_REPO:-TelksBr/VeltrixUPGW}"
 # Binário instalado (novo nome — não sobrescreve /usr/local/bin/proxy legado)
 BINARY_NAME="proxy-server"
-PROTO_BINARY_NAME="proto-server"
 UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
-PROTO_CONFIG_FILE="/etc/proto-server/config.conf"
-PROTO_DATA_DIR="/var/lib/proto-server"
-PROTO_CREDENTIALS_FILE="${PROTO_DATA_DIR}/credentials.json"
-PROTO_STATS_FILE="${PROTO_DATA_DIR}/stats.json"
-PROTO_CERT_FILE="${PROTO_DATA_DIR}/cert.pem"
-PROTO_KEY_FILE="${PROTO_DATA_DIR}/key.pem"
-INSTALLER_REV="30"
-MENU_REV_EXPECTED="37"
+INSTALLER_REV="31"
+MENU_REV_EXPECTED="38"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
-PROTO_VERSION_FILE="/etc/proto-server-version"
 UDPGW_VERSION_FILE="/etc/udpgw-version"
 LEGACY_BINARY_NAME="proxy"
 LEGACY_VERSION_FILE="/etc/proxyvt-version"
@@ -36,7 +24,6 @@ BOX_WIDTH=51
 TMP_DIR=""
 MENU_COMMIT_SHA=""
 ACTIVE_PROXY_SERVICES=()
-ACTIVE_PROTO=false
 ACTIVE_UDPGW=false
 ACTIVE_UDPGW_SERVICES=()
 SERVICES_WERE_STOPPED=false
@@ -44,22 +31,15 @@ INSTALL_COMPLETED=false
 
 MODE="install"
 VERSION=""
-PROTO_VERSION=""
 UDPGW_VERSION=""
-INSTALLED_PROTO_VERSION=""
 INSTALLED_UDPGW_VERSION=""
 ASSUME_YES=false
 BINARY_ONLY=false
 SKIP_HEADER=false
 MAX_VERSIONS=10
 PROXY_TOKEN=""
-PROTO_TOKEN=""
 INSTALL_IP=""
 SKIP_UDPGW=false
-REFRESH_PROTO_TOKEN=false
-REFRESH_PROTO_FORCE=false
-DEFAULT_PROTO_VERSION="v2.0.1"
-LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -106,19 +86,16 @@ Uso: $0 [opções]
 Modos:
   (padrão)        Instalação interativa (detecta e atualiza serviços existentes)
   --install       Mesmo que o padrão
-  --update        Atualiza proxy (latest) e proto (v2.0.1) + renova licença proto
+  --update        Atualiza proxy (latest) e udpgw (latest)
   --reinstall     Reinstala binários e menu vt (interativo ou com --latest)
 
 Opções:
-  --latest, -L    Usa a versão mais recente do proxy e do proto (também atualiza o menu)
+  --latest, -L    Usa a versão mais recente do proxy e udpgw (também atualiza o menu)
   --version TAG   Versão específica do proxy (ex: v2.1.0)
-  --proto-version TAG  Versão específica do proto (ex: v2.0.1)
   --udpgw-version TAG  Versão específica do UDP Gateway (ex: v1.0.1)
   --no-udpgw           Não instala/atualiza o binário udpgw
   --binary-only   Instala/atualiza apenas os binários (não baixa vt.sh)
   --proxy-token T Token da licença proxy (VT)
-  --proto-token T Token do servidor de protocolo
-  --refresh-proto-token  Obtém nova licença proto via API (IP público da VPS)
   --ip IP         IP da VPS vinculado à licença
   --yes, -y       Sem confirmações interativas
   --quiet, -q     Menos saída visual (não limpa a tela)
@@ -127,10 +104,9 @@ Opções:
 Exemplos:
   $0
   $0 --update --yes
-  $0 --update --yes --refresh-proto-token
   $0 --reinstall --latest --yes
-  $0 --version v2.1.0 --proto-version v2.0.1 --yes
-  $0 -- --proxy-token 'VT-XXXX' --proto-token 'abc123' --ip '1.2.3.4' --yes
+  $0 --version v2.1.0 --yes
+  $0 -- --proxy-token 'VT-XXXX' --ip '1.2.3.4' --yes
 EOF
 }
 
@@ -141,7 +117,6 @@ cleanup() {
     log_warn "Instalação interrompida — tentando restaurar serviços parados..."
     has_systemd && run_privileged systemctl daemon-reload 2>/dev/null || true
     restart_proxy_services || true
-    restart_proto_server || true
     restart_udpgw_server || true
   fi
 }
@@ -155,18 +130,12 @@ parse_args() {
     --reinstall) MODE="reinstall" ;;
     --latest | -L)
       VERSION="latest"
-      PROTO_VERSION="latest"
       UDPGW_VERSION="latest"
       ;;
     --version)
       shift
       VERSION="${1:-}"
       [[ -n "$VERSION" ]] || { log_error "Use --version TAG"; exit 1; }
-      ;;
-    --proto-version)
-      shift
-      PROTO_VERSION="${1:-}"
-      [[ -n "$PROTO_VERSION" ]] || { log_error "Use --proto-version TAG"; exit 1; }
       ;;
     --udpgw-version)
       shift
@@ -180,12 +149,6 @@ parse_args() {
       PROXY_TOKEN="${1:-}"
       [[ -n "$PROXY_TOKEN" ]] || { log_error "Use --proxy-token TOKEN"; exit 1; }
       ;;
-    --proto-token)
-      shift
-      PROTO_TOKEN="${1:-}"
-      [[ -n "$PROTO_TOKEN" ]] || { log_error "Use --proto-token TOKEN"; exit 1; }
-      ;;
-    --refresh-proto-token) REFRESH_PROTO_TOKEN=true; REFRESH_PROTO_FORCE=true ;;
     --ip)
       shift
       INSTALL_IP="${1:-}"
@@ -211,10 +174,7 @@ parse_args() {
   case "$MODE" in
   update)
     [[ -z "$VERSION" ]] && VERSION="latest"
-    [[ -z "$PROTO_VERSION" ]] && PROTO_VERSION="$DEFAULT_PROTO_VERSION"
     [[ -z "$UDPGW_VERSION" ]] && UDPGW_VERSION="latest"
-    REFRESH_PROTO_TOKEN=true
-    REFRESH_PROTO_FORCE=true
     ASSUME_YES=true
     ;;
   reinstall)
@@ -233,7 +193,6 @@ print_header() {
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Repositório: ${REPO}"
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Modo:        ${MODE}"
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Binário proxy: ${INSTALL_DIR}/${BINARY_NAME}"
-  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Binário proto: ${INSTALL_DIR}/${PROTO_BINARY_NAME}"
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Binário udpgw: ${INSTALL_DIR}/${UDPGW_BINARY_NAME}"
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Menu:          ${INSTALL_DIR}/${MENU_NAME}"
   printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Revisão:       ${INSTALLER_REV}"
@@ -585,14 +544,23 @@ get_installed_version() {
   fi
 }
 
-get_installed_proto_version() {
-  if [[ -x "${INSTALL_DIR}/${PROTO_BINARY_NAME}" ]]; then
-    "${INSTALL_DIR}/${PROTO_BINARY_NAME}" --version 2>/dev/null | awk '{print $2}' | tr -d 'v' || true
-    return
+show_current_installation() {
+  local current current_udpgw
+  current=$(get_installed_version || true)
+  current_udpgw=$(get_installed_udpgw_version || true)
+  if [[ -n "$current" ]]; then
+    log_info "Versão proxy instalada: v${current}"
+    if [[ -x "${INSTALL_DIR}/${LEGACY_BINARY_NAME}" && ! -x "${INSTALL_DIR}/${BINARY_NAME}" ]]; then
+      log_warn "Instalação legada detectada em ${INSTALL_DIR}/${LEGACY_BINARY_NAME}"
+    fi
+  else
+    log_warn "Nenhuma instalação proxy detectada em ${INSTALL_DIR}/${BINARY_NAME}"
   fi
 
-  if [[ -f "$PROTO_VERSION_FILE" ]]; then
-    tr -d 'v' <"$PROTO_VERSION_FILE"
+  if [[ -n "$current_udpgw" ]]; then
+    log_info "Versão udpgw instalada: v${current_udpgw}"
+  else
+    log_warn "Nenhuma instalação udpgw detectada em ${INSTALL_DIR}/${UDPGW_BINARY_NAME}"
   fi
 }
 
@@ -604,33 +572,6 @@ get_installed_udpgw_version() {
 
   if [[ -f "$UDPGW_VERSION_FILE" ]]; then
     tr -d 'v' <"$UDPGW_VERSION_FILE"
-  fi
-}
-
-show_current_installation() {
-  local current current_proto current_udpgw
-  current=$(get_installed_version || true)
-  current_proto=$(get_installed_proto_version || true)
-  current_udpgw=$(get_installed_udpgw_version || true)
-  if [[ -n "$current" ]]; then
-    log_info "Versão proxy instalada: v${current}"
-    if [[ -x "${INSTALL_DIR}/${LEGACY_BINARY_NAME}" && ! -x "${INSTALL_DIR}/${BINARY_NAME}" ]]; then
-      log_warn "Instalação legada detectada em ${INSTALL_DIR}/${LEGACY_BINARY_NAME}"
-    fi
-  else
-    log_warn "Nenhuma instalação proxy detectada em ${INSTALL_DIR}/${BINARY_NAME}"
-  fi
-
-  if [[ -n "$current_proto" ]]; then
-    log_info "Versão proto instalada: v${current_proto}"
-  else
-    log_warn "Nenhuma instalação proto detectada em ${INSTALL_DIR}/${PROTO_BINARY_NAME}"
-  fi
-
-  if [[ -n "$current_udpgw" ]]; then
-    log_info "Versão udpgw instalada: v${current_udpgw}"
-  else
-    log_warn "Nenhuma instalação udpgw detectada em ${INSTALL_DIR}/${UDPGW_BINARY_NAME}"
   fi
 }
 
@@ -666,10 +607,6 @@ fetch_release_tags() {
 
 fetch_releases() {
   fetch_release_tags "$REPO" RELEASES
-}
-
-fetch_proto_releases() {
-  fetch_release_tags "$PROTO_FALLBACK_REPO" PROTO_RELEASES
 }
 
 fetch_udpgw_releases() {
@@ -756,28 +693,6 @@ show_versions_and_select() {
     prompt_version_selection "proxy" "$REPO" RELEASES VERSION
   fi
 
-  if [[ -n "$PROTO_VERSION" ]]; then
-    if [[ "$PROTO_VERSION" == "latest" ]]; then
-      local proto_latest=""
-      proto_latest=$(fetch_latest_release_tag "$PROTO_FALLBACK_REPO" || true)
-      if [[ -z "$proto_latest" ]]; then
-        proto_latest=$(fetch_latest_release_tag "$PROTO_REPO" || true)
-      fi
-      if [[ -n "$proto_latest" ]]; then
-        PROTO_VERSION="$proto_latest"
-        log_success "Versão proto selecionada (releases/latest): ${PROTO_VERSION}"
-      else
-        resolve_version_in_list "latest" PROTO_RELEASES PROTO_VERSION "proto"
-      fi
-    else
-      resolve_version_in_list "$PROTO_VERSION" PROTO_RELEASES PROTO_VERSION "proto"
-    fi
-  elif [[ "$ASSUME_YES" == true ]]; then
-    resolve_version_in_list "latest" PROTO_RELEASES PROTO_VERSION "proto" "$PROTO_FALLBACK_REPO"
-  else
-    prompt_version_selection "proto" "$PROTO_FALLBACK_REPO" PROTO_RELEASES PROTO_VERSION
-  fi
-
   if [[ "$SKIP_UDPGW" == true ]]; then
     UDPGW_VERSION=""
   elif [[ -n "$UDPGW_VERSION" ]]; then
@@ -793,7 +708,7 @@ confirm_installation() {
   [[ "$ASSUME_YES" == true ]] && return 0
 
   echo ""
-  local confirm_msg="Continuar com proxy ${VERSION} e proto ${PROTO_VERSION}"
+  local confirm_msg="Continuar com proxy ${VERSION}"
   [[ "$SKIP_UDPGW" != true && -n "$UDPGW_VERSION" ]] && confirm_msg+=" e udpgw ${UDPGW_VERSION}"
   confirm_msg+="?"
   read -rp "${confirm_msg} (s/N): " answer
@@ -939,13 +854,6 @@ verify_udpgw_checksum() {
   log_success "Integridade SHA256 verificada (${filename})."
 }
 
-get_proto_config_value() {
-  local key="$1"
-  if [[ -f "$PROTO_CONFIG_FILE" ]]; then
-    grep "^${key}=" "$PROTO_CONFIG_FILE" | cut -d'=' -f2- | head -n1
-  fi
-}
-
 find_service_files_by_exec() {
   local pattern="$1"
   local dir service_file
@@ -967,14 +875,18 @@ has_active_proxy_process() {
   return 1
 }
 
-has_active_proto_process() {
-  if has_command pgrep; then
-    pgrep -f '/usr/local/bin/proto-server' >/dev/null 2>&1 && return 0
-    pgrep -f 'proto-server.*--token=' >/dev/null 2>&1 && return 0
-  fi
+has_prior_installation() {
+  local current
+
+  current=$(get_installed_version 2>/dev/null || true)
+  [[ -n "$current" ]] && return 0
+  [[ -f /etc/proxy/token || -f /etc/vtproxy/proxy.token ]] && return 0
+  [[ -f /etc/proto-server/token ]] && return 0
+  [[ -d /etc/proxy/conf.d ]] && return 0
+  has_existing_services && return 0
+  has_active_proxy_process && return 0
   return 1
 }
-
 has_udpgw_service() {
   has_systemd || return 1
   [[ -f /etc/systemd/system/udpgw.service ]] && return 0
@@ -1014,24 +926,6 @@ has_active_udpgw_process() {
   if has_command pgrep; then
     pgrep -f '/usr/local/bin/udpgw' >/dev/null 2>&1 && return 0
   fi
-  return 1
-}
-
-has_active_vtproxy_processes() {
-  has_active_proxy_process || has_active_proto_process
-}
-
-has_prior_installation() {
-  local current current_proto
-
-  current=$(get_installed_version 2>/dev/null || true)
-  current_proto=$(get_installed_proto_version 2>/dev/null || true)
-  [[ -n "$current" || -n "$current_proto" ]] && return 0
-  [[ -f /etc/proxy/token || -f /etc/vtproxy/proxy.token ]] && return 0
-  [[ -f /etc/proto-server/token || -f "$PROTO_CONFIG_FILE" ]] && return 0
-  [[ -d /etc/proxy/conf.d ]] && return 0
-  has_existing_services && return 0
-  has_active_vtproxy_processes && return 0
   return 1
 }
 
@@ -1095,20 +989,6 @@ list_all_proxy_services() {
   fi
 }
 
-find_proto_service_file() {
-  if [[ -f /etc/systemd/system/proto-server.service ]]; then
-    echo /etc/systemd/system/proto-server.service
-    return 0
-  fi
-
-  find_service_files_by_exec 'ExecStart=.*proto-server' | head -n1
-}
-
-has_proto_service() {
-  has_systemd || return 1
-  [[ -n "$(find_proto_service_file || true)" ]]
-}
-
 has_proxy_services() {
   local services=()
   read_nonempty_lines services < <(list_all_proxy_services)
@@ -1116,12 +996,11 @@ has_proxy_services() {
 }
 
 has_existing_services() {
-  has_proto_service || has_proxy_services || has_udpgw_service
+  has_proxy_services || has_udpgw_service
 }
 
 capture_active_services() {
   ACTIVE_PROXY_SERVICES=()
-  ACTIVE_PROTO=false
   ACTIVE_UDPGW=false
   ACTIVE_UDPGW_SERVICES=()
 
@@ -1136,12 +1015,6 @@ capture_active_services() {
       ACTIVE_PROXY_SERVICES+=("$service")
     fi
   done
-
-  if systemctl is-active --quiet proto-server 2>/dev/null; then
-    ACTIVE_PROTO=true
-  elif has_active_proto_process; then
-    ACTIVE_PROTO=true
-  fi
 
   read_nonempty_lines services < <(list_all_udpgw_services)
   for service in "${services[@]}"; do
@@ -1189,10 +1062,21 @@ restart_proxy_services() {
   done
 }
 
-stop_proto_server() {
-  if systemctl is-active --quiet proto-server 2>/dev/null; then
-    log_info "Parando serviço proto-server..."
-    run_privileged systemctl stop proto-server || log_warn "Não foi possível parar proto-server"
+stop_legacy_proto_server() {
+  has_systemd || return 0
+
+  if [[ -f /etc/systemd/system/proto-server.service ]] \
+    || systemctl list-unit-files proto-server.service 2>/dev/null | grep -q proto-server; then
+    log_info "Desativando serviço legado proto-server (migração)..."
+    run_privileged systemctl stop proto-server 2>/dev/null || true
+    run_privileged systemctl disable proto-server 2>/dev/null || true
+  fi
+
+  if has_command pgrep && pgrep -f '/usr/local/bin/proto-server' >/dev/null 2>&1; then
+    log_warn "Processo proto-server legado em execução — encerrando..."
+    pkill -f '/usr/local/bin/proto-server' 2>/dev/null || true
+    sleep 1
+    pkill -9 -f '/usr/local/bin/proto-server' 2>/dev/null || true
   fi
 }
 
@@ -1205,26 +1089,6 @@ stop_udpgw_server() {
   for service in "${services[@]}"; do
     run_privileged systemctl stop "$service" || log_warn "Não foi possível parar $service"
   done
-}
-
-restart_proto_server() {
-  if ! has_proto_service; then
-    return 0
-  fi
-
-  if [[ "$MODE" == "update" || "$MODE" == "reinstall" || "$ACTIVE_PROTO" == true ]]; then
-    log_info "Iniciando/reiniciando serviço proto-server..."
-    if ! run_privileged systemctl restart proto-server; then
-      log_warn "Não foi possível reiniciar proto-server."
-      log_info "Verifique: journalctl -u proto-server -n 30 --no-pager"
-      return 1
-    fi
-    if systemctl is-active --quiet proto-server 2>/dev/null; then
-      log_success "proto-server ativo."
-    else
-      log_warn "proto-server não ficou ativo após restart."
-    fi
-  fi
 }
 
 restart_udpgw_server() {
@@ -1294,111 +1158,6 @@ load_saved_proxy_token() {
       return 0
     fi
   done
-}
-
-load_saved_proto_token() {
-  if [[ -f /etc/proto-server/token ]]; then
-    tr -d '\r\n' </etc/proto-server/token
-  fi
-}
-
-detect_public_ipv4() {
-  local ip=""
-  for url in "https://ipv4.icanhazip.com/" "https://api.ipify.org"; do
-    ip=$(curl -fsSL --max-time 10 "$url" 2>/dev/null | tr -d '\r\n[:space:]')
-    if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-      printf '%s' "$ip"
-      return 0
-    fi
-  done
-  return 1
-}
-
-refresh_proto_token_from_api() {
-  [[ "$REFRESH_PROTO_TOKEN" == true ]] || return 0
-
-  local public_ip response proto_token api_error payload force_flag="false"
-  [[ "$REFRESH_PROTO_FORCE" == true ]] && force_flag="true"
-
-  public_ip=$(detect_public_ipv4 || true)
-  if [[ -z "$public_ip" ]]; then
-    log_warn "Não foi possível detectar o IP público — pulando renovação da licença proto."
-    return 1
-  fi
-
-  log_info "Obtendo licença proto para IP ${public_ip} em ${LICENSE_API_URL}..."
-
-  payload=$(
-    IP="$public_ip" FORCE="$force_flag" python3 -c 'import json,os; p={"ip_address":os.environ["IP"]};
-if os.environ.get("FORCE")=="true": p["force"]=True
-print(json.dumps(p))' 2>/dev/null || true
-  )
-
-  if [[ -z "$payload" ]]; then
-    log_warn "python3 não disponível para renovar licença proto."
-    return 1
-  fi
-
-  if has_command curl; then
-    response=$(
-      curl -sS --max-time 90 -X POST "${LICENSE_API_URL%/}/api/v1/license/proto-refresh" \
-        -H "Content-Type: application/json" \
-        -H "Accept: application/json" \
-        --data-binary "$payload" 2>&1
-    ) || response=""
-  else
-    response=$(
-      LICENSE_API_URL="$LICENSE_API_URL" IP="$public_ip" python3 - <<'PY' 2>&1 || true
-import json
-import os
-import urllib.error
-import urllib.request
-
-base_url = os.environ.get("LICENSE_API_URL", "").rstrip("/")
-payload = json.dumps({"ip_address": os.environ["IP"]}).encode()
-req = urllib.request.Request(
-    f"{base_url}/api/v1/license/proto-refresh",
-    data=payload,
-    headers={"Content-Type": "application/json", "Accept": "application/json"},
-    method="POST",
-)
-try:
-    with urllib.request.urlopen(req, timeout=90) as resp:
-        print(resp.read().decode())
-except urllib.error.HTTPError as exc:
-    print(exc.read().decode())
-except Exception as exc:
-    print(json.dumps({"error": str(exc)}))
-PY
-    )
-  fi
-
-  if [[ -z "$response" ]]; then
-    log_warn "Falha ao contactar API de licença para renovar proto (rede/timeout/DNS)."
-    return 1
-  fi
-
-  proto_token=$(
-    printf '%s' "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print((d.get('data') or {}).get('proto_token',''))" 2>/dev/null || true
-  )
-
-  if [[ -n "$proto_token" ]]; then
-    PROTO_TOKEN="$proto_token"
-    log_success "Nova licença proto obtida e será aplicada."
-    return 0
-  fi
-
-  api_error=$(
-    printf '%s' "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error',''))" 2>/dev/null || true
-  )
-
-  if [[ -n "$api_error" ]]; then
-    log_warn "API proto: ${api_error}"
-  else
-    log_warn "API não retornou proto_token (licença/IP inválidos ou sem Telegram)."
-    log_info "Resposta: ${response}"
-  fi
-  return 1
 }
 
 sync_proxy_service_executables() {
@@ -1474,102 +1233,8 @@ sync_proxy_service_tokens() {
   done
 }
 
-normalize_protocol_config() {
-  local input="$1"
-  local output="" part
-
-  IFS=',' read -ra parts <<<"$input"
-  for part in "${parts[@]}"; do
-    case "$part" in
-    tcp:* | udp:* | quic:*)
-      if [[ -n "$output" ]]; then
-        output="$output,$part"
-      else
-        output="$part"
-      fi
-      ;;
-    esac
-  done
-
-  echo "$output"
-}
-
-ensure_proto_systemd_service() {
-  local token port subnet tun protocol_config proto_bin service_command service_file auth_flag
-
-  service_file="$(find_proto_service_file || true)"
-  [[ -n "$service_file" ]] && return 0
-
-  token="$PROTO_TOKEN"
-  if [[ -z "$token" ]]; then
-    token=$(load_saved_proto_token || true)
-  fi
-  [[ -n "$token" ]] || return 0
-
-  port=$(get_proto_config_value "PORT")
-  subnet=$(get_proto_config_value "VIRTUAL_SUBNET_CIDR")
-  tun=$(get_proto_config_value "TUN_INTERFACE")
-  protocol_config=$(get_proto_config_value "PROTOCOL_CONFIG")
-
-  port=${port:-8000}
-  subnet=${subnet:-10.10.0.0/16}
-  tun=${tun:-tun0}
-  protocol_config=$(normalize_protocol_config "${protocol_config:-tcp:$port}")
-  [[ -n "$protocol_config" ]] || protocol_config="tcp:$port"
-  proto_bin="${INSTALL_DIR}/${PROTO_BINARY_NAME}"
-  auth_flag="--auth-file=${PROTO_CREDENTIALS_FILE}"
-
-  run_privileged mkdir -p "$(dirname "$PROTO_CONFIG_FILE")" "$PROTO_DATA_DIR"
-
-  service_command="${proto_bin} \\
-    --token=${token} \\
-    --virtual-subnet-cidr=${subnet} \\
-    --tun=${tun} \\
-    --quic-cert=${PROTO_CERT_FILE} \\
-    --quic-key=${PROTO_KEY_FILE} \\
-    --stats-file=${PROTO_STATS_FILE} \\
-    --protocol=${protocol_config} \\
-    ${auth_flag}"
-
-  log_info "Criando proto-server.service a partir da configuração existente..."
-
-  run_privileged tee /etc/systemd/system/proto-server.service >/dev/null <<EOF
-[Unit]
-Description=${PROJECT_NAME} Proto Server
-After=network.target
-
-[Service]
-Type=simple
-User=root
-Group=root
-ExecStart=${service_command}
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-}
-
-sync_proto_service() {
-  local token="$1"
-  local service_file safe_token proto_bin="${INSTALL_DIR}/${PROTO_BINARY_NAME}"
-
-  ensure_proto_systemd_service
-  service_file="$(find_proto_service_file || true)"
-  [[ -n "$service_file" && -f "$service_file" ]] || return 0
-
-  run_privileged sed -Ei "s|/usr/local/bin/proto-server|${proto_bin}|g" "$service_file" || {
-    log_warn "Falha ao atualizar binário em $(basename "$service_file")"
-    return 0
-  }
-
-  [[ -n "$token" ]] || return 0
-  safe_token=$(escape_sed_replacement "$token")
-  safe_sed_inplace "$service_file" "s|--token=[^ ]+|--token=${safe_token}|g" || true
-}
-
 refresh_existing_services() {
-  local proxy_token proto_token
+  local proxy_token
 
   if ! should_manage_services; then
     return 0
@@ -1582,15 +1247,9 @@ refresh_existing_services() {
     proxy_token=$(load_saved_proxy_token || true)
   fi
 
-  proto_token="$PROTO_TOKEN"
-  if [[ -z "$proto_token" ]]; then
-    proto_token=$(load_saved_proto_token || true)
-  fi
-
   sync_proxy_service_executables
   strip_legacy_proxy_flags
   [[ -n "$proxy_token" ]] && sync_proxy_service_tokens "$proxy_token"
-  [[ -n "$proto_token" ]] && sync_proto_service "$proto_token"
   sync_udpgw_service
 
   if has_systemd; then
@@ -1614,14 +1273,6 @@ report_existing_services() {
 
   read_nonempty_lines proxy_services < <(list_all_proxy_services)
   count=${#proxy_services[@]}
-
-  if has_proto_service || has_active_proto_process || [[ -f "$PROTO_CONFIG_FILE" ]]; then
-    if [[ "$ACTIVE_PROTO" == true ]]; then
-      log_warn "Proto ativo detectado — unit file/token será atualizado e o serviço reiniciado."
-    else
-      log_warn "Configuração proto detectada — unit file será criado/atualizado se necessário."
-    fi
-  fi
 
   if [[ $count -gt 0 ]]; then
     if [[ ${#ACTIVE_PROXY_SERVICES[@]} -gt 0 ]]; then
@@ -1668,46 +1319,6 @@ download_and_install_binary() {
   echo "${VERSION#v}" | run_privileged tee "$VERSION_FILE" >/dev/null
 
   log_success "Binário proxy instalado: ${INSTALL_DIR}/${BINARY_NAME} ($VERSION)"
-}
-
-download_and_install_proto_binary() {
-  local filename="${PROTO_RELEASE_BINARY_PREFIX}-${OS_NAME}-${ARCH_NAME}"
-  local fallback_repo="${PROTO_FALLBACK_REPO:-DTunnel0/DTProto-Server-Releases}"
-  local repos=("$PROTO_REPO")
-  local repo url http_status used_url=""
-
-  [[ "$PROTO_REPO" != "$fallback_repo" ]] && repos+=("$fallback_repo")
-
-  log_info "Baixando binário proto: $filename (${PROTO_VERSION})"
-
-  for repo in "${repos[@]}"; do
-    url="https://github.com/${repo}/releases/download/${PROTO_VERSION}/${filename}"
-    log_info "Tentativa: ${repo} (${PROTO_VERSION})"
-    http_status=$(curl -fsSL -w "%{http_code}" -o "$filename" "$url" 2>/dev/null || true)
-    if [[ "$http_status" == "200" ]]; then
-      used_url="$url"
-      break
-    fi
-    if [[ "$repo" == "$PROTO_REPO" ]]; then
-      log_warn "Binário proto não encontrado em ${PROTO_REPO} (${PROTO_VERSION})."
-    fi
-  done
-
-  if [[ -z "$used_url" ]]; then
-    log_error "Falha ao baixar binário proto ${PROTO_VERSION} (HTTP ${http_status:-404})"
-    log_info "Verifique releases em: ${PROTO_REPO} e ${fallback_repo}"
-    exit 1
-  fi
-
-  DOWNLOAD_URL="$used_url"
-  verify_checksum "$filename"
-
-  log_info "Instalando binário em ${INSTALL_DIR}/${PROTO_BINARY_NAME}..."
-  run_privileged install -m 755 "$filename" "${INSTALL_DIR}/${PROTO_BINARY_NAME}"
-  INSTALLED_PROTO_VERSION="${PROTO_VERSION#v}"
-  echo "$INSTALLED_PROTO_VERSION" | run_privileged tee "$PROTO_VERSION_FILE" >/dev/null
-
-  log_success "Binário proto instalado: ${INSTALL_DIR}/${PROTO_BINARY_NAME} (${PROTO_VERSION})"
 }
 
 download_and_install_udpgw_binary() {
@@ -1784,7 +1395,7 @@ install_menu_script() {
   run_privileged rm -f "$menu_dest"
   run_privileged install -m 755 "$menu_tmp" "$menu_dest"
   run_privileged ln -sfn "${MENU_NAME}" "${INSTALL_DIR}/main"
-  run_privileged ln -sfn "${MENU_NAME}" "${INSTALL_DIR}/proto"
+  run_privileged rm -f "${INSTALL_DIR}/proto"
 
   # Garante que o shell não use hash antigo do comando vt
   hash -r 2>/dev/null || true
@@ -1806,7 +1417,7 @@ install_menu_script() {
       log_warn "Faça push do vt.sh no GitHub main e rode o update de novo."
     fi
   else
-    log_success "Menu instalado: ${menu_dest} (${menu_bytes} bytes, symlinks: main, proto)"
+    log_success "Menu instalado: ${menu_dest} (${menu_bytes} bytes, symlink: main)"
     log_warn "MENU_REV não encontrado no vt.sh baixado — confirme se o main está atualizado."
   fi
 
@@ -1820,9 +1431,9 @@ install_menu_script() {
 }
 
 install_provided_tokens() {
-  [[ -z "$PROXY_TOKEN" && -z "$PROTO_TOKEN" ]] && return 0
+  [[ -z "$PROXY_TOKEN" ]] && return 0
 
-  log_info "Configurando tokens fornecidos pelo instalador..."
+  log_info "Configurando token proxy fornecido pelo instalador..."
 
   if [[ -n "$PROXY_TOKEN" ]]; then
     run_privileged mkdir -p /etc/vtproxy /etc/proxy
@@ -1838,13 +1449,6 @@ install_provided_tokens() {
     log_success "Token proxy salvo."
   fi
 
-  if [[ -n "$PROTO_TOKEN" ]]; then
-    run_privileged mkdir -p /etc/proto-server
-    printf '%s' "$PROTO_TOKEN" | run_privileged tee /etc/proto-server/token >/dev/null
-    chmod 600 /etc/proto-server/token 2>/dev/null || true
-    log_success "Token proto salvo."
-  fi
-
   if [[ -n "$INSTALL_IP" ]]; then
     run_privileged mkdir -p /etc/vtproxy
     printf '%s' "$INSTALL_IP" | run_privileged tee /etc/vtproxy/ip >/dev/null
@@ -1856,14 +1460,11 @@ print_finish_message() {
   echo ""
   log_success "Operação concluída com sucesso!"
   log_info "Versão proxy: $VERSION"
-  if [[ -n "$INSTALLED_PROTO_VERSION" ]]; then
-    log_info "Versão proto: v${INSTALLED_PROTO_VERSION}"
-  fi
   if [[ -n "$INSTALLED_UDPGW_VERSION" ]]; then
     log_info "Versão udpgw: v${INSTALLED_UDPGW_VERSION}"
   fi
   if [[ "$BINARY_ONLY" == false ]]; then
-    log_info "Execute o menu com: ${MENU_NAME}  (ou main / proto)"
+    log_info "Execute o menu com: ${MENU_NAME}  (ou main)"
     if [[ -f "$MENU_REV_FILE" ]]; then
       log_info "Revisão do menu: $(tr -d '\r\n' <"$MENU_REV_FILE")"
     fi
@@ -1890,7 +1491,6 @@ main() {
   capture_active_services
   report_existing_services
   fetch_releases
-  fetch_proto_releases
   if [[ "$SKIP_UDPGW" != true ]]; then
     fetch_udpgw_releases
   fi
@@ -1900,26 +1500,21 @@ main() {
   if should_manage_services; then
     SERVICES_WERE_STOPPED=true
     stop_proxy_services
-    stop_proto_server
+    stop_legacy_proto_server
     stop_udpgw_server
   fi
 
   download_and_install_binary
-  download_and_install_proto_binary
   if [[ "$SKIP_UDPGW" != true && -n "$UDPGW_VERSION" ]]; then
     download_and_install_udpgw_binary
   fi
   configure_sysctl
   install_menu_script
-  if ! refresh_proto_token_from_api; then
-    log_warn "Renovação proto via API falhou — token/serviço antigo pode permanecer."
-  fi
   install_provided_tokens
   refresh_existing_services
 
   if should_manage_services; then
     restart_proxy_services
-    restart_proto_server
     restart_udpgw_server
   fi
 
