@@ -881,7 +881,6 @@ has_prior_installation() {
   current=$(get_installed_version 2>/dev/null || true)
   [[ -n "$current" ]] && return 0
   [[ -f /etc/proxy/token || -f /etc/vtproxy/proxy.token ]] && return 0
-  [[ -f /etc/proto-server/token ]] && return 0
   [[ -d /etc/proxy/conf.d ]] && return 0
   has_existing_services && return 0
   has_active_proxy_process && return 0
@@ -1062,23 +1061,6 @@ restart_proxy_services() {
   done
 }
 
-stop_legacy_proto_server() {
-  has_systemd || return 0
-
-  if [[ -f /etc/systemd/system/proto-server.service ]] \
-    || systemctl list-unit-files proto-server.service 2>/dev/null | grep -q proto-server; then
-    log_info "Desativando serviço legado proto-server (migração)..."
-    run_privileged systemctl stop proto-server 2>/dev/null || true
-    run_privileged systemctl disable proto-server 2>/dev/null || true
-  fi
-
-  if has_command pgrep && pgrep -f '/usr/local/bin/proto-server' >/dev/null 2>&1; then
-    log_warn "Processo proto-server legado em execução — encerrando..."
-    pkill -f '/usr/local/bin/proto-server' 2>/dev/null || true
-    sleep 1
-    pkill -9 -f '/usr/local/bin/proto-server' 2>/dev/null || true
-  fi
-}
 
 stop_udpgw_server() {
   local services=() service
@@ -1394,8 +1376,6 @@ install_menu_script() {
   # Remove destino (symlink ou arquivo) antes de instalar — evita escrever através de symlink antigo.
   run_privileged rm -f "$menu_dest"
   run_privileged install -m 755 "$menu_tmp" "$menu_dest"
-  run_privileged ln -sfn "${MENU_NAME}" "${INSTALL_DIR}/main"
-  run_privileged rm -f "${INSTALL_DIR}/proto"
 
   # Garante que o shell não use hash antigo do comando vt
   hash -r 2>/dev/null || true
@@ -1417,7 +1397,7 @@ install_menu_script() {
       log_warn "Faça push do vt.sh no GitHub main e rode o update de novo."
     fi
   else
-    log_success "Menu instalado: ${menu_dest} (${menu_bytes} bytes, symlink: main)"
+    log_success "Menu instalado: ${menu_dest} (${menu_bytes} bytes)"
     log_warn "MENU_REV não encontrado no vt.sh baixado — confirme se o main está atualizado."
   fi
 
@@ -1464,7 +1444,7 @@ print_finish_message() {
     log_info "Versão udpgw: v${INSTALLED_UDPGW_VERSION}"
   fi
   if [[ "$BINARY_ONLY" == false ]]; then
-    log_info "Execute o menu com: ${MENU_NAME}  (ou main)"
+    log_info "Execute o menu com: ${MENU_NAME}"
     if [[ -f "$MENU_REV_FILE" ]]; then
       log_info "Revisão do menu: $(tr -d '\r\n' <"$MENU_REV_FILE")"
     fi
@@ -1500,7 +1480,6 @@ main() {
   if should_manage_services; then
     SERVICES_WERE_STOPPED=true
     stop_proxy_services
-    stop_legacy_proto_server
     stop_udpgw_server
   fi
 

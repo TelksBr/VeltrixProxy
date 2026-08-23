@@ -12,8 +12,6 @@ readonly UDPGW_VERSION_FILE="/etc/udpgw-version"
 readonly UDPGW_REPO="TelksBr/VeltrixUPGW"
 readonly QUICK_SETUP_MARKER="/etc/vtproxy/.quick-setup-done"
 readonly QUICK_SETUP_ASKED_MARKER="/etc/vtproxy/.quick-setup-asked"
-readonly LEGACY_PROTO_SERVICE="proto-server"
-readonly LEGACY_ONLINE_API_SERVICE="proto-online-api"
 
 # Largura interna da caixa (sem as bordas ║). Recalculada por refresh_menu_layout.
 MENU_BOX_WIDTH=$MENU_BOX_MAX
@@ -209,10 +207,10 @@ render_menu_option() {
             content="${WHITE}[${CYAN}${num}${WHITE}] ${BLUE}${label}${RESET}"
         fi
     else
-        if [[ "$emphasis" == "red" ]]; then
-            content="${RED}  [${num}] ${label}${RESET}"
-        else
-            content="${WHITE}  [${CYAN}${num}${WHITE}] ${BLUE}${label}${RESET}"
+    if [[ "$emphasis" == "red" ]]; then
+        content="${RED}  [${num}] ${label}${RESET}"
+    else
+        content="${WHITE}  [${CYAN}${num}${WHITE}] ${BLUE}${label}${RESET}"
         fi
     fi
     print_box_line "$content"
@@ -877,8 +875,8 @@ start_proxy_for_port() {
     fi
 
     if [[ "$skip_listen_check" != "true" ]]; then
-        if ! check_port_available "$port"; then
-            return 1
+    if ! check_port_available "$port"; then
+        return 1
         fi
     fi
 
@@ -1618,7 +1616,7 @@ show_proxy_logs() {
         pause
         return
     fi
-
+    
     echo -e "${BLUE}Exibindo banner/status da porta $port (Ctrl+C para sair):${RESET}"
     echo
     sudo tail -n 80 -f "$log_file" || true
@@ -1638,7 +1636,7 @@ connection_menu() {
         print_box_open
         print_box_heading "${PROJECT_NAME} — PROXY" "$CYAN"
         print_box_line "${WHITE}  Portas: ${CYAN}${ports_status}${RESET}"
-        print_box_divider
+            print_box_divider
         
         local menu_items=(
             "1 • Abrir / criar porta"
@@ -1768,8 +1766,8 @@ run_quick_setup_first_time() {
         if ! is_port_free "$port"; then
             print_error "Porta $port ficou ocupada antes da instalação. Tente novamente."
             pause
-            return 1
-        fi
+        return 1
+    fi
     done
 
     init_proxy_dirs
@@ -1870,8 +1868,8 @@ download_udpgw_binary() {
             if [[ -n "$actual" && "$actual" != "$expected" ]]; then
                 rm -f "$tmp" "${tmp}.sums"
                 print_error "Checksum SHA256 inválido para ${filename}."
-                return 1
-            fi
+        return 1
+    fi
             print_success "Integridade SHA256 verificada."
         fi
     fi
@@ -2518,9 +2516,9 @@ udpgw_advanced_network_submenu() {
         render_menu_option "2 • Alterar Metrics"
         render_menu_option "3 • Alterar UDP bind"
         render_menu_option "0 • Voltar" "red"
-        print_box_close
-        echo
-
+    print_box_close
+    echo
+    
         read -rp "$(echo -e "${BLUE}Selecione [0-3]:${RESET} ")" choice
         case "$choice" in
         1)
@@ -2975,7 +2973,7 @@ udpgw_install_or_update() {
             apply_udpgw_service "$port" "$was"
         done
     fi
-    pause
+        pause
 }
 
 print_udpgw_menu() {
@@ -3081,9 +3079,9 @@ online_users_menu() {
         case "$option" in
             1) show_ssh_online_users_details ;;
             0) return 0 ;;
-            *)
+            *) 
                 print_error "Opção inválida: $option"
-                pause
+                pause 
                 ;;
         esac
     done
@@ -3163,26 +3161,26 @@ run_system_update() {
 }
 
 update_system_menu() {
-    print_header
+        print_header
 
     local proxy_ver udpgw_ver
     proxy_ver=$(get_installed_proxy_version_label)
     udpgw_ver=$(get_installed_udpgw_version_label)
 
-    print_box_open
+        print_box_open
     print_box_heading "ATUALIZAR SISTEMA" "$CYAN"
-    print_box_divider
+        print_box_divider
     print_box_line "${WHITE}  Proxy instalado: ${GREEN}v${proxy_ver}${RESET}"
     print_box_line "${WHITE}  UDPgw instalado: ${GREEN}v${udpgw_ver}${RESET}"
-    print_box_close
-    echo
+        print_box_close
+        echo
 
     show_update_preserve_notice
     echo
 
     if ! confirm_action "Atualizar binários (proxy/udpgw) e o menu vt agora?" "s"; then
         print_info "Atualização cancelada."
-        pause
+                pause
         return 0
     fi
 
@@ -3202,7 +3200,6 @@ remove_completely() {
     echo -e "${WHITE}  • Todos os serviços Proxy ativos${RESET}"
     echo -e "${WHITE}  • Serviço SSH Auth API${RESET}"
     echo -e "${WHITE}  • Ambiente virtual SSH Auth${RESET}"
-    echo -e "${WHITE}  • Resíduos legados de proto-server (se existirem)${RESET}"
     echo -e "${WHITE}  • Binários do sistema${RESET}"
     echo -e "${WHITE}  • Arquivos de configuração${RESET}"
     echo -e "${WHITE}  • Arquivos de dados e logs${RESET}"
@@ -3216,21 +3213,8 @@ remove_completely() {
     fi
     
     print_info "Iniciando remoção completa..."
+    
 
-    if systemctl is-active --quiet "$LEGACY_PROTO_SERVICE" 2>/dev/null; then
-        print_info "Parando serviço legado $LEGACY_PROTO_SERVICE..."
-        sudo systemctl stop "$LEGACY_PROTO_SERVICE"
-        sudo systemctl disable "$LEGACY_PROTO_SERVICE" 2>/dev/null
-    fi
-
-    if systemctl is-active --quiet "$LEGACY_ONLINE_API_SERVICE" 2>/dev/null; then
-        print_info "Parando serviço legado $LEGACY_ONLINE_API_SERVICE..."
-        sudo systemctl stop "$LEGACY_ONLINE_API_SERVICE"
-        sudo systemctl disable "$LEGACY_ONLINE_API_SERVICE" 2>/dev/null
-    fi
-    sudo rm -f "/etc/systemd/system/${LEGACY_ONLINE_API_SERVICE}.service"
-    sudo rm -f "/usr/local/bin/proto_online_api.py"
-    sudo rm -f "/etc/proto-server/online_api_port"
 
     if systemctl is-active --quiet "$UDPGW_SERVICE_NAME" 2>/dev/null; then
         print_info "Parando serviço legado $UDPGW_SERVICE_NAME..."
@@ -3258,7 +3242,7 @@ remove_completely() {
     print_info "Removendo arquivos SSH Auth API..."
     sudo rm -f "/usr/local/bin/ssh_auth.py"
     sudo rm -rf "/usr/local/bin/ssh_auth_venv"
-
+    
     print_info "Parando todos os serviços proxy..."
     for service in $(systemctl list-units --type=service --no-legend | grep "$PROXY_SERVICE_PREFIX" | awk '{print $1}'); do
         if systemctl is-active --quiet "$service"; then
@@ -3271,20 +3255,14 @@ remove_completely() {
     sudo systemctl daemon-reload
     sudo systemctl reset-failed
     
-    sudo rm -f "/etc/systemd/system/${LEGACY_PROTO_SERVICE}.service"
     sudo rm -f "/etc/systemd/system/${UDPGW_SERVICE_NAME}.service"
     
     print_info "Removendo binários..."
-    sudo rm -f "/usr/local/bin/proto-server"
     sudo rm -f "$UDPGW_BIN"
     sudo rm -f "$PROXY_EXECUTABLE"
     sudo rm -f "/usr/local/bin/vt"
     sudo rm -f "/usr/local/bin/main"
-    sudo rm -f "/usr/local/bin/proto"
     print_info "Removendo configurações e dados..."
-    sudo rm -rf /etc/proto-server
-    sudo rm -rf /var/lib/proto-server
-    sudo rm -f /etc/proto-server-version
     sudo rm -rf /etc/udpgw
     sudo rm -f "$UDPGW_VERSION_FILE"
     sudo rm -rf "$(dirname "$PROXY_TOKEN_VTPROXY")"
