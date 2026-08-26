@@ -3139,7 +3139,7 @@ run_system_update() {
     echo -e "${GRAY}curl -fsSL ${INSTALL_URL} | bash -s -- ${args[*]}${RESET}"
     echo
 
-    if ! curl -fsSL "$INSTALL_URL" | bash -s -- "${args[@]}"; then
+    if ! curl -fsSL "${INSTALL_URL}?$(date +%s)" | bash -s -- "${args[@]}"; then
         print_error "Falha na atualização."
         print_info "Tente manualmente: curl -fsSL ${INSTALL_URL} | bash -s -- --update --yes"
         pause
@@ -3385,7 +3385,7 @@ vt_set_limit_entry() {
     if [[ -n "$current_line" ]]; then
         local current_val
         current_val=$(echo "$current_line" | awk '{print $4}')
-        if [[ "$current_val" =~ ^[0-9]+$ ]] && (( current_val >= val )); then
+        if [[ "$current_val" == "$val" ]]; then
             return 0
         fi
         local esc_domain="${domain}"
@@ -3415,6 +3415,11 @@ EOF
         vt_set_limit_entry "/etc/security/limits.conf" "*" "hard" "nofile" "65536"
         vt_set_limit_entry "/etc/security/limits.conf" "root" "soft" "nofile" "65536"
         vt_set_limit_entry "/etc/security/limits.conf" "root" "hard" "nofile" "65536"
+    fi
+
+    if [[ -d /etc/profile.d ]]; then
+        echo 'ulimit -n 65536 2>/dev/null || true' | sudo tee /etc/profile.d/99-proxy-limits.sh >/dev/null
+        sudo chmod 644 /etc/profile.d/99-proxy-limits.sh 2>/dev/null || true
     fi
 
     ulimit -n 65536 2>/dev/null || true
@@ -3468,7 +3473,8 @@ EOF
     sudo modprobe tcp_bbr 2>/dev/null || true
     sudo modprobe sch_fq 2>/dev/null || true
 
-    sudo sysctl --system >/dev/null 2>&1 || sudo sysctl -p "$sysctl_conf" >/dev/null 2>&1 || true
+    sudo sysctl -p "$sysctl_conf" >/dev/null 2>&1 || true
+    sudo sysctl --system >/dev/null 2>&1 || true
 }
 
 if [ "$EUID" -ne 0 ]; then

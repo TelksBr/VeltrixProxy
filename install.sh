@@ -1302,7 +1302,7 @@ set_limit_entry() {
   if [[ -n "$current_line" ]]; then
     local current_val
     current_val=$(echo "$current_line" | awk '{print $4}')
-    if [[ "$current_val" =~ ^[0-9]+$ ]] && (( current_val >= val )); then
+    if [[ "$current_val" == "$val" ]]; then
       return 0
     fi
     local esc_domain="${domain}"
@@ -1333,6 +1333,11 @@ EOF
     set_limit_entry "/etc/security/limits.conf" "*" "hard" "nofile" "65536"
     set_limit_entry "/etc/security/limits.conf" "root" "soft" "nofile" "65536"
     set_limit_entry "/etc/security/limits.conf" "root" "hard" "nofile" "65536"
+  fi
+
+  if [[ -d /etc/profile.d ]]; then
+    echo 'ulimit -n 65536 2>/dev/null || true' | run_privileged tee /etc/profile.d/99-proxy-limits.sh >/dev/null
+    run_privileged chmod 644 /etc/profile.d/99-proxy-limits.sh 2>/dev/null || true
   fi
 
   ulimit -n 65536 2>/dev/null || true
@@ -1389,8 +1394,12 @@ EOF
   run_privileged modprobe tcp_bbr 2>/dev/null || true
   run_privileged modprobe sch_fq 2>/dev/null || true
 
-  run_privileged sysctl --system >/dev/null 2>&1 || run_privileged sysctl -p "$sysctl_conf" >/dev/null 2>&1 || true
-  log_success "Otimizações de Kernel e Rede aplicadas."
+  run_privileged sysctl -p "$sysctl_conf" >/dev/null 2>&1 || true
+  run_privileged sysctl --system >/dev/null 2>&1 || true
+
+  local active_cc
+  active_cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "bbr")
+  log_success "Otimizações de Kernel aplicadas (Algoritmo TCP ativo: ${active_cc})."
 }
 
 configure_system_tuning() {
