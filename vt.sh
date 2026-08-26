@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="38"
+readonly MENU_REV="39"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly MENU_BIN="/usr/local/bin/vt"
@@ -800,6 +800,7 @@ After=network.target
 ExecStart=$proxy_command
 Restart=always
 RestartSec=3
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target
@@ -2404,6 +2405,7 @@ Group=root
 ExecStart=${exec_start}
 Restart=always
 RestartSec=2
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target
@@ -3099,10 +3101,11 @@ get_installed_proxy_version_label() {
 }
 
 show_update_preserve_notice() {
-    echo -e "${WHITE}O que será atualizado:${RESET}"
+    echo -e "${WHITE}O que será atualizado / otimizado:${RESET}"
     echo -e "${CYAN}  • Binário proxy-server${RESET}"
     echo -e "${CYAN}  • Binário udpgw (UDP Gateway)${RESET}"
     echo -e "${CYAN}  • Menu vt (este menu)${RESET}"
+    echo -e "${CYAN}  • Parâmetros de rede/TCP do Kernel & limites de descritores (sysctl + limits)${RESET}"
     echo
     echo -e "${WHITE}O que é PRESERVADO:${RESET}"
     echo -e "${GREEN}  • Token proxy (licença VT)${RESET}"
@@ -3366,11 +3369,115 @@ initial_menu() {
     done
 }
 
+vt_set_limit_entry() {
+    local file="$1"
+    local domain="$2"
+    local type="$3"
+    local item="$4"
+    local val="$5"
+
+    [[ -f "$file" ]] || return 0
+
+    local pattern="^[[:space:]]*${domain//\*/\\*}[[:space:]]+${type}[[:space:]]+${item}[[:space:]]+"
+    local current_line
+    current_line=$(grep -E "$pattern" "$file" 2>/dev/null | tail -n1 || true)
+
+    if [[ -n "$current_line" ]]; then
+        local current_val
+        current_val=$(echo "$current_line" | awk '{print $4}')
+        if [[ "$current_val" =~ ^[0-9]+$ ]] && (( current_val >= val )); then
+            return 0
+        fi
+        local esc_domain="${domain}"
+        [[ "$esc_domain" == "*" ]] && esc_domain="\*"
+        sudo sed -i -E "s|^([[:space:]]*)${esc_domain}([[:space:]]+)${type}([[:space:]]+)${item}([[:space:]]+)[0-9]+|\1${domain}\2${type}\3${item}\4${val}|g" "$file" 2>/dev/null || true
+    else
+        printf '%s\t%s\t%s\t%s\n' "$domain" "$type" "$item" "$val" | sudo tee -a "$file" >/dev/null
+    fi
+}
+
+ensure_system_tuning() {
+    # 1. Limites de descritores de arquivos (File Descriptors / limits.d / limits.conf)
+    if [[ -d /etc/security ]]; then
+        sudo mkdir -p /etc/security/limits.d 2>/dev/null || true
+        sudo rm -f /etc/security/limits.d/99-veltrix-proxy.conf 2>/dev/null || true
+        cat << 'EOF' | sudo tee /etc/security/limits.d/99-proxy.conf >/dev/null
+# VeltrixProxy / VTProxy - File Descriptors & Sockets Limits (65536 conexões)
+* soft nofile 65536
+* hard nofile 65536
+root soft nofile 65536
+root hard nofile 65536
+EOF
+    fi
+
+    if [[ -f /etc/security/limits.conf ]]; then
+        vt_set_limit_entry "/etc/security/limits.conf" "*" "soft" "nofile" "65536"
+        vt_set_limit_entry "/etc/security/limits.conf" "*" "hard" "nofile" "65536"
+        vt_set_limit_entry "/etc/security/limits.conf" "root" "soft" "nofile" "65536"
+        vt_set_limit_entry "/etc/security/limits.conf" "root" "hard" "nofile" "65536"
+    fi
+
+    ulimit -n 65536 2>/dev/null || true
+
+    # 2. Otimizações de Kernel e Rede (TCP / BBR / sysctl)
+    local sysctl_conf="/etc/sysctl.d/99-veltrix-proxy.conf"
+    local legacy_conf="/etc/sysctl.d/99-vtproxy.conf"
+
+    [[ -f "$legacy_conf" ]] && sudo rm -f "$legacy_conf" 2>/dev/null || true
+    sudo mkdir -p /etc/sysctl.d 2>/dev/null || true
+
+    cat << 'EOF' | sudo tee "$sysctl_conf" >/dev/null
+# VTProxy / VeltrixProxy Network & Kernel Optimizations
+net.ipv4.ip_forward = 1
+
+# === 1. Reciclagem Rápida de Sockets (Vital para BHTTP e XHTTP) ===
+# Permite reusar portas em TIME_WAIT de forma segura sem colisão
+net.ipv4.tcp_tw_reuse = 1
+# Reduz o tempo de vida de conexões mortas de 60s para 15s (libera RAM 4x mais rápido)
+net.ipv4.tcp_fin_timeout = 15
+# Limite seguro de sockets em TIME_WAIT na memória (ocupa no máximo ~30 MB)
+net.ipv4.tcp_max_tw_buckets = 131072
+
+# === 2. Expansão de Portas Locais ===
+# Libera mais de 55.000 portas para conectar ao OpenSSH, V2Ray e OpenVPN locais
+net.ipv4.ip_local_port_range = 10240 65535
+
+# === 3. Filas de Conexão (Evita 'Connection Refused' nos disparos do BHTTP) ===
+net.core.somaxconn = 8192
+net.ipv4.tcp_max_syn_backlog = 8192
+net.core.netdev_max_backlog = 8192
+
+# === 4. Desempenho e Latência ===
+# Não reseta a janela de velocidade para o mínimo após pequenas pausas
+net.ipv4.tcp_slow_start_after_idle = 0
+# Acelera o handshake inicial
+net.ipv4.tcp_fastopen = 3
+
+# === 5. Auto-Tuning de Memória Seguro (Mínimo Leve, Escala se Precisar) ===
+# O socket inicia leve (4KB a 64KB) e só cresce até 8MB se o cliente tiver muita banda
+net.core.rmem_max = 8388608
+net.core.wmem_max = 8388608
+net.ipv4.tcp_rmem = 4096 87380 8388608
+net.ipv4.tcp_wmem = 4096 65536 8388608
+
+# === 6. Algoritmo BBR do Google (Mais velocidade em conexões móveis 4G/5G) ===
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+EOF
+
+    sudo modprobe tcp_bbr 2>/dev/null || true
+    sudo modprobe sch_fq 2>/dev/null || true
+
+    sudo sysctl --system >/dev/null 2>&1 || sudo sysctl -p "$sysctl_conf" >/dev/null 2>&1 || true
+}
+
 if [ "$EUID" -ne 0 ]; then
     print_error "Este script requer privilégios de root."
     echo -e "${YELLOW}Execute com: ${WHITE}sudo $0${RESET}"
     exit 1
 fi
+
+ensure_system_tuning || true
 
 check_token_on_startup
 

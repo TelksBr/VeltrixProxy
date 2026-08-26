@@ -13,8 +13,8 @@ BINARY_NAME="proxy-server"
 UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
-INSTALLER_REV="31"
-MENU_REV_EXPECTED="38"
+INSTALLER_REV="32"
+MENU_REV_EXPECTED="39"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 UDPGW_VERSION_FILE="/etc/udpgw-version"
@@ -1215,6 +1215,18 @@ sync_proxy_service_tokens() {
   done
 }
 
+ensure_service_limit_nofile() {
+  local service_file
+  for service_file in /etc/systemd/system/proxy-*.service /etc/systemd/system/udpgw-*.service /etc/systemd/system/udpgw.service; do
+    [[ -f "$service_file" ]] || continue
+    if grep -qE '^[[:space:]]*LimitNOFILE=' "$service_file"; then
+      safe_sed_inplace "$service_file" -e 's/^[[:space:]]*LimitNOFILE=.*/LimitNOFILE=65536/' || true
+    else
+      safe_sed_inplace "$service_file" -e '/^\[Service\]/a LimitNOFILE=65536' || true
+    fi
+  done
+}
+
 refresh_existing_services() {
   local proxy_token
 
@@ -1233,6 +1245,7 @@ refresh_existing_services() {
   strip_legacy_proxy_flags
   [[ -n "$proxy_token" ]] && sync_proxy_service_tokens "$proxy_token"
   sync_udpgw_service
+  ensure_service_limit_nofile
 
   if has_systemd; then
     run_privileged systemctl daemon-reload || log_warn "Falha ao recarregar systemd"
@@ -1253,20 +1266,16 @@ report_existing_services() {
 
   log_info "Instalação prévia detectada — serviços serão sincronizados após a atualização."
 
-  read_nonempty_lines proxy_services < <(list_all_proxy_services)
+  mapfile -t proxy_services < <(find_systemd_proxy_ports)
   count=${#proxy_services[@]}
 
   if [[ $count -gt 0 ]]; then
-    if [[ ${#ACTIVE_PROXY_SERVICES[@]} -gt 0 ]]; then
-      log_warn "${#ACTIVE_PROXY_SERVICES[@]} serviço(s) proxy ativo(s): ${ACTIVE_PROXY_SERVICES[*]//.service/}"
-    else
-      log_warn "${count} serviço(s) proxy configurado(s) — unit files serão atualizados."
-    fi
+    log_info "Serviço(s) proxy existente(s) detectado(s): ${proxy_services[*]}"
   elif has_active_proxy_process; then
     log_warn "Processo proxy ativo detectado — reinicie manualmente se não houver unit systemd."
   fi
 
-  if has_udpgw_service || has_active_udpgw_process; then
+  if [[ "$SKIP_UDPGW" != true ]]; then
     if [[ ${#ACTIVE_UDPGW_SERVICES[@]} -gt 0 ]]; then
       log_warn "${#ACTIVE_UDPGW_SERVICES[@]} serviço(s) udpgw ativo(s): ${ACTIVE_UDPGW_SERVICES[*]//.service/}"
     elif [[ "$ACTIVE_UDPGW" == true ]]; then
@@ -1277,12 +1286,116 @@ report_existing_services() {
   fi
 }
 
+set_limit_entry() {
+  local file="$1"
+  local domain="$2"
+  local type="$3"
+  local item="$4"
+  local val="$5"
+
+  [[ -f "$file" ]] || return 0
+
+  local pattern="^[[:space:]]*${domain//\*/\\*}[[:space:]]+${type}[[:space:]]+${item}[[:space:]]+"
+  local current_line
+  current_line=$(grep -E "$pattern" "$file" 2>/dev/null | tail -n1 || true)
+
+  if [[ -n "$current_line" ]]; then
+    local current_val
+    current_val=$(echo "$current_line" | awk '{print $4}')
+    if [[ "$current_val" =~ ^[0-9]+$ ]] && (( current_val >= val )); then
+      return 0
+    fi
+    local esc_domain="${domain}"
+    [[ "$esc_domain" == "*" ]] && esc_domain="\*"
+    safe_sed_inplace "$file" -e "s|^([[:space:]]*)${esc_domain}([[:space:]]+)${type}([[:space:]]+)${item}([[:space:]]+)[0-9]+|\1${domain}\2${type}\3${item}\4${val}|g" || true
+  else
+    printf '%s\t%s\t%s\t%s\n' "$domain" "$type" "$item" "$val" | run_privileged tee -a "$file" >/dev/null
+  fi
+}
+
+configure_limits() {
+  log_info "Configurando limites de arquivos (limits.d / File Descriptors: 65536)..."
+
+  if [[ -d /etc/security ]]; then
+    run_privileged mkdir -p /etc/security/limits.d 2>/dev/null || true
+    run_privileged rm -f /etc/security/limits.d/99-veltrix-proxy.conf 2>/dev/null || true
+    cat << 'EOF' | run_privileged tee /etc/security/limits.d/99-proxy.conf >/dev/null
+# VeltrixProxy / VTProxy - File Descriptors & Sockets Limits (65536 conexões)
+* soft nofile 65536
+* hard nofile 65536
+root soft nofile 65536
+root hard nofile 65536
+EOF
+  fi
+
+  if [[ -f /etc/security/limits.conf ]]; then
+    set_limit_entry "/etc/security/limits.conf" "*" "soft" "nofile" "65536"
+    set_limit_entry "/etc/security/limits.conf" "*" "hard" "nofile" "65536"
+    set_limit_entry "/etc/security/limits.conf" "root" "soft" "nofile" "65536"
+    set_limit_entry "/etc/security/limits.conf" "root" "hard" "nofile" "65536"
+  fi
+
+  ulimit -n 65536 2>/dev/null || true
+  log_success "Limites de File Descriptors configurados (65536)."
+}
+
 configure_sysctl() {
-  log_info "Configurando ip_forward (sysctl)..."
-  local sysctl_conf="/etc/sysctl.d/99-vtproxy.conf"
-  echo 'net.ipv4.ip_forward=1' | run_privileged tee "$sysctl_conf" >/dev/null
+  log_info "Otimizando parâmetros de Kernel e Rede (TCP / BBR / sysctl)..."
+  local sysctl_conf="/etc/sysctl.d/99-veltrix-proxy.conf"
+  local legacy_conf="/etc/sysctl.d/99-vtproxy.conf"
+
+  [[ -f "$legacy_conf" ]] && run_privileged rm -f "$legacy_conf" 2>/dev/null || true
+  run_privileged mkdir -p /etc/sysctl.d 2>/dev/null || true
+
+  cat << 'EOF' | run_privileged tee "$sysctl_conf" >/dev/null
+# VTProxy / VeltrixProxy Network & Kernel Optimizations
+net.ipv4.ip_forward = 1
+
+# === 1. Reciclagem Rápida de Sockets (Vital para BHTTP e XHTTP) ===
+# Permite reusar portas em TIME_WAIT de forma segura sem colisão
+net.ipv4.tcp_tw_reuse = 1
+# Reduz o tempo de vida de conexões mortas de 60s para 15s (libera RAM 4x mais rápido)
+net.ipv4.tcp_fin_timeout = 15
+# Limite seguro de sockets em TIME_WAIT na memória (ocupa no máximo ~30 MB)
+net.ipv4.tcp_max_tw_buckets = 131072
+
+# === 2. Expansão de Portas Locais ===
+# Libera mais de 55.000 portas para conectar ao OpenSSH, V2Ray e OpenVPN locais
+net.ipv4.ip_local_port_range = 10240 65535
+
+# === 3. Filas de Conexão (Evita 'Connection Refused' nos disparos do BHTTP) ===
+net.core.somaxconn = 8192
+net.ipv4.tcp_max_syn_backlog = 8192
+net.core.netdev_max_backlog = 8192
+
+# === 4. Desempenho e Latência ===
+# Não reseta a janela de velocidade para o mínimo após pequenas pausas
+net.ipv4.tcp_slow_start_after_idle = 0
+# Acelera o handshake inicial
+net.ipv4.tcp_fastopen = 3
+
+# === 5. Auto-Tuning de Memória Seguro (Mínimo Leve, Escala se Precisar) ===
+# O socket inicia leve (4KB a 64KB) e só cresce até 8MB se o cliente tiver muita banda
+net.core.rmem_max = 8388608
+net.core.wmem_max = 8388608
+net.ipv4.tcp_rmem = 4096 87380 8388608
+net.ipv4.tcp_wmem = 4096 65536 8388608
+
+# === 6. Algoritmo BBR do Google (Mais velocidade em conexões móveis 4G/5G) ===
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+EOF
+
+  run_privileged modprobe tcp_bbr 2>/dev/null || true
+  run_privileged modprobe sch_fq 2>/dev/null || true
+
   run_privileged sysctl --system >/dev/null 2>&1 || run_privileged sysctl -p "$sysctl_conf" >/dev/null 2>&1 || true
-  log_success "Regras sysctl aplicadas."
+  log_success "Otimizações de Kernel e Rede aplicadas."
+}
+
+configure_system_tuning() {
+  configure_limits
+  configure_sysctl
 }
 
 download_and_install_binary() {
@@ -1487,7 +1600,7 @@ main() {
   if [[ "$SKIP_UDPGW" != true && -n "$UDPGW_VERSION" ]]; then
     download_and_install_udpgw_binary
   fi
-  configure_sysctl
+  configure_system_tuning
   install_menu_script
   install_provided_tokens
   refresh_existing_services
