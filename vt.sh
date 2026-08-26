@@ -3426,10 +3426,13 @@ EOF
 
     # 2. Otimizações de Kernel e Rede (TCP / BBR / sysctl)
     local sysctl_conf="/etc/sysctl.d/99-veltrix-proxy.conf"
-    local legacy_conf="/etc/sysctl.d/99-vtproxy.conf"
 
-    [[ -f "$legacy_conf" ]] && sudo rm -f "$legacy_conf" 2>/dev/null || true
+    sudo rm -f /etc/sysctl.d/99-vtproxy.conf /etc/sysctl.d/zz-custom-network.conf 2>/dev/null || true
     sudo mkdir -p /etc/sysctl.d 2>/dev/null || true
+
+    if [[ -f /etc/sysctl.conf ]]; then
+        sudo sed -i -E '/^(net\.core\.(somaxconn|rmem_max|wmem_max|rmem_default|wmem_default|netdev_max_backlog|default_qdisc)|net\.ipv4\.(tcp_tw_reuse|tcp_fin_timeout|tcp_max_tw_buckets|ip_local_port_range|tcp_max_syn_backlog|tcp_slow_start_after_idle|tcp_fastopen|tcp_rmem|tcp_wmem|tcp_congestion_control))/d' /etc/sysctl.conf 2>/dev/null || true
+    fi
 
     cat << 'EOF' | sudo tee "$sysctl_conf" >/dev/null
 # VTProxy / VeltrixProxy Network & Kernel Optimizations
