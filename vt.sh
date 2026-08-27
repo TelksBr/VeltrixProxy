@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="39"
+readonly MENU_REV="40"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly MENU_BIN="/usr/local/bin/vt"
@@ -64,6 +64,396 @@ BG_RED=$'\033[41m'
 BG_GRAY=$'\033[100m'
 RESET=$'\033[0m'
 BOLD=$'\033[1m'
+
+LANG_FILE="/etc/vtproxy/lang"
+LANG_ACTIVE="pt"
+
+declare -A I18N_PT
+declare -A I18N_EN
+declare -A I18N_ES
+
+# --- Português (PT) ---
+I18N_PT[header_sub_narrow]="Proxy + UDP Gateway"
+I18N_PT[header_sub_wide]="Proxy + UDP Gateway integrados"
+I18N_PT[status_proxy]="Proxy:"
+I18N_PT[status_token]="Token:"
+I18N_PT[status_token_proxy]="Token proxy:"
+I18N_PT[status_none]="nenhuma"
+I18N_PT[status_ip]="IP:"
+I18N_PT[status_ssh_onlines]="Onlines SSH:"
+I18N_PT[status_udpgw]="UDP Gateway:"
+I18N_PT[status_ports]="portas"
+
+I18N_PT[menu_main_title]="MENU INICIAL"
+I18N_PT[menu_proxy]="Proxy / Portas"
+I18N_PT[menu_online_users]="Usuarios Online (SSH:%s)"
+I18N_PT[menu_tokens]="Gerenciar Tokens"
+I18N_PT[menu_update]="Atualizar Sistema"
+I18N_PT[menu_udpgw]="UDP Gateway (udpgw)"
+I18N_PT[menu_lang]="Idioma / Language"
+I18N_PT[menu_uninstall]="Remover Instalação"
+I18N_PT[menu_exit]="Sair"
+I18N_PT[prompt_select_option]="Selecione uma opção [%s]:"
+I18N_PT[invalid_option]="Opção inválida: %s"
+I18N_PT[press_enter]="Pressione Enter para continuar..."
+I18N_PT[exiting]="Saindo..."
+I18N_PT[root_required]="Este script requer privilégios de root."
+I18N_PT[run_with_sudo]="Execute com: sudo %s"
+
+I18N_PT[lang_menu_title]="SELECIONAR IDIOMA"
+I18N_PT[lang_current]="Idioma atual:"
+I18N_PT[lang_opt_pt]="Português (PT)"
+I18N_PT[lang_opt_en]="English (EN)"
+I18N_PT[lang_opt_es]="Español (ES)"
+I18N_PT[lang_back]="Voltar"
+I18N_PT[lang_saved]="Idioma alterado para %s!"
+
+I18N_PT[proxy_menu_title]="%s — PROXY"
+I18N_PT[proxy_menu_ports]="Portas: %s"
+I18N_PT[proxy_opt_open]="Abrir / criar porta"
+I18N_PT[proxy_opt_start]="Iniciar porta configurada"
+I18N_PT[proxy_opt_stop]="Parar porta (mantém config)"
+I18N_PT[proxy_opt_restart]="Reiniciar porta"
+I18N_PT[proxy_opt_edit]="Editar porta"
+I18N_PT[proxy_opt_adv]="Opções avançadas (buffer/flags)"
+I18N_PT[proxy_opt_http]="Alterar resposta HTTP"
+I18N_PT[proxy_opt_details]="Detalhes / ExecStart"
+I18N_PT[proxy_opt_logs]="Ver log da porta"
+I18N_PT[proxy_opt_remove]="Remover porta"
+I18N_PT[proxy_opt_back]="Voltar ao Menu Inicial"
+
+I18N_PT[udpgw_menu_title]="UDP GATEWAY (udpgw)"
+I18N_PT[udpgw_menu_ports]="Portas: %s"
+I18N_PT[udpgw_opt_open]="Abrir / criar porta"
+I18N_PT[udpgw_opt_start]="Iniciar porta"
+I18N_PT[udpgw_opt_stop]="Parar porta"
+I18N_PT[udpgw_opt_restart]="Reiniciar porta"
+I18N_PT[udpgw_opt_status]="Status & ExecStart"
+I18N_PT[udpgw_opt_metrics]="Painel de metricas"
+I18N_PT[udpgw_opt_logs]="Visualizar logs"
+I18N_PT[udpgw_opt_adv]="Opcoes avancadas (flags)"
+I18N_PT[udpgw_opt_install]="Instalar/atualizar binario"
+I18N_PT[udpgw_opt_remove]="Remover porta"
+I18N_PT[udpgw_opt_back]="Voltar ao Menu Inicial"
+
+I18N_PT[token_menu_title]="GERENCIAR TOKENS"
+I18N_PT[token_menu_proxy_lic]="Proxy (licença):"
+I18N_PT[token_opt_config]="Configurar token Proxy"
+I18N_PT[token_opt_back]="Voltar"
+I18N_PT[token_prompt_input]="Insira o token proxy (licença %s):"
+I18N_PT[token_empty_error]="Token não pode ser vazio."
+I18N_PT[token_saved_success]="Token proxy salvo!"
+I18N_PT[token_syncing]="Sincronizando token nos serviços proxy..."
+I18N_PT[token_applied_ports]="Token aplicado em %s porta(s) proxy."
+I18N_PT[token_invalid_retry]="Token proxy inválido. Tente novamente."
+
+I18N_PT[ssh_menu_title]="USUARIOS ONLINE SSH (%s)"
+I18N_PT[ssh_opt_list]="Listar usuarios SSH online"
+I18N_PT[ssh_opt_back]="Voltar"
+I18N_PT[ssh_no_users]="Nenhum usuario SSH online (excluindo root)."
+I18N_PT[ssh_user_row]="Usuario: %s | PID: %s | Tempo: %s"
+
+I18N_PT[update_menu_title]="ATUALIZAR SISTEMA"
+I18N_PT[update_installed_proxy]="Proxy instalado: %s"
+I18N_PT[update_installed_udpgw]="UDPgw instalado: %s"
+I18N_PT[update_confirm_prompt]="Atualizar binários (proxy/udpgw) e o menu vt agora?"
+I18N_PT[update_canceled]="Atualização cancelada."
+I18N_PT[update_downloading]="Baixando e executando instalador oficial..."
+I18N_PT[update_failed]="Falha na atualização."
+I18N_PT[update_success]="Atualização concluída (binários + menu)."
+I18N_PT[update_reloading]="Recarregando o novo menu vt..."
+
+I18N_PT[remove_title]="REMOÇÃO COMPLETA"
+I18N_PT[remove_warning_banner]="Esta ação irá remover TODOS os dados e serviços"
+I18N_PT[remove_confirm_sure]="TEM CERTEZA que deseja remover completamente?"
+I18N_PT[remove_canceled]="Remoção cancelada."
+I18N_PT[remove_success]="Remoção completa concluída!"
+I18N_PT[remove_clean]="O sistema está limpo."
+
+# --- English (EN) ---
+I18N_EN[header_sub_narrow]="Proxy + UDP Gateway"
+I18N_EN[header_sub_wide]="Integrated Proxy + UDP Gateway"
+I18N_EN[status_proxy]="Proxy:"
+I18N_EN[status_token]="Token:"
+I18N_EN[status_token_proxy]="Proxy token:"
+I18N_EN[status_none]="none"
+I18N_EN[status_ip]="IP:"
+I18N_EN[status_ssh_onlines]="SSH Online:"
+I18N_EN[status_udpgw]="UDP Gateway:"
+I18N_EN[status_ports]="ports"
+
+I18N_EN[menu_main_title]="MAIN MENU"
+I18N_EN[menu_proxy]="Proxy / Ports"
+I18N_EN[menu_online_users]="Online Users (SSH:%s)"
+I18N_EN[menu_tokens]="Manage Tokens"
+I18N_EN[menu_update]="Update System"
+I18N_EN[menu_udpgw]="UDP Gateway (udpgw)"
+I18N_EN[menu_lang]="Language"
+I18N_EN[menu_uninstall]="Uninstall"
+I18N_EN[menu_exit]="Exit"
+I18N_EN[prompt_select_option]="Select an option [%s]:"
+I18N_EN[invalid_option]="Invalid option: %s"
+I18N_EN[press_enter]="Press Enter to continue..."
+I18N_EN[exiting]="Exiting..."
+I18N_EN[root_required]="This script requires root privileges."
+I18N_EN[run_with_sudo]="Run with: sudo %s"
+
+I18N_EN[lang_menu_title]="SELECT LANGUAGE"
+I18N_EN[lang_current]="Current language:"
+I18N_EN[lang_opt_pt]="Português (PT)"
+I18N_EN[lang_opt_en]="English (EN)"
+I18N_EN[lang_opt_es]="Español (ES)"
+I18N_EN[lang_back]="Back"
+I18N_EN[lang_saved]="Language changed to %s!"
+
+I18N_EN[proxy_menu_title]="%s — PROXY"
+I18N_EN[proxy_menu_ports]="Ports: %s"
+I18N_EN[proxy_opt_open]="Open / create port"
+I18N_EN[proxy_opt_start]="Start configured port"
+I18N_EN[proxy_opt_stop]="Stop port (keep config)"
+I18N_EN[proxy_opt_restart]="Restart port"
+I18N_EN[proxy_opt_edit]="Edit port"
+I18N_EN[proxy_opt_adv]="Advanced options (buffer/flags)"
+I18N_EN[proxy_opt_http]="Change HTTP response"
+I18N_EN[proxy_opt_details]="Details / ExecStart"
+I18N_EN[proxy_opt_logs]="View port log"
+I18N_EN[proxy_opt_remove]="Remove port"
+I18N_EN[proxy_opt_back]="Back to Main Menu"
+
+I18N_EN[udpgw_menu_title]="UDP GATEWAY (udpgw)"
+I18N_EN[udpgw_menu_ports]="Ports: %s"
+I18N_EN[udpgw_opt_open]="Open / create port"
+I18N_EN[udpgw_opt_start]="Start port"
+I18N_EN[udpgw_opt_stop]="Stop port"
+I18N_EN[udpgw_opt_restart]="Restart port"
+I18N_EN[udpgw_opt_status]="Status & ExecStart"
+I18N_EN[udpgw_opt_metrics]="Metrics dashboard"
+I18N_EN[udpgw_opt_logs]="View logs"
+I18N_EN[udpgw_opt_adv]="Advanced options (flags)"
+I18N_EN[udpgw_opt_install]="Install/update binary"
+I18N_EN[udpgw_opt_remove]="Remove port"
+I18N_EN[udpgw_opt_back]="Back to Main Menu"
+
+I18N_EN[token_menu_title]="MANAGE TOKENS"
+I18N_EN[token_menu_proxy_lic]="Proxy (license):"
+I18N_EN[token_opt_config]="Configure Proxy token"
+I18N_EN[token_opt_back]="Back"
+I18N_EN[token_prompt_input]="Enter proxy token (license %s):"
+I18N_EN[token_empty_error]="Token cannot be empty."
+I18N_EN[token_saved_success]="Proxy token saved!"
+I18N_EN[token_syncing]="Syncing token across proxy services..."
+I18N_EN[token_applied_ports]="Token applied to %s proxy port(s)."
+I18N_EN[token_invalid_retry]="Invalid proxy token. Try again."
+
+I18N_EN[ssh_menu_title]="ONLINE SSH USERS (%s)"
+I18N_EN[ssh_opt_list]="List online SSH users"
+I18N_EN[ssh_opt_back]="Back"
+I18N_EN[ssh_no_users]="No online SSH users (excluding root)."
+I18N_EN[ssh_user_row]="User: %s | PID: %s | Time: %s"
+
+I18N_EN[update_menu_title]="UPDATE SYSTEM"
+I18N_EN[update_installed_proxy]="Installed Proxy: %s"
+I18N_EN[update_installed_udpgw]="Installed UDPgw: %s"
+I18N_EN[update_confirm_prompt]="Update binaries (proxy/udpgw) and vt menu now?"
+I18N_EN[update_canceled]="Update canceled."
+I18N_EN[update_downloading]="Downloading and running official installer..."
+I18N_EN[update_failed]="Update failed."
+I18N_EN[update_success]="Update completed (binaries + menu)."
+I18N_EN[update_reloading]="Reloading new vt menu..."
+
+I18N_EN[remove_title]="COMPLETE UNINSTALL"
+I18N_EN[remove_warning_banner]="This action will remove ALL data and services"
+I18N_EN[remove_confirm_sure]="ARE YOU SURE you want to completely remove everything?"
+I18N_EN[remove_canceled]="Uninstall canceled."
+I18N_EN[remove_success]="Complete uninstall finished!"
+I18N_EN[remove_clean]="The system is clean."
+
+# --- Español (ES) ---
+I18N_ES[header_sub_narrow]="Proxy + UDP Gateway"
+I18N_ES[header_sub_wide]="Proxy + UDP Gateway integrados"
+I18N_ES[status_proxy]="Proxy:"
+I18N_ES[status_token]="Token:"
+I18N_ES[status_token_proxy]="Token proxy:"
+I18N_ES[status_none]="ninguna"
+I18N_ES[status_ip]="IP:"
+I18N_ES[status_ssh_onlines]="SSH Online:"
+I18N_ES[status_udpgw]="UDP Gateway:"
+I18N_ES[status_ports]="puertos"
+
+I18N_ES[menu_main_title]="MENÚ PRINCIPAL"
+I18N_ES[menu_proxy]="Proxy / Puertos"
+I18N_ES[menu_online_users]="Usuarios Online (SSH:%s)"
+I18N_ES[menu_tokens]="Gestionar Tokens"
+I18N_ES[menu_update]="Actualizar Sistema"
+I18N_ES[menu_udpgw]="UDP Gateway (udpgw)"
+I18N_ES[menu_lang]="Idioma"
+I18N_ES[menu_uninstall]="Desinstalar"
+I18N_ES[menu_exit]="Salir"
+I18N_ES[prompt_select_option]="Seleccione una opción [%s]:"
+I18N_ES[invalid_option]="Opción no válida: %s"
+I18N_ES[press_enter]="Presione Enter para continuar..."
+I18N_ES[exiting]="Saliendo..."
+I18N_ES[root_required]="Este script requiere privilegios de root."
+I18N_ES[run_with_sudo]="Ejecute con: sudo %s"
+
+I18N_ES[lang_menu_title]="SELECCIONAR IDIOMA"
+I18N_ES[lang_current]="Idioma actual:"
+I18N_ES[lang_opt_pt]="Português (PT)"
+I18N_ES[lang_opt_en]="English (EN)"
+I18N_ES[lang_opt_es]="Español (ES)"
+I18N_ES[lang_back]="Volver"
+I18N_ES[lang_saved]="¡Idioma cambiado a %s!"
+
+I18N_ES[proxy_menu_title]="%s — PROXY"
+I18N_ES[proxy_menu_ports]="Puertos: %s"
+I18N_ES[proxy_opt_open]="Abrir / crear puerto"
+I18N_ES[proxy_opt_start]="Iniciar puerto configurado"
+I18N_ES[proxy_opt_stop]="Detener puerto (mantiene config)"
+I18N_ES[proxy_opt_restart]="Reiniciar puerto"
+I18N_ES[proxy_opt_edit]="Editar puerto"
+I18N_ES[proxy_opt_adv]="Opciones avanzadas (buffer/flags)"
+I18N_ES[proxy_opt_http]="Cambiar respuesta HTTP"
+I18N_ES[proxy_opt_details]="Detalles / ExecStart"
+I18N_ES[proxy_opt_logs]="Ver registros del puerto"
+I18N_ES[proxy_opt_remove]="Eliminar puerto"
+I18N_ES[proxy_opt_back]="Volver al Menú Principal"
+
+I18N_ES[udpgw_menu_title]="UDP GATEWAY (udpgw)"
+I18N_ES[udpgw_menu_ports]="Puertos: %s"
+I18N_ES[udpgw_opt_open]="Abrir / crear puerto"
+I18N_ES[udpgw_opt_start]="Iniciar puerto"
+I18N_ES[udpgw_opt_stop]="Detener puerto"
+I18N_ES[udpgw_opt_restart]="Reiniciar puerto"
+I18N_ES[udpgw_opt_status]="Estado & ExecStart"
+I18N_ES[udpgw_opt_metrics]="Panel de métricas"
+I18N_ES[udpgw_opt_logs]="Ver registros"
+I18N_ES[udpgw_opt_adv]="Opciones avanzadas (flags)"
+I18N_ES[udpgw_opt_install]="Instalar/actualizar binario"
+I18N_ES[udpgw_opt_remove]="Eliminar puerto"
+I18N_ES[udpgw_opt_back]="Volver al Menú Principal"
+
+I18N_ES[token_menu_title]="GESTIONAR TOKENS"
+I18N_ES[token_menu_proxy_lic]="Proxy (licencia):"
+I18N_ES[token_opt_config]="Configurar token Proxy"
+I18N_ES[token_opt_back]="Volver"
+I18N_ES[token_prompt_input]="Ingrese el token proxy (licencia %s):"
+I18N_ES[token_empty_error]="El token no puede estar vacío."
+I18N_ES[token_saved_success]="¡Token proxy guardado!"
+I18N_ES[token_syncing]="Sincronizando token en los servicios proxy..."
+I18N_ES[token_applied_ports]="Token aplicado a %s puerto(s) proxy."
+I18N_ES[token_invalid_retry]="Token proxy no válido. Intente de nuevo."
+
+I18N_ES[ssh_menu_title]="USUARIOS ONLINE SSH (%s)"
+I18N_ES[ssh_opt_list]="Listar usuarios SSH online"
+I18N_ES[ssh_opt_back]="Volver"
+I18N_ES[ssh_no_users]="Ningún usuario SSH online (excluyendo root)."
+I18N_ES[ssh_user_row]="Usuario: %s | PID: %s | Tiempo: %s"
+
+I18N_ES[update_menu_title]="ACTUALIZAR SISTEMA"
+I18N_ES[update_installed_proxy]="Proxy instalado: %s"
+I18N_ES[update_installed_udpgw]="UDPgw instalado: %s"
+I18N_ES[update_confirm_prompt]="¿Actualizar binarios (proxy/udpgw) y el menú vt ahora?"
+I18N_ES[update_canceled]="Actualización cancelada."
+I18N_ES[update_downloading]="Descargando y ejecutando instalador oficial..."
+I18N_ES[update_failed]="Fallo en la actualización."
+I18N_ES[update_success]="Actualización completada (binarios + menú)."
+I18N_ES[update_reloading]="Recargando nuevo menú vt..."
+
+I18N_ES[remove_title]="DESINSTALACIÓN COMPLETA"
+I18N_ES[remove_warning_banner]="Esta acción eliminará TODOS los datos y servicios"
+I18N_ES[remove_confirm_sure]="¿ESTÁ SEGURO de que desea eliminar completamente todo?"
+I18N_ES[remove_canceled]="Desinstalación cancelada."
+I18N_ES[remove_success]="¡Desinstalación completa finalizada!"
+I18N_ES[remove_clean]="El sistema está limpio."
+
+load_language() {
+    if [[ -f "$LANG_FILE" ]]; then
+        LANG_ACTIVE=$(cat "$LANG_FILE" 2>/dev/null | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+    else
+        local sys_lang="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"
+        case "$sys_lang" in
+            es*|ES*) LANG_ACTIVE="es" ;;
+            en*|EN*) LANG_ACTIVE="en" ;;
+            *)       LANG_ACTIVE="pt" ;;
+        esac
+    fi
+    [[ "$LANG_ACTIVE" =~ ^(pt|en|es)$ ]] || LANG_ACTIVE="pt"
+}
+
+set_language() {
+    local lang="$1"
+    [[ "$lang" =~ ^(pt|en|es)$ ]] || return 1
+    LANG_ACTIVE="$lang"
+    sudo mkdir -p "$(dirname "$LANG_FILE")" 2>/dev/null || true
+    printf '%s\n' "$lang" | sudo tee "$LANG_FILE" >/dev/null
+}
+
+t() {
+    local key="$1"
+    shift
+    local msg=""
+
+    case "$LANG_ACTIVE" in
+        en) msg="${I18N_EN[$key]:-${I18N_PT[$key]:-$key}}" ;;
+        es) msg="${I18N_ES[$key]:-${I18N_PT[$key]:-$key}}" ;;
+        *)  msg="${I18N_PT[$key]:-$key}" ;;
+    esac
+
+    if [[ $# -gt 0 ]]; then
+        # shellcheck disable=SC2059
+        printf "$msg" "$@"
+    else
+        printf '%s' "$msg"
+    fi
+}
+
+language_menu() {
+    while true; do
+        print_header
+        print_box_open
+        print_box_heading "$(t lang_menu_title)" "$CYAN"
+        print_box_divider
+        local current_name="Português"
+        [[ "$LANG_ACTIVE" == "en" ]] && current_name="English"
+        [[ "$LANG_ACTIVE" == "es" ]] && current_name="Español"
+        print_box_line "${WHITE}  $(t lang_current) ${CYAN}${current_name} [${LANG_ACTIVE^^}]${RESET}"
+        print_box_divider
+        render_menu_option "1 • $(t lang_opt_pt)"
+        render_menu_option "2 • $(t lang_opt_en)"
+        render_menu_option "3 • $(t lang_opt_es)"
+        render_menu_option "0 • $(t lang_back)" "red"
+        print_box_close
+        echo
+
+        local option
+        read -rp "$(echo -e "${BLUE}$(t prompt_select_option "0-3"):${RESET} ")" option
+        case "$option" in
+            1)
+                set_language "pt"
+                print_success "$(t lang_saved "Português")"
+                pause
+                return 0
+                ;;
+            2)
+                set_language "en"
+                print_success "$(t lang_saved "English")"
+                pause
+                return 0
+                ;;
+            3)
+                set_language "es"
+                print_success "$(t lang_saved "Español")"
+                pause
+                return 0
+                ;;
+            0) return 0 ;;
+            *)
+                print_error "$(t invalid_option "$option")"
+                pause
+                ;;
+        esac
+    done
+}
 
 strip_ansi() {
     # Remove códigos ANSI reais (\x1b) e literais \\033 — sem depender de python3.
@@ -228,9 +618,9 @@ print_header() {
     ((title_right < 0)) && title_right=0
     print_box_line "${BG_BLUE}${WHITE}$(printf '%*s%s%*s' "$title_left" "" "$title" "$title_right")${RESET}"
     if is_narrow_menu; then
-        print_box_heading "Proxy + UDP Gateway"
+        print_box_heading "$(t header_sub_narrow)"
     else
-        print_box_heading "Proxy + UDP Gateway integrados"
+        print_box_heading "$(t header_sub_wide)"
     fi
     print_box_close
     echo
@@ -256,7 +646,7 @@ print_status() {
     local proxy_ports proxy_label proxy_tok udpgw_status bound_ip ssh_onlines
 
     proxy_ports=$(format_proxy_ports_status)
-    proxy_label="${proxy_ports:-nenhuma}"
+    proxy_label="${proxy_ports:-$(t status_none)}"
     [[ -n "$(load_proxy_token)" ]] && proxy_tok="$(mark_ok)" || proxy_tok="$(mark_fail)"
     bound_ip=""
     [[ -f /etc/vtproxy/ip ]] && bound_ip=$(cat /etc/vtproxy/ip)
@@ -273,22 +663,22 @@ print_status() {
     print_box_open
 
     if is_narrow_menu; then
-        print_box_line "${WHITE}Proxy: ${CYAN}${proxy_label}${RESET}"
-        print_box_line "${WHITE}Token: ${proxy_tok}${RESET}"
+        print_box_line "${WHITE}$(t status_proxy) ${CYAN}${proxy_label}${RESET}"
+        print_box_line "${WHITE}$(t status_token) ${proxy_tok}${RESET}"
         if [[ -n "$bound_ip" ]]; then
-            print_box_line "${WHITE}IP: ${CYAN}${bound_ip}${RESET}"
+            print_box_line "${WHITE}$(t status_ip) ${CYAN}${bound_ip}${RESET}"
         fi
-        print_box_line "${WHITE}Onlines SSH:${CYAN}${ssh_onlines}${RESET}"
+        print_box_line "${WHITE}$(t status_ssh_onlines)${CYAN}${ssh_onlines}${RESET}"
         print_box_line "${WHITE}UDPgw: ${udpgw_status}${WHITE} ${CYAN}${udpgw_ports}${RESET}"
     else
-        print_box_line "${WHITE} Proxy: ${CYAN}${proxy_label}${RESET}"
-        local tokens_line="${WHITE} Token proxy: ${proxy_tok}"
+        print_box_line "${WHITE} $(t status_proxy) ${CYAN}${proxy_label}${RESET}"
+        local tokens_line="${WHITE} $(t status_token_proxy) ${proxy_tok}"
         if [[ -n "$bound_ip" ]]; then
-            tokens_line+="${WHITE} | IP: ${CYAN}${bound_ip}${RESET}"
+            tokens_line+="${WHITE} | $(t status_ip) ${CYAN}${bound_ip}${RESET}"
         fi
         print_box_line "$tokens_line"
-        print_box_line "${WHITE} Onlines SSH: ${CYAN}${ssh_onlines}${RESET}"
-        print_box_line "${WHITE} UDP Gateway: ${udpgw_status}${WHITE} portas ${CYAN}${udpgw_ports}${RESET}"
+        print_box_line "${WHITE} $(t status_ssh_onlines) ${CYAN}${ssh_onlines}${RESET}"
+        print_box_line "${WHITE} $(t status_udpgw) ${udpgw_status}${WHITE} $(t status_ports) ${CYAN}${udpgw_ports}${RESET}"
     fi
     print_box_close
     echo
@@ -296,24 +686,25 @@ print_status() {
 
 print_initial_menu() {
     print_box_open
-    print_box_heading "MENU INICIAL"
+    print_box_heading "$(t menu_main_title)"
     print_box_divider
 
     local ssh_onlines
     ssh_onlines=$(get_ssh_online_users_count)
     
     local menu_items=(
-        "1 • Proxy / Portas"
-        "2 • Usuarios Online (SSH:${ssh_onlines})"
-        "3 • Gerenciar Tokens"
-        "4 • Atualizar Sistema"
-        "5 • UDP Gateway (udpgw)"
-        "6 • Remover Instalação"
-        "0 • Sair"
+        "1 • $(t menu_proxy)"
+        "2 • $(t menu_online_users "$ssh_onlines")"
+        "3 • $(t menu_tokens)"
+        "4 • $(t menu_update)"
+        "5 • $(t menu_udpgw)"
+        "6 • $(t menu_lang) [${LANG_ACTIVE^^}]"
+        "7 • $(t menu_uninstall)"
+        "0 • $(t menu_exit)"
     )
     
     for item in "${menu_items[@]}"; do
-        if [[ $item == *"Remover"* || $item == *"Sair"* ]]; then
+        if [[ $item == *"$(t menu_uninstall)"* || $item == *"$(t menu_exit)"* || $item == *"Remover"* || $item == *"Uninstall"* || $item == *"Desinstalar"* || $item == *"Sair"* || $item == *"Exit"* || $item == *"Salir"* ]]; then
             render_menu_option "$item" "red"
         else
             render_menu_option "$item"
@@ -348,7 +739,7 @@ prompt_input() {
 
 pause() {
     echo
-    print_warning "Pressione Enter para continuar..."
+    print_warning "$(t press_enter)"
     read -r
 }
 
@@ -693,12 +1084,14 @@ is_port_free() {
 confirm_action() {
     local message="$1"
     local default_answer="${2:-n}"
+    local prompt_hint="(s/N)"
+    [[ "$LANG_ACTIVE" == "en" ]] && prompt_hint="(y/N)"
     # Mensagens em stderr: permite uso futuro em $(...) sem engolir o prompt.
-    echo -e "${YELLOW}$message (s/N)${RESET}" >&2
+    echo -e "${YELLOW}$message $prompt_hint${RESET}" >&2
     read -rp "> " response
     response=${response:-$default_answer}
     case "${response,,}" in
-        s|sim|y|yes) return 0 ;;
+        s|sim|y|yes|si|sí) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -1635,26 +2028,26 @@ connection_menu() {
         ports_status=$(format_proxy_ports_status)
         
         print_box_open
-        print_box_heading "${PROJECT_NAME} — PROXY" "$CYAN"
-        print_box_line "${WHITE}  Portas: ${CYAN}${ports_status}${RESET}"
-            print_box_divider
+        print_box_heading "$(t proxy_menu_title "$PROJECT_NAME")" "$CYAN"
+        print_box_line "${WHITE}  $(t proxy_menu_ports "$ports_status")${RESET}"
+        print_box_divider
         
         local menu_items=(
-            "1 • Abrir / criar porta"
-            "2 • Iniciar porta configurada"
-            "3 • Parar porta (mantém config)"
-            "4 • Reiniciar porta"
-            "5 • Editar porta"
-            "6 • Opções avançadas (buffer/flags)"
-            "7 • Alterar resposta HTTP"
-            "8 • Detalhes / ExecStart"
-            "9 • Ver log da porta"
-            "A • Remover porta"
-            "0 • Voltar ao Menu Inicial"
+            "1 • $(t proxy_opt_open)"
+            "2 • $(t proxy_opt_start)"
+            "3 • $(t proxy_opt_stop)"
+            "4 • $(t proxy_opt_restart)"
+            "5 • $(t proxy_opt_edit)"
+            "6 • $(t proxy_opt_adv)"
+            "7 • $(t proxy_opt_http)"
+            "8 • $(t proxy_opt_details)"
+            "9 • $(t proxy_opt_logs)"
+            "A • $(t proxy_opt_remove)"
+            "0 • $(t proxy_opt_back)"
         )
         
         for item in "${menu_items[@]}"; do
-            if [[ $item == *"Voltar"* || $item == *"Remover"* ]]; then
+            if [[ $item == *"$(t proxy_opt_back)"* || $item == *"$(t proxy_opt_remove)"* || $item == *"Voltar"* || $item == *"Remover"* || $item == *"Back"* || $item == *"Remove"* || $item == *"Volver"* || $item == *"Eliminar"* ]]; then
                 render_menu_option "$item" "red"
             else
                 render_menu_option "$item"
@@ -1665,7 +2058,7 @@ connection_menu() {
         echo
         
         local choice
-        read -rp "$(echo -e "${BLUE}Selecione [0-9/A]:${RESET} ")" choice
+        read -rp "$(echo -e "${BLUE}$(t prompt_select_option "0-9/A"):${RESET} ")" choice
         
         case "$choice" in
             1) start_proxy_service ;;
@@ -1680,7 +2073,7 @@ connection_menu() {
             a|A) remove_proxy_service ;;
             0) return 0 ;;
             *) 
-                print_error "Opção inválida: $choice"
+                print_error "$(t invalid_option "$choice")"
                 pause 
                 ;;
         esac
@@ -2982,25 +3375,25 @@ print_udpgw_menu() {
     local ports_status
     ports_status=$(format_udpgw_ports_status)
     print_box_open
-    print_box_heading "UDP GATEWAY (udpgw)"
+    print_box_heading "$(t udpgw_menu_title)"
     print_box_divider
-    print_box_line "${WHITE}  Portas: ${CYAN}${ports_status}${RESET}"
+    print_box_line "${WHITE}  $(t udpgw_menu_ports "$ports_status")${RESET}"
     print_box_divider
     local menu_items=(
-        "1 • Abrir / criar porta"
-        "2 • Iniciar porta"
-        "3 • Parar porta"
-        "4 • Reiniciar porta"
-        "5 • Status & ExecStart"
-        "6 • Painel de metricas"
-        "7 • Visualizar logs"
-        "8 • Opcoes avancadas (flags)"
-        "9 • Instalar/atualizar binario"
-        "A • Remover porta"
-        "0 • Voltar ao Menu Inicial"
+        "1 • $(t udpgw_opt_open)"
+        "2 • $(t udpgw_opt_start)"
+        "3 • $(t udpgw_opt_stop)"
+        "4 • $(t udpgw_opt_restart)"
+        "5 • $(t udpgw_opt_status)"
+        "6 • $(t udpgw_opt_metrics)"
+        "7 • $(t udpgw_opt_logs)"
+        "8 • $(t udpgw_opt_adv)"
+        "9 • $(t udpgw_opt_install)"
+        "A • $(t udpgw_opt_remove)"
+        "0 • $(t udpgw_opt_back)"
     )
     for item in "${menu_items[@]}"; do
-        if [[ $item == *"Voltar"* || $item == *"Remover"* ]]; then
+        if [[ $item == *"$(t udpgw_opt_back)"* || $item == *"$(t udpgw_opt_remove)"* || $item == *"Voltar"* || $item == *"Remover"* || $item == *"Back"* || $item == *"Remove"* || $item == *"Volver"* || $item == *"Eliminar"* ]]; then
             render_menu_option "$item" "red"
         else
             render_menu_option "$item"
@@ -3017,7 +3410,7 @@ udpgw_main_menu() {
         print_status
         print_udpgw_menu
         local option
-        read -rp "$(echo -e "${BLUE}Selecione [0-9/A]:${RESET} ")" option
+        read -rp "$(echo -e "${BLUE}$(t prompt_select_option "0-9/A"):${RESET} ")" option
         case "$option" in
         1) udpgw_create_port ;;
         2) udpgw_start_port ;;
@@ -3030,7 +3423,7 @@ udpgw_main_menu() {
         9) udpgw_install_or_update ;;
         a|A) udpgw_remove_port ;;
         0) return 0 ;;
-        *) print_error "Opcao invalida: $option"; pause ;;
+        *) print_error "$(t invalid_option "$option")"; pause ;;
         esac
     done
 }
@@ -3041,19 +3434,20 @@ show_ssh_online_users_details() {
     ssh_onlines=$(get_ssh_online_users_count)
 
     print_box_open
-    print_box_heading "USUARIOS ONLINE SSH (${ssh_onlines})" "$CYAN"
+    print_box_heading "$(t ssh_menu_title "$ssh_onlines")" "$CYAN"
     print_box_close
     echo
 
     if [[ "$ssh_onlines" == "0" ]]; then
-        echo "Nenhum usuario SSH online (excluindo root)."
+        echo "$(t ssh_no_users)"
     else
         pgrep -f 'sshd:' 2>/dev/null \
             | xargs -r ps -o user=,pid=,etime= 2>/dev/null \
             | grep -v '^root ' \
             | sort -u \
             | while read -r user pid etime; do
-                printf 'Usuario: %s | PID: %s | Tempo: %s\n' "$user" "$pid" "$etime"
+                t ssh_user_row "$user" "$pid" "$etime"
+                echo
             done
     fi
 
@@ -3069,20 +3463,20 @@ online_users_menu() {
         ssh_onlines=$(get_ssh_online_users_count)
 
         print_box_open
-        print_box_heading "USUARIOS ONLINE SSH (${ssh_onlines})" "$CYAN"
+        print_box_heading "$(t ssh_menu_title "$ssh_onlines")" "$CYAN"
         print_box_divider
-        render_menu_option "1 • Listar usuarios SSH online"
-        render_menu_option "0 • Voltar" "red"
+        render_menu_option "1 • $(t ssh_opt_list)"
+        render_menu_option "0 • $(t ssh_opt_back)" "red"
         print_box_close
         echo
 
         local option
-        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-1]:${RESET} ")" option
+        read -rp "$(echo -e "${BLUE}$(t prompt_select_option "0-1"):${RESET} ")" option
         case "$option" in
             1) show_ssh_online_users_details ;;
             0) return 0 ;;
             *) 
-                print_error "Opção inválida: $option"
+                print_error "$(t invalid_option "$option")"
                 pause 
                 ;;
         esac
@@ -3164,26 +3558,26 @@ run_system_update() {
 }
 
 update_system_menu() {
-        print_header
+    print_header
 
     local proxy_ver udpgw_ver
     proxy_ver=$(get_installed_proxy_version_label)
     udpgw_ver=$(get_installed_udpgw_version_label)
 
-        print_box_open
-    print_box_heading "ATUALIZAR SISTEMA" "$CYAN"
-        print_box_divider
-    print_box_line "${WHITE}  Proxy instalado: ${GREEN}v${proxy_ver}${RESET}"
-    print_box_line "${WHITE}  UDPgw instalado: ${GREEN}v${udpgw_ver}${RESET}"
-        print_box_close
-        echo
+    print_box_open
+    print_box_heading "$(t update_menu_title)" "$CYAN"
+    print_box_divider
+    print_box_line "${WHITE}  $(t update_installed_proxy "${GREEN}v${proxy_ver}")"
+    print_box_line "${WHITE}  $(t update_installed_udpgw "${GREEN}v${udpgw_ver}")"
+    print_box_close
+    echo
 
     show_update_preserve_notice
     echo
 
-    if ! confirm_action "Atualizar binários (proxy/udpgw) e o menu vt agora?" "s"; then
-        print_info "Atualização cancelada."
-                pause
+    if ! confirm_action "$(t update_confirm_prompt)" "s"; then
+        print_info "$(t update_canceled)"
+        pause
         return 0
     fi
 
@@ -3194,8 +3588,8 @@ remove_completely() {
     print_header
     
     echo -e "${RED}╔══════════════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${RED}║${WHITE}                   ⚠️  REMOÇÃO COMPLETA ⚠️                    ${RED}║${RESET}"
-    echo -e "${RED}║${WHITE}        Esta ação irá remover TODOS os dados e serviços       ${RED}║${RESET}"
+    echo -e "${RED}║${WHITE}                   ⚠️  $(t remove_title) ⚠️                    ${RED}║${RESET}"
+    echo -e "${RED}║${WHITE}        $(t remove_warning_banner)       ${RED}║${RESET}"
     echo -e "${RED}╚══════════════════════════════════════════════════════════════╝${RESET}"
     echo
     echo -e "${YELLOW}Itens que serão removidos:${RESET}"
@@ -3209,15 +3603,13 @@ remove_completely() {
     echo -e "${WHITE}  • Script de gerenciamento${RESET}"
     echo
     
-    if ! confirm_action "${RED}TEM CERTEZA que deseja remover completamente?${RESET}" "n"; then
-        print_info "Remoção cancelada."
+    if ! confirm_action "${RED}$(t remove_confirm_sure)${RESET}" "n"; then
+        print_info "$(t remove_canceled)"
         pause
         return
     fi
     
     print_info "Iniciando remoção completa..."
-    
-
 
     if systemctl is-active --quiet "$UDPGW_SERVICE_NAME" 2>/dev/null; then
         print_info "Parando serviço legado $UDPGW_SERVICE_NAME..."
@@ -3272,10 +3664,9 @@ remove_completely() {
     sudo rm -rf "$PROXY_DIR"
     sudo rm -rf "$PROXY_LOG_DIR"
     sudo rm -f "$PROXY_TOKEN_HOME"
-    print_success "Remoção completa concluída!"
+    print_success "$(t remove_success)"
     echo
-    echo -e "${GREEN}Todos os serviços e arquivos foram removidos com sucesso.${RESET}"
-    echo -e "${YELLOW}O sistema está limpo.${RESET}"
+    echo -e "${GREEN}$(t remove_clean)${RESET}"
     echo
     
     pause
@@ -3287,25 +3678,25 @@ change_proxy_token_menu() {
 
     local new_token
     while true; do
-        echo -e "${BLUE}Insira o token proxy (licença ${PROJECT_NAME}):${RESET}"
+        echo -e "${BLUE}$(t token_prompt_input "$PROJECT_NAME")${RESET}"
         read -rp "> " new_token
         new_token=$(echo "$new_token" | tr -d '\000-\037')
 
         if [[ -z "$new_token" ]]; then
-            print_error "Token não pode ser vazio."
+            print_error "$(t token_empty_error)"
             continue
         fi
 
         if validate_proxy_token "$new_token"; then
             save_proxy_token "$new_token"
-            print_success "Token proxy salvo!"
-            print_info "Sincronizando token nos serviços proxy..."
+            print_success "$(t token_saved_success)"
+            print_info "$(t token_syncing)"
             local updated
             updated=$(sync_all_proxy_tokens "$new_token")
-            print_success "Token aplicado em $updated porta(s) proxy."
+            print_success "$(t token_applied_ports "$updated")"
             break
         else
-            print_error "Token proxy inválido. Tente novamente."
+            print_error "$(t token_invalid_retry)"
         fi
     done
     pause
@@ -3322,21 +3713,21 @@ tokens_menu() {
         fi
 
         print_box_open
-        print_box_heading "GERENCIAR TOKENS"
+        print_box_heading "$(t token_menu_title)"
         print_box_divider
-        print_box_line "${WHITE}  Proxy (licença): ${proxy_status}${RESET}"
+        print_box_line "${WHITE}  $(t token_menu_proxy_lic) ${proxy_status}${RESET}"
         print_box_divider
-        render_menu_option "1 • Configurar token Proxy"
-        render_menu_option "0 • Voltar" "red"
+        render_menu_option "1 • $(t token_opt_config)"
+        render_menu_option "0 • $(t token_opt_back)" "red"
         print_box_close
         echo
 
         local option
-        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-1]:${RESET} ")" option
+        read -rp "$(echo -e "${BLUE}$(t prompt_select_option "0-1"):${RESET} ")" option
         case "$option" in
             1) change_proxy_token_menu ;;
             0) return 0 ;;
-            *) print_error "Opção inválida: $option"; pause ;;
+            *) print_error "$(t invalid_option "$option")"; pause ;;
         esac
     done
 }
@@ -3348,7 +3739,7 @@ initial_menu() {
         print_initial_menu
         
         local option
-        read -rp "$(echo -e "${BLUE}Selecione uma opção [0-6]:${RESET} ")" option
+        read -rp "$(echo -e "${BLUE}$(t prompt_select_option "0-7"):${RESET} ")" option
         
         case "$option" in
             1) connection_menu ;;
@@ -3356,13 +3747,14 @@ initial_menu() {
             3) tokens_menu ;;
             4) update_system_menu ;;
             5) udpgw_main_menu ;;
-            6) remove_completely ;;
+            6) language_menu ;;
+            7) remove_completely ;;
             0)
-                print_info "Saindo..."
+                print_info "$(t exiting)"
                 exit 0
                 ;;
             *)
-                print_error "Opção inválida: $option"
+                print_error "$(t invalid_option "$option")"
                 pause
                 ;;
         esac
@@ -3507,9 +3899,11 @@ EOF
     sudo sysctl --system >/dev/null 2>&1 || true
 }
 
+load_language
+
 if [ "$EUID" -ne 0 ]; then
-    print_error "Este script requer privilégios de root."
-    echo -e "${YELLOW}Execute com: ${WHITE}sudo $0${RESET}"
+    print_error "$(t root_required)"
+    echo -e "${YELLOW}$(t run_with_sudo "$0")${RESET}"
     exit 1
 fi
 
@@ -3523,3 +3917,4 @@ migrate_legacy_udpgw_if_needed || true
 udpgw_fix_all_metrics_collisions || true
 
 initial_menu
+
