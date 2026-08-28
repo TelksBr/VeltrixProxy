@@ -14,7 +14,7 @@ UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
 INSTALLER_REV="32"
-MENU_REV_EXPECTED="40"
+MENU_REV_EXPECTED="41"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 UDPGW_VERSION_FILE="/etc/udpgw-version"
@@ -1223,6 +1223,13 @@ ensure_service_limit_nofile() {
       safe_sed_inplace "$service_file" -e 's/^[[:space:]]*LimitNOFILE=.*/LimitNOFILE=65536/' || true
     else
       safe_sed_inplace "$service_file" -e '/^\[Service\]/a LimitNOFILE=65536' || true
+    fi
+  done
+
+  for service_file in /etc/systemd/system/proxy-*.service; do
+    [[ -f "$service_file" ]] || continue
+    if ! grep -q 'GOMEMLIMIT' "$service_file"; then
+      safe_sed_inplace "$service_file" -e '/^\[Service\]/a Environment="GOMEMLIMIT=750MiB"\nEnvironment="GOGC=50"' || true
     fi
   done
 }
