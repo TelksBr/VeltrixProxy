@@ -14,7 +14,7 @@ UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
 INSTALLER_REV="32"
-MENU_REV_EXPECTED="41"
+MENU_REV_EXPECTED="42"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 UDPGW_VERSION_FILE="/etc/udpgw-version"
@@ -1470,7 +1470,7 @@ report_existing_services() {
 
   log_info "Instalação prévia detectada — serviços serão sincronizados após a atualização."
 
-  mapfile -t proxy_services < <(find_systemd_proxy_ports)
+  mapfile -t proxy_services < <(list_proxy_services)
   count=${#proxy_services[@]}
 
   if [[ $count -gt 0 ]]; then
