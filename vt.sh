@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="41"
+readonly MENU_REV="42"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly MENU_BIN="/usr/local/bin/vt"
@@ -32,6 +32,7 @@ PROXY_TOKEN_HOME="${HOME:-/root}/.proxy_token"
 PROXY_CONFIG_DIR="$PROXY_DIR/conf.d"
 PROXY_LOG_DIR="/var/log/proxy"
 PROXY_SERVICE_PREFIX="proxy"
+readonly PROXY_UNIFIED_SERVICE_NAME="vtproxy"
 
 resolve_proxy_executable() {
     if [[ -x "/usr/local/bin/proxy-server" ]]; then
@@ -818,18 +819,33 @@ ensure_proxy_dirs_quiet() {
 }
 
 list_active_proxies() {
-    local ports port service_name active_list=""
+    local ports port active_list=""
     ports=$(list_configured_proxy_ports)
     [[ -z "$ports" ]] && return 0
 
+    if systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null; then
+        IFS=',' read -ra port_array <<< "$ports"
+        for port in "${port_array[@]}"; do
+            [[ -z "$port" ]] && continue
+            local enabled
+            enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
+            if [[ "$enabled" == "true" ]]; then
+                [[ -n "$active_list" ]] && active_list+=","
+                active_list+="$port"
+            fi
+        done
+        printf '%s' "$active_list"
+        return 0
+    fi
+
+    # Fallback legado para transicao
     IFS=',' read -ra port_array <<< "$ports"
     for port in "${port_array[@]}"; do
         [[ -z "$port" ]] && continue
+        local service_name
         service_name=$(get_proxy_service_name "$port")
         if systemctl is-active --quiet "$service_name" 2>/dev/null; then
-            if [[ -n "$active_list" ]]; then
-                active_list+=","
-            fi
+            [[ -n "$active_list" ]] && active_list+=","
             active_list+="$port"
         fi
     done
@@ -968,7 +984,7 @@ write_proxy_conf() {
     local ssh_only_flag="$5"
     local http_response="$6"
     local buffer_size="$7"
-    local domain_flag="$8" # legado (ignorado; --domain removido do binário)
+    local domain_flag="$8" # legado (ignorado; --domain removido do binario)
     local max_connections="$9"
     local write_timeout="${10}"
     local idle_timeout="${11}"
@@ -977,6 +993,7 @@ write_proxy_conf() {
     local openvpn_port="${14}"
     local v2ray_port="${15}"
     local display_banner="${16}"
+    local enabled="${17:-true}"
     local file
 
     ensure_proxy_dirs_quiet
@@ -984,6 +1001,7 @@ write_proxy_conf() {
 
     sudo tee "$file" > /dev/null <<EOF
 PORT=$port
+ENABLED=$enabled
 SSL_ENABLED=$ssl_enabled
 SSL_CERT_PATH=$ssl_cert_path
 CERT_INTERNAL=$cert_internal
@@ -1185,20 +1203,145 @@ build_proxy_command() {
     build_proxy_command_from_conf "$port" "$token"
 }
 
-write_proxy_systemd_unit() {
-    local port="$1"
-    local proxy_command="$2"
-    local service_name
-    service_name=$(get_proxy_service_name "$port")
+calculate_dynamic_gomemlimit() {
+    local total_ram_mb=0
+    if [[ -f /proc/meminfo ]]; then
+        local total_ram_kb
+        total_ram_kb=$(grep -E '^MemTotal:' /proc/meminfo 2>/dev/null | awk '{print $2}')
+        if [[ -n "$total_ram_kb" && "$total_ram_kb" =~ ^[0-9]+$ ]]; then
+            total_ram_mb=$(( total_ram_kb / 1024 ))
+        fi
+    fi
+    if (( total_ram_mb <= 0 )) && command -v free >/dev/null 2>&1; then
+        total_ram_mb=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')
+    fi
 
-    sudo tee "/etc/systemd/system/$service_name.service" > /dev/null <<EOF
+    if (( total_ram_mb <= 0 )); then
+        echo "620MiB"
+        return 0
+    fi
+
+    if (( total_ram_mb <= 600 )); then
+        echo "280MiB"
+    elif (( total_ram_mb <= 1200 )); then
+        echo "620MiB"
+    elif (( total_ram_mb <= 2200 )); then
+        echo "1400MiB"
+    elif (( total_ram_mb <= 4500 )); then
+        echo "2800MiB"
+    else
+        local calculated=$(( total_ram_mb * 70 / 100 ))
+        echo "${calculated}MiB"
+    fi
+}
+
+build_unified_proxy_command() {
+    local token="$1"
+    local configured_ports port
+    configured_ports=$(list_configured_proxy_ports)
+    [[ -z "$configured_ports" ]] && return 0
+
+    local port_args=()
+    local custom_cert_path=""
+    local has_ssl=false
+    local has_cert_internal=true
+    local any_ssh_only=false
+
+    # Defaults para flags compartilhadas
+    local buffer_size="$DEFAULT_BUFFER_SIZE"
+    local http_response="$DEFAULT_HTTP_RESPONSE"
+    local max_connections="$DEFAULT_MAX_CONNECTIONS"
+    local write_timeout="$DEFAULT_WRITE_TIMEOUT"
+    local idle_timeout="$DEFAULT_IDLE_TIMEOUT"
+    local log_level="info"
+    local ssh_port="22"
+    local openvpn_port="1194"
+    local v2ray_port="1080"
+    local display_banner="true"
+
+    IFS=',' read -ra port_array <<< "$configured_ports"
+    for port in "${port_array[@]}"; do
+        [[ -z "$port" ]] && continue
+        migrate_proxy_conf_from_unit_if_needed "$port" || true
+
+        local enabled
+        enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
+        [[ "$enabled" != "true" ]] && continue
+
+        local ssl_enabled ssl_cert_path cert_internal ssh_only_flag
+        ssl_enabled=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
+        ssl_cert_path=$(get_proxy_conf_value "$port" "SSL_CERT_PATH" "")
+        cert_internal=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
+        ssh_only_flag=$(get_proxy_conf_value "$port" "SSH_ONLY" "false")
+
+        # Pega as flags compartilhadas da primeira porta ativa encontrada
+        if [[ ${#port_args[@]} -eq 0 ]]; then
+            buffer_size=$(get_proxy_conf_value "$port" "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
+            http_response=$(get_proxy_conf_value "$port" "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
+            max_connections=$(get_proxy_conf_value "$port" "MAX_CONNECTIONS" "$DEFAULT_MAX_CONNECTIONS")
+            write_timeout=$(get_proxy_conf_value "$port" "WRITE_TIMEOUT" "$DEFAULT_WRITE_TIMEOUT")
+            idle_timeout=$(get_proxy_conf_value "$port" "IDLE_TIMEOUT" "$DEFAULT_IDLE_TIMEOUT")
+            log_level=$(get_proxy_conf_value "$port" "LOG_LEVEL" "info")
+            ssh_port=$(get_proxy_conf_value "$port" "SSH_PORT" "22")
+            openvpn_port=$(get_proxy_conf_value "$port" "OPENVPN_PORT" "1194")
+            v2ray_port=$(get_proxy_conf_value "$port" "V2RAY_PORT" "1080")
+            display_banner=$(get_proxy_conf_value "$port" "DISPLAY_BANNER" "true")
+        fi
+
+        if [[ "$ssl_enabled" == "true" ]]; then
+            has_ssl=true
+            port_args+=("--port=$port:ssl")
+            if [[ "$cert_internal" == "false" && -n "$ssl_cert_path" ]]; then
+                has_cert_internal=false
+                custom_cert_path="$ssl_cert_path"
+            fi
+        else
+            port_args+=("--port=$port")
+        fi
+
+        [[ "$ssh_only_flag" == "true" ]] && any_ssh_only=true
+    done
+
+    # Se nenhuma porta ativa estiver configurada, encerra
+    [[ ${#port_args[@]} -eq 0 ]] && return 0
+
+    local log_file="$PROXY_LOG_DIR/proxy.log"
+    ensure_proxy_dirs_quiet
+
+    local command="$PROXY_EXECUTABLE --token=$token ${port_args[*]} --buffer-size=$buffer_size --response=$http_response --log-file=$log_file --log-level=$log_level --ssh-port=$ssh_port --openvpn-port=$openvpn_port --v2ray-port=$v2ray_port --max-connections=$max_connections --write-timeout=$write_timeout --idle-timeout=$idle_timeout"
+
+    if [[ "$display_banner" != "true" ]]; then
+        command="$command --display-banner=false"
+    fi
+
+    if [[ "$has_ssl" == "true" ]]; then
+        if [[ "$has_cert_internal" == "false" && -n "$custom_cert_path" ]]; then
+            command="$command --cert=$custom_cert_path --cert-internal=false"
+        else
+            command="$command --cert-internal=true"
+        fi
+    fi
+
+    if [[ "$any_ssh_only" == "true" ]]; then
+        command="$command --ssh-only"
+    fi
+
+    echo "$command"
+}
+
+write_unified_proxy_systemd_unit() {
+    local proxy_command="$1"
+    local gomemlimit
+    gomemlimit=$(calculate_dynamic_gomemlimit)
+
+    sudo tee "/etc/systemd/system/${PROXY_UNIFIED_SERVICE_NAME}.service" > /dev/null <<EOF
 [Unit]
-Description=${PROJECT_NAME} Proxy Server na porta $port
+Description=${PROJECT_NAME} Unified Proxy Server
 After=network.target
 
 [Service]
-Environment="GOMEMLIMIT=750MiB"
-Environment="GOGC=50"
+Environment="GOMEMLIMIT=${gomemlimit}"
+Environment="GOGC=100"
 ExecStart=$proxy_command
 Restart=always
 RestartSec=3
@@ -1209,32 +1352,33 @@ WantedBy=multi-user.target
 EOF
 }
 
-apply_proxy_service() {
-    local port="$1"
-    local do_start="${2:-true}"
-    local token proxy_command service_name
+apply_unified_proxy_service() {
+    local do_start="${1:-true}"
+    local token proxy_command
 
     token=$(load_proxy_token)
     if [[ -z "$token" ]]; then
-        print_error "Token proxy não configurado. Use Gerenciar Tokens no menu inicial."
+        print_error "Token proxy nao configurado. Use Gerenciar Tokens no menu inicial."
         return 1
     fi
 
-    migrate_proxy_conf_from_unit_if_needed "$port" || true
-    if [[ ! -f "$(get_proxy_config_file "$port")" ]]; then
-        print_error "Configuração da porta $port não encontrada."
-        return 1
+    proxy_command=$(build_unified_proxy_command "$token")
+    if [[ -z "$proxy_command" ]]; then
+        if systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null; then
+            print_info "Nenhuma porta ativa restante. Parando servico unificado..."
+            sudo systemctl stop "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null || true
+            sudo systemctl disable "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null || true
+        fi
+        return 0
     fi
 
-    proxy_command=$(build_proxy_command_from_conf "$port" "$token")
-    write_proxy_systemd_unit "$port" "$proxy_command"
-    service_name=$(get_proxy_service_name "$port")
+    write_unified_proxy_systemd_unit "$proxy_command"
 
     sudo systemctl daemon-reload
-    sudo systemctl enable "$service_name" > /dev/null 2>&1 || true
+    sudo systemctl enable "$PROXY_UNIFIED_SERVICE_NAME" > /dev/null 2>&1 || true
 
     if [[ "$do_start" == "true" ]]; then
-        if sudo systemctl restart "$service_name"; then
+        if sudo systemctl restart "$PROXY_UNIFIED_SERVICE_NAME"; then
             return 0
         fi
         return 1
@@ -1242,27 +1386,41 @@ apply_proxy_service() {
     return 0
 }
 
-sync_all_proxy_tokens() {
-    local token="$1"
-    local port service_name updated=0
+apply_proxy_service() {
+    local port="${1:-}"
+    local do_start="${2:-true}"
+    apply_unified_proxy_service "$do_start"
+}
 
-    [[ -n "$token" ]] || return 0
+migrate_legacy_services_to_unified() {
+    local legacy_found=false
+    local service_file port
 
-    for port in $(list_configured_proxy_ports | tr ',' ' '); do
-        [[ -z "$port" ]] && continue
-        migrate_proxy_conf_from_unit_if_needed "$port" || true
-        if [[ -f "$(get_proxy_config_file "$port")" ]] || is_proxy_service_configured "$port"; then
-            if apply_proxy_service "$port" "false"; then
-                service_name=$(get_proxy_service_name "$port")
-                if systemctl is-active --quiet "$service_name" 2>/dev/null; then
-                    sudo systemctl restart "$service_name" 2>/dev/null || true
-                fi
-                updated=$((updated + 1))
-            fi
+    for service_file in /etc/systemd/system/${PROXY_SERVICE_PREFIX}-*.service; do
+        [[ -f "$service_file" ]] || continue
+        legacy_found=true
+        port=$(basename "$service_file" .service | sed -n "s/^${PROXY_SERVICE_PREFIX}-\([0-9]\+\)$/\1/p")
+        if [[ -n "$port" ]]; then
+            migrate_proxy_conf_from_unit_if_needed "$port" || true
+            set_proxy_conf_key "$port" "ENABLED" "true"
+            sudo systemctl stop "${PROXY_SERVICE_PREFIX}-${port}" 2>/dev/null || true
+            sudo systemctl disable "${PROXY_SERVICE_PREFIX}-${port}" 2>/dev/null || true
+            sudo rm -f "$service_file"
         fi
     done
 
-    echo "$updated"
+    if [[ "$legacy_found" == "true" ]]; then
+        sudo systemctl daemon-reload
+        apply_unified_proxy_service "true" || true
+    fi
+}
+
+sync_all_proxy_tokens() {
+    local token="$1"
+    [[ -n "$token" ]] || return 0
+
+    apply_unified_proxy_service "true"
+    echo "1"
 }
 
 start_proxy_for_port() {
@@ -1278,15 +1436,15 @@ start_proxy_for_port() {
     fi
 
     if [[ "$skip_listen_check" != "true" ]]; then
-    if ! check_port_available "$port"; then
-        return 1
+        if ! check_port_available "$port"; then
+            return 1
         fi
     fi
 
     local token
     token=$(load_proxy_token)
     if [[ -z "$token" ]]; then
-        print_error "Token proxy não configurado. Use Gerenciar Tokens no menu inicial."
+        print_error "Token proxy nao configurado. Use Gerenciar Tokens no menu inicial."
         return 1
     fi
 
@@ -1296,9 +1454,9 @@ start_proxy_for_port() {
     fi
 
     write_proxy_conf "$port" "$ssl_enabled" "$ssl_cert_path" "$cert_internal" "$ssh_only_flag" \
-        "$http_response" "$DEFAULT_BUFFER_SIZE" "false" "$DEFAULT_MAX_CONNECTIONS" "$DEFAULT_WRITE_TIMEOUT" "$DEFAULT_IDLE_TIMEOUT" "$DEFAULT_LOG_LEVEL" "$DEFAULT_SSH_PORT" "$DEFAULT_OPENVPN_PORT" "$DEFAULT_V2RAY_PORT" "true"
+        "$http_response" "$DEFAULT_BUFFER_SIZE" "false" "$DEFAULT_MAX_CONNECTIONS" "$DEFAULT_WRITE_TIMEOUT" "$DEFAULT_IDLE_TIMEOUT" "$DEFAULT_LOG_LEVEL" "$DEFAULT_SSH_PORT" "$DEFAULT_OPENVPN_PORT" "$DEFAULT_V2RAY_PORT" "true" "true"
 
-    apply_proxy_service "$port" "true"
+    apply_unified_proxy_service "true"
 }
 
 prompt_proxy_advanced_options() {
@@ -1462,45 +1620,36 @@ load_adv_from_port() {
 }
 
 show_proxy_execstart_line() {
-    local port="$1"
-    local service_name exec_line
-    service_name=$(get_proxy_service_name "$port")
+    local port="${1:-}"
     echo
-    print_info "ExecStart da porta $port:"
-    exec_line=$(systemctl cat "$service_name" 2>/dev/null | grep -E '^ExecStart=' | head -n1 | sed 's/^ExecStart=//')
+    print_info "ExecStart do servico unificado (${PROXY_UNIFIED_SERVICE_NAME}):"
+    local exec_line
+    exec_line=$(systemctl cat "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null | grep -E '^ExecStart=' | head -n1 | sed 's/^ExecStart=//')
     if [[ -n "$exec_line" ]]; then
         echo -e "${GRAY}$exec_line${RESET}"
     else
-        print_warning "Unit systemd ainda não existe para esta porta."
+        print_warning "Unit systemd unificada (${PROXY_UNIFIED_SERVICE_NAME}) ainda nao criada."
     fi
 }
 
 apply_adv_globals_to_port() {
     local port="$1"
-    local was_active="false"
 
-    # Se marcou cert externo, força SSL (senão --cert-internal não faz sentido sozinho).
+    # Se marcou cert externo, forca SSL (senao --cert-internal nao faz sentido sozinho).
     if [[ "$ADV_CERT_INTERNAL" == "false" && -n "$ADV_SSL_CERT_PATH" ]]; then
         ADV_SSL_ENABLED="true"
     fi
 
     write_proxy_conf "$port" "$ADV_SSL_ENABLED" "$ADV_SSL_CERT_PATH" "$ADV_CERT_INTERNAL" "$ADV_SSH_ONLY" \
         "$ADV_HTTP_RESPONSE" "$ADV_BUFFER_SIZE" "false" "$ADV_MAX_CONNECTIONS" "$ADV_WRITE_TIMEOUT" \
-        "$ADV_IDLE_TIMEOUT" "$ADV_LOG_LEVEL" "$ADV_SSH_PORT" "$ADV_OPENVPN_PORT" "$ADV_V2RAY_PORT" "$ADV_DISPLAY_BANNER"
+        "$ADV_IDLE_TIMEOUT" "$ADV_LOG_LEVEL" "$ADV_SSH_PORT" "$ADV_OPENVPN_PORT" "$ADV_V2RAY_PORT" "$ADV_DISPLAY_BANNER" "true"
 
-    systemctl is-active --quiet "$(get_proxy_service_name "$port")" 2>/dev/null && was_active="true"
-
-    if apply_proxy_service "$port" "$was_active"; then
-        if [[ "$was_active" == "true" ]]; then
-            print_success "Opções avançadas aplicadas e serviço reiniciado (porta $port)."
-        else
-            print_success "Opções avançadas salvas na porta $port (serviço parado)."
-        fi
+    if apply_unified_proxy_service "true"; then
+        print_success "Opcoes avancadas aplicadas ao servico unificado."
         show_proxy_execstart_line "$port"
     else
-        print_error "Falha ao aplicar opções avançadas na porta $port."
+        print_error "Falha ao aplicar opcoes avancadas."
     fi
-    pause
 }
 
 edit_proxy_advanced_service() {
@@ -1686,8 +1835,8 @@ start_proxy_service() {
         "$http_response" "$buffer_size" "$domain_flag" "$max_connections" "$write_timeout" \
         "$idle_timeout" "$log_level" "$ssh_port" "$openvpn_port" "$v2ray_port" "$display_banner"
 
-    if apply_proxy_service "$port" "true"; then
-        print_success "Proxy iniciado com sucesso na porta $port!"
+    if apply_unified_proxy_service "true"; then
+        print_success "Proxy unificado iniciado com sucesso contendo a porta $port!"
         show_proxy_execstart_line "$port"
     else
         print_error "Falha ao iniciar proxy na porta $port"
@@ -1702,21 +1851,20 @@ pause_proxy_service() {
     local configured_ports
     configured_ports=$(list_configured_proxy_ports)
     echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
-    echo -e "${BLUE}Digite a porta para PARAR (mantém configuração):${RESET}"
+    echo -e "${BLUE}Digite a porta para PARAR (mantem configuracao):${RESET}"
     read -rp "> " port
     port=$(echo "$port" | tr -d '[:space:]')
 
     if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
-        print_error "Porta inválida ou não configurada."
+        print_error "Porta invalida ou nao configurada."
         pause
         return
     fi
 
-    local service_name
-    service_name=$(get_proxy_service_name "$port")
-    print_info "Parando proxy na porta $port (config preservada)..."
-    sudo systemctl stop "$service_name" 2>/dev/null || true
-    print_success "Proxy na porta $port parado. Use 'Iniciar porta configurada' para religar."
+    print_info "Pausando porta $port (config preservada)..."
+    set_proxy_conf_key "$port" "ENABLED" "false"
+    apply_unified_proxy_service "true"
+    print_success "Porta $port pausada. As demais portas continuam ativas no servico unificado."
     pause
 }
 
@@ -1726,12 +1874,12 @@ remove_proxy_service() {
     local configured_ports
     configured_ports=$(list_configured_proxy_ports)
     echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
-    echo -e "${BLUE}Digite a porta para REMOVER (apaga unit + conf):${RESET}"
+    echo -e "${BLUE}Digite a porta para REMOVER (apaga conf):${RESET}"
     read -rp "> " port
     port=$(echo "$port" | tr -d '[:space:]')
 
     if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
-        print_error "Porta inválida ou não configurada."
+        print_error "Porta invalida ou nao configurada."
         pause
         return
     fi
@@ -1741,15 +1889,10 @@ remove_proxy_service() {
         return
     fi
 
-    local service_name
-    service_name=$(get_proxy_service_name "$port")
-    print_info "Removendo proxy na porta $port..."
-    sudo systemctl stop "$service_name" 2>/dev/null || true
-    sudo systemctl disable "$service_name" 2>/dev/null || true
-    sudo rm -f "/etc/systemd/system/$service_name.service"
+    print_info "Removendo porta $port..."
     sudo rm -f "$(get_proxy_config_file "$port")"
-    sudo systemctl daemon-reload
-    print_success "Proxy na porta $port removido."
+    apply_unified_proxy_service "true"
+    print_success "Porta $port removida do servico unificado."
     pause
 }
 
@@ -1775,17 +1918,15 @@ start_configured_proxy_service() {
     port=$(echo "$port" | tr -d '[:space:]')
 
     if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
-        print_error "Porta inválida ou não configurada."
+        print_error "Porta invalida ou nao configurada."
         pause
         return
     fi
 
-    migrate_proxy_conf_from_unit_if_needed "$port" || true
-
-    local service_name
-    service_name=$(get_proxy_service_name "$port")
-    if systemctl is-active --quiet "$service_name" 2>/dev/null; then
-        print_warning "Porta $port já está ativa."
+    local enabled
+    enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
+    if [[ "$enabled" == "true" ]] && systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null; then
+        print_warning "Porta $port ja esta ativa no servico unificado."
         pause
         return
     fi
@@ -1795,11 +1936,12 @@ start_configured_proxy_service() {
         return
     fi
 
-    print_info "Iniciando porta $port..."
-    if apply_proxy_service "$port" "true"; then
-        print_success "Porta $port iniciada."
+    print_info "Ativando porta $port no servico unificado..."
+    set_proxy_conf_key "$port" "ENABLED" "true"
+    if apply_unified_proxy_service "true"; then
+        print_success "Porta $port ativada no servico unificado."
     else
-        print_error "Falha ao iniciar porta $port."
+        print_error "Falha ao ativar porta $port."
     fi
     pause
 }
@@ -1851,7 +1993,7 @@ show_proxy_port_details() {
     port=$(echo "$port" | tr -d '[:space:]')
 
     if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
-        print_error "Porta inválida ou não configurada."
+        print_error "Porta invalida ou nao configurada."
         pause
         return
     fi
@@ -1866,7 +2008,17 @@ show_proxy_port_details() {
     print_box_open
     print_box_heading "DETALHES PORTA $port"
     print_box_divider
-    if systemctl is-active --quiet "$service_name" 2>/dev/null; then
+
+    local port_is_active=false
+    local port_enabled
+    port_enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
+    if systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null && [[ "$port_enabled" == "true" ]]; then
+        port_is_active=true
+    elif systemctl is-active --quiet "$service_name" 2>/dev/null; then
+        port_is_active=true
+    fi
+
+    if [[ "$port_is_active" == "true" ]]; then
         print_box_line "${WHITE}  Estado: ${GREEN}ATIVO${RESET}"
     else
         print_box_line "${WHITE}  Estado: ${RED}PARADO${RESET}"
@@ -1885,12 +2037,12 @@ show_proxy_port_details() {
     print_box_line "${WHITE}  Log/banner file: ${CYAN}$(get_proxy_log_file "$port")${RESET}"
     print_box_divider
     local exec_line
-    exec_line=$(systemctl cat "$service_name" 2>/dev/null | grep -E '^ExecStart=' | head -n1 | sed 's/^ExecStart=//')
+    exec_line=$(systemctl cat "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null | grep -E '^ExecStart=' | head -n1 | sed 's/^ExecStart=//')
     if [[ -n "$exec_line" ]]; then
-        print_box_line "${WHITE}  ExecStart:${RESET}"
+        print_box_line "${WHITE}  ExecStart (${PROXY_UNIFIED_SERVICE_NAME}):${RESET}"
         echo -e "${GRAY}$exec_line${RESET}"
     else
-        print_box_line "${YELLOW}  Unit systemd ainda não criada${RESET}"
+        print_box_line "${YELLOW}  Unit systemd unificada (${PROXY_UNIFIED_SERVICE_NAME}) ainda nao criada${RESET}"
     fi
     print_box_close
     pause
@@ -1899,32 +2051,13 @@ show_proxy_port_details() {
 restart_proxy_service() {
     print_header
 
-    local configured_ports
-    configured_ports=$(list_configured_proxy_ports)
+    print_info "Reiniciando servico unificado de proxy (${PROXY_UNIFIED_SERVICE_NAME})..."
 
-    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
-    echo -e "${BLUE}Digite a porta para reiniciar:${RESET}"
-    read -rp "> " port
-    port=$(echo "$port" | tr -d '[:space:]')
-
-    if ! validate_port "$port"; then
-        pause
-        return
-    fi
-
-    if ! is_proxy_service_configured "$port"; then
-        print_error "Nenhum serviço configurado na porta $port."
-        pause
-        return
-    fi
-
-    migrate_proxy_conf_from_unit_if_needed "$port" || true
-    print_info "Reiniciando proxy na porta $port..."
-
-    if apply_proxy_service "$port" "true"; then
-        print_success "Proxy reiniciado com sucesso na porta $port!"
+    if apply_unified_proxy_service "true"; then
+        print_success "Servico proxy reiniciado com sucesso!"
+        show_proxy_execstart_line
     else
-        print_error "Falha ao reiniciar proxy na porta $port"
+        print_error "Falha ao reiniciar servico proxy"
     fi
 
     pause
@@ -1932,39 +2065,15 @@ restart_proxy_service() {
 
 show_proxy_logs() {
     print_header
-
-    local configured_ports
-    configured_ports=$(list_configured_proxy_ports)
-
-    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
-    echo -e "${BLUE}Digite a porta para ver os logs:${RESET}"
-    read -rp "> " port
-    port=$(echo "$port" | tr -d '[:space:]')
-
-    if ! validate_port "$port"; then
-        pause
-        return
-    fi
-
-    if ! is_proxy_service_configured "$port"; then
-        print_error "Nenhum serviço configurado na porta $port."
-        pause
-        return
-    fi
-
-    local log_file
-    log_file=$(get_proxy_log_file "$port")
-
-    if [[ ! -f "$log_file" ]]; then
-        print_error "Arquivo de log/banner não encontrado: $log_file"
-        print_info "Verifique: systemctl status $(get_proxy_service_name "$port")"
-        pause
-        return
-    fi
-    
-    echo -e "${BLUE}Exibindo banner/status da porta $port (Ctrl+C para sair):${RESET}"
+    local log_file="$PROXY_LOG_DIR/proxy.log"
+    print_info "Exibindo logs do servico unificado (${PROXY_UNIFIED_SERVICE_NAME})..."
+    echo -e "${GRAY}Arquivo: $log_file | Pressione Ctrl+C para sair${RESET}"
     echo
-    sudo tail -n 80 -f "$log_file" || true
+    if [[ -f "$log_file" ]]; then
+        sudo tail -n 80 -f "$log_file" || true
+    else
+        sudo journalctl -u "$PROXY_UNIFIED_SERVICE_NAME" -n 80 -f 2>/dev/null || print_warning "Sem logs disponiveis."
+    fi
     pause
 }
 
@@ -2115,19 +2224,21 @@ run_quick_setup_first_time() {
     fi
     done
 
-    init_proxy_dirs
-    print_info "Configurando proxies automáticos: 80 (sem SSL) e 443 (com SSL)..."
+        init_proxy_dirs
+    print_info "Configurando proxy unificado automático: 80 (sem SSL) e 443 (com SSL)..."
 
-    if start_proxy_for_port "80" "false" "" "false" "$DEFAULT_HTTP_RESPONSE"; then
-        print_success "Proxy automático ativo na porta 80 (sem SSL)."
-    else
-        print_warning "Não foi possível ativar proxy automático na porta 80."
-    fi
+    write_proxy_conf "80" "false" "" "true" "false" "$DEFAULT_HTTP_RESPONSE" \
+        "$DEFAULT_BUFFER_SIZE" "false" "$DEFAULT_MAX_CONNECTIONS" "$DEFAULT_WRITE_TIMEOUT" \
+        "$DEFAULT_IDLE_TIMEOUT" "$DEFAULT_LOG_LEVEL" "$DEFAULT_SSH_PORT" "$DEFAULT_OPENVPN_PORT" "$DEFAULT_V2RAY_PORT" "true" "true"
 
-    if start_proxy_for_port "443" "true" "" "false" "$DEFAULT_HTTP_RESPONSE"; then
-        print_success "Proxy automático ativo na porta 443 (com SSL)."
+    write_proxy_conf "443" "true" "" "true" "false" "$DEFAULT_HTTP_RESPONSE" \
+        "$DEFAULT_BUFFER_SIZE" "false" "$DEFAULT_MAX_CONNECTIONS" "$DEFAULT_WRITE_TIMEOUT" \
+        "$DEFAULT_IDLE_TIMEOUT" "$DEFAULT_LOG_LEVEL" "$DEFAULT_SSH_PORT" "$DEFAULT_OPENVPN_PORT" "$DEFAULT_V2RAY_PORT" "true" "true"
+
+    if apply_unified_proxy_service "true"; then
+        print_success "Proxy unificado ativo nas portas 80 (sem SSL) e 443 (com SSL)."
     else
-        print_warning "Não foi possível ativar proxy automático na porta 443."
+        print_warning "Falha ao ativar proxy unificado."
     fi
 
     sudo mkdir -p "$(dirname "$QUICK_SETUP_ASKED_MARKER")"
@@ -3850,6 +3961,11 @@ EOF
     sudo sysctl --system >/dev/null 2>&1 || true
 }
 
+if [[ "$1" == "--migrate" ]]; then
+    migrate_legacy_services_to_unified || true
+    exit 0
+fi
+
 load_language
 
 if [ "$EUID" -ne 0 ]; then
@@ -3859,6 +3975,8 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 ensure_system_tuning || true
+
+migrate_legacy_services_to_unified || true
 
 check_token_on_startup
 

@@ -951,9 +951,9 @@ list_proxy_services() {
     return 0
   fi
 
-  systemctl list-units --type=service --all --no-legend 'proxy-*.service' 2>/dev/null \
+  systemctl list-units --type=service --all --no-legend 'proxy-*.service' 'vtproxy.service' 2>/dev/null \
     | awk '{print $1}' \
-    | grep -E '^proxy-[0-9]+\.service$' || true
+    | grep -E '^(proxy-[0-9]+\.service|vtproxy\.service)$' || true
 }
 
 list_all_proxy_services() {
@@ -977,7 +977,7 @@ list_all_proxy_services() {
       | grep -E '^proxy-[0-9]+\.service$' || true
   )
 
-  for service_file in /etc/systemd/system/proxy-*.service; do
+  for service_file in /etc/systemd/system/proxy-*.service /etc/systemd/system/vtproxy.service; do
     [[ -f "$service_file" ]] || continue
     service_name="$(basename "$service_file")"
     [[ " ${services[*]} " == *" $service_name "* ]] || services+=("$service_name")
@@ -1046,10 +1046,9 @@ stop_proxy_services() {
 restart_proxy_services() {
   local services=() service
 
-  if [[ "$MODE" == "update" || "$MODE" == "reinstall" ]]; then
+  # Se qualquer serviço proxy estava ativo antes, ou em modo update/reinstall, reinicia os serviços existentes atuais
+  if [[ "$MODE" == "update" || "$MODE" == "reinstall" || ${#ACTIVE_PROXY_SERVICES[@]} -gt 0 ]]; then
     read_nonempty_lines services < <(list_all_proxy_services)
-  elif [[ ${#ACTIVE_PROXY_SERVICES[@]} -gt 0 ]]; then
-    services=("${ACTIVE_PROXY_SERVICES[@]}")
   else
     return 0
   fi
@@ -1207,7 +1206,7 @@ sync_proxy_service_tokens() {
     fi
   done < <(find_service_files_by_exec 'ExecStart=.*(/usr/local/bin/proxy-server|/usr/local/bin/proxy)( |$)')
 
-  for service_file in /etc/systemd/system/proxy-*.service; do
+  for service_file in /etc/systemd/system/proxy-*.service /etc/systemd/system/vtproxy.service; do
     [[ -f "$service_file" ]] || continue
     if grep -q -- '--token=' "$service_file"; then
       safe_sed_inplace "$service_file" "s|--token=[^ ]+|--token=${safe_token}|g" || true
@@ -1215,9 +1214,41 @@ sync_proxy_service_tokens() {
   done
 }
 
+calculate_dynamic_gomemlimit() {
+  local total_ram_mb=0
+  if [[ -f /proc/meminfo ]]; then
+    local total_ram_kb
+    total_ram_kb=$(grep -E '^MemTotal:' /proc/meminfo 2>/dev/null | awk '{print $2}')
+    if [[ -n "$total_ram_kb" && "$total_ram_kb" =~ ^[0-9]+$ ]]; then
+      total_ram_mb=$(( total_ram_kb / 1024 ))
+    fi
+  fi
+  if (( total_ram_mb <= 0 )) && command -v free >/dev/null 2>&1; then
+    total_ram_mb=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')
+  fi
+
+  if (( total_ram_mb <= 0 )); then
+    echo "620MiB"
+    return 0
+  fi
+
+  if (( total_ram_mb <= 600 )); then
+    echo "280MiB"
+  elif (( total_ram_mb <= 1200 )); then
+    echo "620MiB"
+  elif (( total_ram_mb <= 2200 )); then
+    echo "1400MiB"
+  elif (( total_ram_mb <= 4500 )); then
+    echo "2800MiB"
+  else
+    local calculated=$(( total_ram_mb * 70 / 100 ))
+    echo "${calculated}MiB"
+  fi
+}
+
 ensure_service_limit_nofile() {
   local service_file
-  for service_file in /etc/systemd/system/proxy-*.service /etc/systemd/system/udpgw-*.service /etc/systemd/system/udpgw.service; do
+  for service_file in /etc/systemd/system/proxy-*.service /etc/systemd/system/vtproxy.service /etc/systemd/system/udpgw-*.service /etc/systemd/system/udpgw.service; do
     [[ -f "$service_file" ]] || continue
     if grep -qE '^[[:space:]]*LimitNOFILE=' "$service_file"; then
       safe_sed_inplace "$service_file" -e 's/^[[:space:]]*LimitNOFILE=.*/LimitNOFILE=65536/' || true
@@ -1226,12 +1257,171 @@ ensure_service_limit_nofile() {
     fi
   done
 
-  for service_file in /etc/systemd/system/proxy-*.service; do
+  local gomemlimit
+  gomemlimit=$(calculate_dynamic_gomemlimit 2>/dev/null || echo "620MiB")
+
+  for service_file in /etc/systemd/system/proxy-*.service /etc/systemd/system/vtproxy.service; do
     [[ -f "$service_file" ]] || continue
-    if ! grep -q 'GOMEMLIMIT' "$service_file"; then
-      safe_sed_inplace "$service_file" -e '/^\[Service\]/a Environment="GOMEMLIMIT=750MiB"\nEnvironment="GOGC=50"' || true
+    if grep -q 'GOMEMLIMIT' "$service_file"; then
+      safe_sed_inplace "$service_file" -e 's/Environment="GOMEMLIMIT=[^"]*"/Environment="GOMEMLIMIT='"${gomemlimit}"'"/' || true
+      safe_sed_inplace "$service_file" -e 's/Environment="GOGC=[^"]*"/Environment="GOGC=100"/' || true
+    else
+      safe_sed_inplace "$service_file" -e '/^\[Service\]/a Environment="GOMEMLIMIT='"${gomemlimit}"'"\nEnvironment="GOGC=100"' || true
     fi
   done
+}
+
+extract_or_ensure_proxy_conf() {
+  local port="$1"
+  local service_file="$2"
+  local conf_file="/etc/proxy/conf.d/proxy-${port}.conf"
+
+  run_privileged mkdir -p "/etc/proxy/conf.d" "/var/log/proxy" 2>/dev/null || true
+
+  if [[ -f "$conf_file" ]]; then
+    if grep -q '^ENABLED=' "$conf_file"; then
+      safe_sed_inplace "$conf_file" -e 's/^ENABLED=.*/ENABLED=true/' || true
+    else
+      echo "ENABLED=true" | run_privileged tee -a "$conf_file" >/dev/null || true
+    fi
+    return 0
+  fi
+
+  local exec_line=""
+  if [[ -f "$service_file" ]]; then
+    exec_line=$(grep -E '^ExecStart=' "$service_file" 2>/dev/null | head -n1 | sed 's/^ExecStart=//')
+  fi
+
+  local ssl="false" cert="" cert_internal="true" ssh_only="false"
+  local response="VTProxy" buffer="32768"
+
+  [[ "$exec_line" == *":ssl"* ]] && ssl="true"
+  if [[ "$exec_line" =~ --cert=([^ ]+) ]]; then
+    cert="${BASH_REMATCH[1]}"
+    cert_internal="false"
+  fi
+  [[ "$exec_line" == *"--ssh-only"* ]] && ssh_only="true"
+  if [[ "$exec_line" =~ --response=([^ ]+) ]]; then
+    response="${BASH_REMATCH[1]}"
+  fi
+  if [[ "$exec_line" =~ --buffer-size=([0-9]+) ]]; then
+    buffer="${BASH_REMATCH[1]}"
+  fi
+
+  cat <<EOF | run_privileged tee "$conf_file" >/dev/null
+PORT=$port
+ENABLED=true
+SSL_ENABLED=$ssl
+SSL_CERT_PATH=$cert
+CERT_INTERNAL=$cert_internal
+SSH_ONLY=$ssh_only
+HTTP_RESPONSE=$response
+BUFFER_SIZE=$buffer
+DOMAIN=false
+MAX_CONNECTIONS=0
+WRITE_TIMEOUT=60
+IDLE_TIMEOUT=120
+LOG_LEVEL=info
+SSH_PORT=22
+OPENVPN_PORT=1194
+V2RAY_PORT=1080
+DISPLAY_BANNER=true
+EOF
+}
+
+generate_standalone_unified_service() {
+  local token proxy_bin port_args=() f port
+  token="$PROXY_TOKEN"
+  [[ -z "$token" ]] && token=$(load_saved_proxy_token || true)
+  [[ -z "$token" ]] && return 0
+
+  proxy_bin="/usr/local/bin/proxy-server"
+  [[ -x "$proxy_bin" ]] || proxy_bin="/usr/local/bin/proxy"
+  [[ -x "$proxy_bin" ]] || return 0
+
+  for f in /etc/proxy/conf.d/proxy-*.conf; do
+    [[ -f "$f" ]] || continue
+    port=$(basename "$f" .conf | sed -n 's/^proxy-\([0-9]\+\)$/\1/p')
+    [[ -z "$port" ]] && continue
+
+    local enabled ssl
+    enabled=$(grep '^ENABLED=' "$f" 2>/dev/null | cut -d= -f2 || echo "true")
+    [[ "$enabled" == "false" ]] && continue
+    ssl=$(grep '^SSL_ENABLED=' "$f" 2>/dev/null | cut -d= -f2 || echo "false")
+
+    if [[ "$ssl" == "true" ]]; then
+      port_args+=("--port=$port:ssl")
+    else
+      port_args+=("--port=$port")
+    fi
+  done
+
+  [[ ${#port_args[@]} -eq 0 ]] && return 0
+
+  local gomemlimit
+  gomemlimit=$(calculate_dynamic_gomemlimit 2>/dev/null || echo "620MiB")
+
+  cat <<EOF | run_privileged tee "/etc/systemd/system/vtproxy.service" >/dev/null
+[Unit]
+Description=VTProxy Unified Proxy Server
+After=network.target
+
+[Service]
+Environment="GOMEMLIMIT=${gomemlimit}"
+Environment="GOGC=100"
+ExecStart=$proxy_bin --token=$token ${port_args[*]} --buffer-size=32768 --response=VTProxy --log-file=/var/log/proxy/proxy.log --log-level=info --ssh-port=22 --openvpn-port=1194 --v2ray-port=1080 --max-connections=0 --write-timeout=60 --idle-timeout=120 --cert-internal=true
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  run_privileged systemctl daemon-reload || true
+  run_privileged systemctl enable vtproxy.service 2>/dev/null || true
+}
+
+migrate_legacy_proxy_services() {
+  if ! has_systemd; then
+    return 0
+  fi
+
+  local legacy_files=() service_file port
+  for service_file in /etc/systemd/system/proxy-*.service; do
+    [[ -f "$service_file" ]] || continue
+    port=$(basename "$service_file" .service | sed -n 's/^proxy-\([0-9]\+\)$/\1/p')
+    [[ -n "$port" ]] && legacy_files+=("$service_file")
+  done
+
+  [[ ${#legacy_files[@]} -eq 0 ]] && return 0
+
+  log_info "Detectados ${#legacy_files[@]} serviço(s) proxy legados (separados por porta)."
+  log_info "Iniciando unificação inteligente para 'vtproxy.service'..."
+
+  for service_file in "${legacy_files[@]}"; do
+    port=$(basename "$service_file" .service | sed -n 's/^proxy-\([0-9]\+\)$/\1/p')
+    [[ -z "$port" ]] && continue
+
+    extract_or_ensure_proxy_conf "$port" "$service_file"
+
+    log_info "Desativando e removendo serviço legado: proxy-$port.service"
+    run_privileged systemctl stop "proxy-$port.service" 2>/dev/null || true
+    run_privileged systemctl disable "proxy-$port.service" 2>/dev/null || true
+    run_privileged rm -f "$service_file"
+  done
+
+  run_privileged systemctl daemon-reload || true
+
+  if [[ -x "/usr/local/bin/vt" ]]; then
+    /usr/local/bin/vt --migrate >/dev/null 2>&1 || true
+  fi
+
+  if [[ ! -f "/etc/systemd/system/vtproxy.service" ]]; then
+    generate_standalone_unified_service
+  fi
+
+  log_info "Migração concluída com sucesso! Portas unificadas no serviço 'vtproxy.service'."
 }
 
 refresh_existing_services() {
@@ -1243,6 +1433,9 @@ refresh_existing_services() {
 
   log_info "Atualizando serviços systemd existentes..."
 
+  # Migração inteligente de serviços legados proxy-*.service para vtproxy.service
+  migrate_legacy_proxy_services
+
   proxy_token="$PROXY_TOKEN"
   if [[ -z "$proxy_token" ]]; then
     proxy_token=$(load_saved_proxy_token || true)
@@ -1253,6 +1446,10 @@ refresh_existing_services() {
   [[ -n "$proxy_token" ]] && sync_proxy_service_tokens "$proxy_token"
   sync_udpgw_service
   ensure_service_limit_nofile
+
+  if [[ -x "/usr/local/bin/vt" ]]; then
+    /usr/local/bin/vt --migrate >/dev/null 2>&1 || true
+  fi
 
   if has_systemd; then
     run_privileged systemctl daemon-reload || log_warn "Falha ao recarregar systemd"
