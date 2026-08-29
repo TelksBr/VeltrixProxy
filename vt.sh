@@ -118,11 +118,11 @@ I18N_PT[lang_saved]="Idioma alterado para %s!"
 
 I18N_PT[proxy_menu_title]="%s — PROXY"
 I18N_PT[proxy_menu_ports]="Portas: %s"
-I18N_PT[proxy_opt_open]="Abrir / criar porta"
+I18N_PT[proxy_opt_open]="Abrir / criar nova porta"
 I18N_PT[proxy_opt_start]="Iniciar porta configurada"
 I18N_PT[proxy_opt_stop]="Parar porta (mantém config)"
-I18N_PT[proxy_opt_restart]="Reiniciar porta"
-I18N_PT[proxy_opt_edit]="Editar porta"
+I18N_PT[proxy_opt_restart]="Reiniciar serviço proxy"
+I18N_PT[proxy_opt_edit]="Editar / Alternar porta (SSL, Pausar/Ativar)"
 I18N_PT[proxy_opt_adv]="Opções avançadas globais (buffer/flags)"
 I18N_PT[proxy_opt_http]="Alterar resposta HTTP global"
 I18N_PT[proxy_opt_details]="Detalhes do serviço unificado"
@@ -1958,7 +1958,7 @@ edit_proxy_service() {
     fi
 
     echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
-    echo -e "${BLUE}Digite a porta para editar (SSL / Certificado):${RESET}"
+    echo -e "${BLUE}Digite a porta para editar:${RESET}"
     read -rp "> " port
     port=$(echo "$port" | tr -d '[:space:]')
 
@@ -1968,41 +1968,60 @@ edit_proxy_service() {
         return
     fi
 
-    local ssl_enabled ssl_cert_path cert_internal
+    local ssl_enabled ssl_cert_path cert_internal enabled
     ssl_enabled=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
     ssl_cert_path=$(get_proxy_conf_value "$port" "SSL_CERT_PATH" "")
     cert_internal=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
+    enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
 
-    echo -e "${BLUE}Configuracoes da porta $port:${RESET}"
-    echo -e "  SSL Habilitado: ${CYAN}$ssl_enabled${RESET}"
-    echo -e "  Certificado Interno Cloudflare: ${CYAN}$cert_internal${RESET}"
-    [[ -n "$ssl_cert_path" ]] && echo -e "  Caminho do Certificado: ${CYAN}$ssl_cert_path${RESET}"
+    echo -e "${BLUE}Configuracoes atuais da porta $port:${RESET}"
+    echo -e "  1 - Status da Porta: ${CYAN}$(if [[ "$enabled" == "true" ]]; then echo "Ativada"; else echo "Pausada"; fi)${RESET}"
+    echo -e "  2 - SSL Habilitado: ${CYAN}$ssl_enabled${RESET}"
+    echo -e "  3 - Certificado Interno Cloudflare: ${CYAN}$cert_internal${RESET}"
+    [[ -n "$ssl_cert_path" ]] && echo -e "  4 - Caminho do Certificado: ${CYAN}$ssl_cert_path${RESET}"
     echo
 
-    if confirm_action "Deseja alterar as opcoes de SSL da porta $port?" "n"; then
-        if confirm_action "Habilitar SSL na porta $port?" "$ssl_enabled"; then
-            set_proxy_conf_key "$port" "SSL_ENABLED" "true"
-            if confirm_action "Usar certificado interno seguro Cloudflare (--cert-internal)?" "s"; then
+    echo -e "${BLUE}Escolha o que deseja alterar na porta $port:${RESET}"
+    echo -e "  1 - Alternar Status (Ativar / Pausar)"
+    echo -e "  2 - Alterar opcoes de SSL / Certificado"
+    echo -e "  0 - Voltar"
+    read -rp "> " edit_choice
+
+    case "$edit_choice" in
+        1)
+            if [[ "$enabled" == "true" ]]; then
+                print_info "Pausando porta $port..."
+                set_proxy_conf_key "$port" "ENABLED" "false"
+            else
+                print_info "Ativando porta $port..."
+                set_proxy_conf_key "$port" "ENABLED" "true"
+            fi
+            apply_unified_proxy_service "true"
+            print_success "Status da porta $port atualizado com sucesso."
+            ;;
+        2)
+            if confirm_action "Habilitar SSL na porta $port?" "$ssl_enabled"; then
+                set_proxy_conf_key "$port" "SSL_ENABLED" "true"
+                if confirm_action "Usar certificado interno seguro Cloudflare (--cert-internal)?" "s"; then
+                    set_proxy_conf_key "$port" "CERT_INTERNAL" "true"
+                    set_proxy_conf_key "$port" "SSL_CERT_PATH" ""
+                else
+                    set_proxy_conf_key "$port" "CERT_INTERNAL" "false"
+                    echo -e "${BLUE}Caminho do certificado SSL:${RESET}"
+                    read -rp "> " ssl_cert_path
+                    set_proxy_conf_key "$port" "SSL_CERT_PATH" "$ssl_cert_path"
+                fi
+            else
+                set_proxy_conf_key "$port" "SSL_ENABLED" "false"
                 set_proxy_conf_key "$port" "CERT_INTERNAL" "true"
                 set_proxy_conf_key "$port" "SSL_CERT_PATH" ""
-            else
-                set_proxy_conf_key "$port" "CERT_INTERNAL" "false"
-                echo -e "${BLUE}Caminho do certificado SSL:${RESET}"
-                read -rp "> " ssl_cert_path
-                set_proxy_conf_key "$port" "SSL_CERT_PATH" "$ssl_cert_path"
             fi
-        else
-            set_proxy_conf_key "$port" "SSL_ENABLED" "false"
-            set_proxy_conf_key "$port" "CERT_INTERNAL" "true"
-            set_proxy_conf_key "$port" "SSL_CERT_PATH" ""
-        fi
-
-        if apply_unified_proxy_service "true"; then
-            print_success "Configuracoes da porta $port atualizadas no servico unificado."
-        else
-            print_error "Falha ao aplicar alteracoes na porta $port."
-        fi
-    fi
+            apply_unified_proxy_service "true"
+            print_success "Opcoes de SSL da porta $port atualizadas."
+            ;;
+        0) return 0 ;;
+        *) print_error "Opcao invalida." ;;
+    esac
     pause
 }
 
@@ -2093,6 +2112,32 @@ restart_proxy_service() {
     pause
 }
 
+toggle_unified_proxy_service() {
+    print_header
+
+    if systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null; then
+        print_warning "O servico unificado de proxy ($PROXY_UNIFIED_SERVICE_NAME) esta ATIVO."
+        if confirm_action "Deseja PARAR o servico unificado de proxy?" "n"; then
+            print_info "Parando servico unificado..."
+            sudo systemctl stop "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null || true
+            print_success "Servico unificado de proxy parado."
+        fi
+    else
+        print_info "O servico unificado de proxy ($PROXY_UNIFIED_SERVICE_NAME) esta PARADO."
+        if confirm_action "Deseja INICIAR o servico unificado de proxy?" "s"; then
+            print_info "Iniciando servico unificado..."
+            if apply_unified_proxy_service "true"; then
+                print_success "Servico unificado de proxy iniciado com sucesso!"
+                show_proxy_execstart_line
+            else
+                print_error "Falha ao iniciar servico unificado de proxy."
+            fi
+        fi
+    fi
+    pause
+}
+
+
 show_proxy_logs() {
     print_header
     local log_file="$PROXY_LOG_DIR/proxy.log"
@@ -2123,17 +2168,16 @@ connection_menu() {
         print_box_divider
         
         local menu_items=(
-            "1 • $(t proxy_opt_open)"
-            "2 • $(t proxy_opt_start)"
-            "3 • $(t proxy_opt_stop)"
-            "4 • $(t proxy_opt_restart)"
-            "5 • $(t proxy_opt_edit)"
-            "6 • $(t proxy_opt_adv)"
-            "7 • $(t proxy_opt_http)"
-            "8 • $(t proxy_opt_details)"
-            "9 • $(t proxy_opt_logs)"
-            "A • $(t proxy_opt_remove)"
-            "0 • $(t proxy_opt_back)"
+            "1 — $(t proxy_opt_open)"
+            "2 — $(t proxy_opt_edit)"
+            "3 — $(t proxy_opt_remove)"
+            "4 — $(t proxy_opt_restart)"
+            "5 — Parar / Iniciar serviço proxy unificado"
+            "6 — $(t proxy_opt_adv)"
+            "7 — $(t proxy_opt_http)"
+            "8 — $(t proxy_opt_details)"
+            "9 — $(t proxy_opt_logs)"
+            "0 — $(t proxy_opt_back)"
         )
         
         for item in "${menu_items[@]}"; do
@@ -2148,19 +2192,18 @@ connection_menu() {
         echo
         
         local choice
-        read -rp "$(echo -e "${BLUE}$(t prompt_select_option "0-9/A"):${RESET} ")" choice
+        read -rp "$(echo -e "${BLUE}$(t prompt_select_option "0-9"):${RESET} ")" choice
         
         case "$choice" in
             1) start_proxy_service ;;
-            2) start_configured_proxy_service ;;
-            3) pause_proxy_service ;;
+            2) edit_proxy_service ;;
+            3) remove_proxy_service ;;
             4) restart_proxy_service ;;
-            5) edit_proxy_service ;;
+            5) toggle_unified_proxy_service ;;
             6) edit_proxy_advanced_service ;;
             7) change_proxy_http_response ;;
             8) show_proxy_port_details ;;
             9) show_proxy_logs ;;
-            a|A) remove_proxy_service ;;
             0) return 0 ;;
             *) 
                 print_error "$(t invalid_option "$choice")"
