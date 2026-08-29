@@ -123,9 +123,9 @@ I18N_PT[proxy_opt_start]="Iniciar porta configurada"
 I18N_PT[proxy_opt_stop]="Parar porta (mantém config)"
 I18N_PT[proxy_opt_restart]="Reiniciar porta"
 I18N_PT[proxy_opt_edit]="Editar porta"
-I18N_PT[proxy_opt_adv]="Opções avançadas (buffer/flags)"
-I18N_PT[proxy_opt_http]="Alterar resposta HTTP"
-I18N_PT[proxy_opt_details]="Detalhes / ExecStart"
+I18N_PT[proxy_opt_adv]="Opções avançadas globais (buffer/flags)"
+I18N_PT[proxy_opt_http]="Alterar resposta HTTP global"
+I18N_PT[proxy_opt_details]="Detalhes do serviço unificado"
 I18N_PT[proxy_opt_logs]="Ver log da porta"
 I18N_PT[proxy_opt_remove]="Remover porta"
 I18N_PT[proxy_opt_back]="Voltar ao Menu Inicial"
@@ -813,6 +813,27 @@ list_configured_proxy_ports() {
 
     printf '%s\n' "${ports[@]}" | sort -nu | paste -sd, - 2>/dev/null || true
 }
+
+get_global_proxy_setting() {
+    local key="$1"
+    local default_val="$2"
+    local configured_ports port val
+
+    configured_ports=$(list_configured_proxy_ports)
+    if [[ -n "$configured_ports" ]]; then
+        IFS=',' read -ra port_array <<< "$configured_ports"
+        for port in "${port_array[@]}"; do
+            [[ -z "$port" ]] && continue
+            val=$(get_proxy_conf_value "$port" "$key" "")
+            if [[ -n "$val" ]]; then
+                echo "$val"
+                return 0
+            fi
+        done
+    fi
+    echo "$default_val"
+}
+
 
 ensure_proxy_dirs_quiet() {
     sudo mkdir -p "$PROXY_DIR" "$PROXY_CONFIG_DIR" "$PROXY_LOG_DIR" 2>/dev/null || true
@@ -1655,75 +1676,88 @@ apply_adv_globals_to_port() {
 edit_proxy_advanced_service() {
     print_header
 
-    local configured_ports
-    configured_ports=$(list_configured_proxy_ports)
-    if [[ -z "$configured_ports" ]]; then
-        print_error "Nenhuma porta configurada. Abra uma porta antes."
-        pause
-        return
-    fi
+    # Carrega as configuracoes globais do motor proxy
+    local buffer_size max_connections write_timeout idle_timeout log_level ssh_port openvpn_port v2ray_port http_response ssh_only_flag ssl_enabled display_banner cert_internal ssl_cert_path
+    buffer_size=$(get_global_proxy_setting "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
+    max_connections=$(get_global_proxy_setting "MAX_CONNECTIONS" "$DEFAULT_MAX_CONNECTIONS")
+    write_timeout=$(get_global_proxy_setting "WRITE_TIMEOUT" "$DEFAULT_WRITE_TIMEOUT")
+    idle_timeout=$(get_global_proxy_setting "IDLE_TIMEOUT" "$DEFAULT_IDLE_TIMEOUT")
+    log_level=$(get_global_proxy_setting "LOG_LEVEL" "info")
+    ssh_port=$(get_global_proxy_setting "SSH_PORT" "22")
+    openvpn_port=$(get_global_proxy_setting "OPENVPN_PORT" "1194")
+    v2ray_port=$(get_global_proxy_setting "V2RAY_PORT" "1080")
+    http_response=$(get_global_proxy_setting "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
+    ssh_only_flag=$(get_global_proxy_setting "SSH_ONLY" "false")
+    display_banner=$(get_global_proxy_setting "DISPLAY_BANNER" "true")
+    cert_internal=$(get_global_proxy_setting "CERT_INTERNAL" "true")
+    ssl_cert_path=$(get_global_proxy_setting "SSL_CERT_PATH" "")
+    ssl_enabled=$(get_global_proxy_setting "SSL_ENABLED" "false")
 
-    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
-    echo -e "${BLUE}Digite a porta para opções avançadas:${RESET}"
-    read -rp "> " port
-    port=$(echo "$port" | tr -d '[:space:]')
+    init_adv_defaults "$buffer_size" "$max_connections" "$write_timeout" "$idle_timeout" "$log_level" "$ssh_port" "$openvpn_port" "$v2ray_port" "false" "$display_banner" "$cert_internal" "$ssl_cert_path" "$http_response" "$ssh_only_flag" "$ssl_enabled"
 
-    if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
-        print_error "Porta inválida ou não configurada."
-        pause
-        return
-    fi
-
-    load_adv_from_port "$port"
-    print_info "Editando opções avançadas da porta $port (inclui buffer)."
     prompt_proxy_advanced_options
-    if [[ "${ADV_APPLIED:-0}" != "1" ]]; then
-        apply_adv_globals_to_port "$port"
+
+    # Aplica as novas opcoes globais a todas as portas configuradas
+    local configured_ports port
+    configured_ports=$(list_configured_proxy_ports)
+    if [[ -n "$configured_ports" ]]; then
+        IFS=',' read -ra port_array <<< "$configured_ports"
+        for port in "${port_array[@]}"; do
+            [[ -z "$port" ]] && continue
+            set_proxy_conf_key "$port" "BUFFER_SIZE" "$ADV_BUFFER_SIZE"
+            set_proxy_conf_key "$port" "MAX_CONNECTIONS" "$ADV_MAX_CONNECTIONS"
+            set_proxy_conf_key "$port" "WRITE_TIMEOUT" "$ADV_WRITE_TIMEOUT"
+            set_proxy_conf_key "$port" "IDLE_TIMEOUT" "$ADV_IDLE_TIMEOUT"
+            set_proxy_conf_key "$port" "LOG_LEVEL" "$ADV_LOG_LEVEL"
+            set_proxy_conf_key "$port" "SSH_PORT" "$ADV_SSH_PORT"
+            set_proxy_conf_key "$port" "OPENVPN_PORT" "$ADV_OPENVPN_PORT"
+            set_proxy_conf_key "$port" "V2RAY_PORT" "$ADV_V2RAY_PORT"
+            set_proxy_conf_key "$port" "HTTP_RESPONSE" "$ADV_HTTP_RESPONSE"
+            set_proxy_conf_key "$port" "SSH_ONLY" "$ADV_SSH_ONLY"
+            set_proxy_conf_key "$port" "DISPLAY_BANNER" "$ADV_DISPLAY_BANNER"
+        done
     fi
+
+    if apply_unified_proxy_service "true"; then
+        print_success "Opcoes avancadas globais aplicadas ao servico unificado."
+        show_proxy_execstart_line
+    else
+        print_error "Falha ao aplicar opcoes avancadas."
+    fi
+    pause
 }
 
 change_proxy_http_response() {
     print_header
 
-    local configured_ports
-    configured_ports=$(list_configured_proxy_ports)
-    if [[ -z "$configured_ports" ]]; then
-        print_error "Nenhuma porta proxy configurada."
-        pause
-        return
-    fi
-
-    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
-    echo -e "${BLUE}Digite a porta para alterar a resposta HTTP (--response):${RESET}"
-    read -rp "> " port
-    port=$(echo "$port" | tr -d '[:space:]')
-
-    if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
-        print_error "Porta inválida ou não configurada."
-        pause
-        return
-    fi
-
-    migrate_proxy_conf_from_unit_if_needed "$port" || true
     local current_response
-    current_response=$(get_proxy_conf_value "$port" "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
+    current_response=$(get_global_proxy_setting "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
 
-    echo -e "${BLUE}Resposta atual: ${GREEN}$current_response${RESET}"
+    echo -e "${BLUE}Resposta HTTP atual do motor proxy: ${GREEN}$current_response${RESET}"
     local new_response
-    new_response=$(prompt_with_default "Nova resposta HTTP" "$current_response")
+    new_response=$(prompt_with_default "Nova resposta HTTP (--response)" "$current_response")
     new_response=$(echo "$new_response" | tr -d '[:space:]')
 
     if [[ -z "$new_response" ]]; then
-        print_error "Resposta não pode ser vazia."
+        print_error "Resposta nao pode ser vazia."
         pause
         return
     fi
 
-    set_proxy_conf_key "$port" "HTTP_RESPONSE" "$new_response"
-    if apply_proxy_service "$port" "true"; then
-        print_success "Resposta HTTP da porta $port atualizada para '$new_response'."
+    local configured_ports port
+    configured_ports=$(list_configured_proxy_ports)
+    if [[ -n "$configured_ports" ]]; then
+        IFS=',' read -ra port_array <<< "$configured_ports"
+        for port in "${port_array[@]}"; do
+            [[ -z "$port" ]] && continue
+            set_proxy_conf_key "$port" "HTTP_RESPONSE" "$new_response"
+        done
+    fi
+
+    if apply_unified_proxy_service "true"; then
+        print_success "Resposta HTTP global do proxy atualizada para '$new_response'."
     else
-        print_error "Falha ao aplicar alteração na porta $port."
+        print_error "Falha ao aplicar alteracao de resposta HTTP."
     fi
     pause
 }
@@ -1747,7 +1781,7 @@ start_proxy_service() {
     fi
 
     if is_proxy_service_configured "$port"; then
-        if ! confirm_action "Porta $port já configurada. Sobrescrever?" "n"; then
+        if ! confirm_action "Porta $port ja configurada. Sobrescrever?" "n"; then
             pause
             return
         fi
@@ -1757,9 +1791,9 @@ start_proxy_service() {
     local ssl_cert_path=""
     local cert_internal="true"
     
-    if confirm_action "Deseja habilitar SSL?" "n"; then
+    if confirm_action "Deseja habilitar SSL nesta porta?" "n"; then
         ssl_enabled="true"
-        if confirm_action "Usar certificado interno (--cert-internal)?" "s"; then
+        if confirm_action "Usar certificado interno seguro Cloudflare (--cert-internal)?" "s"; then
             cert_internal="true"
         else
             cert_internal="false"
@@ -1768,60 +1802,26 @@ start_proxy_service() {
         fi
     fi
     
-    local http_response
-    http_response=$(prompt_with_default "Resposta HTTP (--response)" "$DEFAULT_HTTP_RESPONSE")
-    
-    local ssh_only_flag="false"
-    if confirm_action "Habilitar modo somente SSH (--ssh-only)?" "n"; then
-        ssh_only_flag="true"
-    fi
+    # Herda automaticamente as configuracoes globais do motor proxy
+    local http_response buffer_size ssh_only_flag max_connections write_timeout idle_timeout log_level ssh_port openvpn_port v2ray_port display_banner
+    http_response=$(get_global_proxy_setting "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
+    buffer_size=$(get_global_proxy_setting "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
+    ssh_only_flag=$(get_global_proxy_setting "SSH_ONLY" "false")
+    max_connections=$(get_global_proxy_setting "MAX_CONNECTIONS" "$DEFAULT_MAX_CONNECTIONS")
+    write_timeout=$(get_global_proxy_setting "WRITE_TIMEOUT" "$DEFAULT_WRITE_TIMEOUT")
+    idle_timeout=$(get_global_proxy_setting "IDLE_TIMEOUT" "$DEFAULT_IDLE_TIMEOUT")
+    log_level=$(get_global_proxy_setting "LOG_LEVEL" "info")
+    ssh_port=$(get_global_proxy_setting "SSH_PORT" "22")
+    openvpn_port=$(get_global_proxy_setting "OPENVPN_PORT" "1194")
+    v2ray_port=$(get_global_proxy_setting "V2RAY_PORT" "1080")
+    display_banner=$(get_global_proxy_setting "DISPLAY_BANNER" "true")
 
-    local buffer_size
-    buffer_size=$(prompt_with_default "Buffer size (--buffer-size, bytes)" "$DEFAULT_BUFFER_SIZE")
-    if ! [[ "$buffer_size" =~ ^[0-9]+$ ]] || [[ "$buffer_size" -lt 1024 ]]; then
-        print_warning "Buffer inválido; usando $DEFAULT_BUFFER_SIZE"
-        buffer_size="$DEFAULT_BUFFER_SIZE"
-    fi
-
-    local domain_flag="false"
-    local max_connections="0"
-    local write_timeout="$DEFAULT_WRITE_TIMEOUT"
-    local idle_timeout="$DEFAULT_IDLE_TIMEOUT"
-    local log_level="info"
-    local ssh_port="22"
-    local openvpn_port="1194"
-    local v2ray_port="1080"
-    local display_banner="true"
-
-    init_adv_defaults "$buffer_size" "0" "$write_timeout" "$idle_timeout" "info" "22" "1194" "1080" "false" "true" "$cert_internal" "$ssl_cert_path" "$http_response" "$ssh_only_flag" "$ssl_enabled"
-    if confirm_action "Abrir submenu de opções avançadas (timeouts, conexões, logs...)?" "n"; then
-        prompt_proxy_advanced_options
-        buffer_size="$ADV_BUFFER_SIZE"
-        max_connections="$ADV_MAX_CONNECTIONS"
-        write_timeout="$ADV_WRITE_TIMEOUT"
-        idle_timeout="$ADV_IDLE_TIMEOUT"
-        log_level="$ADV_LOG_LEVEL"
-        ssh_port="$ADV_SSH_PORT"
-        openvpn_port="$ADV_OPENVPN_PORT"
-        v2ray_port="$ADV_V2RAY_PORT"
-        http_response="$ADV_HTTP_RESPONSE"
-        ssh_only_flag="$ADV_SSH_ONLY"
-        ssl_enabled="$ADV_SSL_ENABLED"
-        domain_flag="false"
-        display_banner="$ADV_DISPLAY_BANNER"
-        cert_internal="$ADV_CERT_INTERNAL"
-        ssl_cert_path="$ADV_SSL_CERT_PATH"
-        if [[ "$cert_internal" == "false" && -n "$ssl_cert_path" ]]; then
-            ssl_enabled="true"
-        fi
-    fi
-    
-    print_info "Iniciando proxy na porta $port..."
+    print_info "Iniciando porta $port no serviço unificado..."
 
     local token
     token=$(load_proxy_token)
     if [[ -z "$token" ]]; then
-        print_error "Token proxy não configurado."
+        print_error "Token proxy nao configurado. Use Gerenciar Tokens no menu inicial."
         pause
         return
     fi
@@ -1832,14 +1832,14 @@ start_proxy_service() {
     fi
 
     write_proxy_conf "$port" "$ssl_enabled" "$ssl_cert_path" "$cert_internal" "$ssh_only_flag" \
-        "$http_response" "$buffer_size" "$domain_flag" "$max_connections" "$write_timeout" \
-        "$idle_timeout" "$log_level" "$ssh_port" "$openvpn_port" "$v2ray_port" "$display_banner"
+        "$http_response" "$buffer_size" "false" "$max_connections" "$write_timeout" \
+        "$idle_timeout" "$log_level" "$ssh_port" "$openvpn_port" "$v2ray_port" "$display_banner" "true"
 
     if apply_unified_proxy_service "true"; then
         print_success "Proxy unificado iniciado com sucesso contendo a porta $port!"
         show_proxy_execstart_line "$port"
     else
-        print_error "Falha ao iniciar proxy na porta $port"
+        print_error "Falha ao iniciar proxy unificado na porta $port"
     fi
     
     pause
@@ -1958,22 +1958,52 @@ edit_proxy_service() {
     fi
 
     echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
-    echo -e "${BLUE}Digite a porta para editar flags e opções:${RESET}"
+    echo -e "${BLUE}Digite a porta para editar (SSL / Certificado):${RESET}"
     read -rp "> " port
     port=$(echo "$port" | tr -d '[:space:]')
 
     if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
-        print_error "Porta inválida ou não configurada."
+        print_error "Porta invalida ou nao configurada."
         pause
         return
     fi
 
-    load_adv_from_port "$port"
-    print_info "Editando flags e opções da porta $port..."
-    prompt_proxy_advanced_options
-    if [[ "${ADV_APPLIED:-0}" != "1" ]]; then
-        apply_adv_globals_to_port "$port"
+    local ssl_enabled ssl_cert_path cert_internal
+    ssl_enabled=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
+    ssl_cert_path=$(get_proxy_conf_value "$port" "SSL_CERT_PATH" "")
+    cert_internal=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
+
+    echo -e "${BLUE}Configuracoes da porta $port:${RESET}"
+    echo -e "  SSL Habilitado: ${CYAN}$ssl_enabled${RESET}"
+    echo -e "  Certificado Interno Cloudflare: ${CYAN}$cert_internal${RESET}"
+    [[ -n "$ssl_cert_path" ]] && echo -e "  Caminho do Certificado: ${CYAN}$ssl_cert_path${RESET}"
+    echo
+
+    if confirm_action "Deseja alterar as opcoes de SSL da porta $port?" "n"; then
+        if confirm_action "Habilitar SSL na porta $port?" "$ssl_enabled"; then
+            set_proxy_conf_key "$port" "SSL_ENABLED" "true"
+            if confirm_action "Usar certificado interno seguro Cloudflare (--cert-internal)?" "s"; then
+                set_proxy_conf_key "$port" "CERT_INTERNAL" "true"
+                set_proxy_conf_key "$port" "SSL_CERT_PATH" ""
+            else
+                set_proxy_conf_key "$port" "CERT_INTERNAL" "false"
+                echo -e "${BLUE}Caminho do certificado SSL:${RESET}"
+                read -rp "> " ssl_cert_path
+                set_proxy_conf_key "$port" "SSL_CERT_PATH" "$ssl_cert_path"
+            fi
+        else
+            set_proxy_conf_key "$port" "SSL_ENABLED" "false"
+            set_proxy_conf_key "$port" "CERT_INTERNAL" "true"
+            set_proxy_conf_key "$port" "SSL_CERT_PATH" ""
+        fi
+
+        if apply_unified_proxy_service "true"; then
+            print_success "Configuracoes da porta $port atualizadas no servico unificado."
+        else
+            print_error "Falha ao aplicar alteracoes na porta $port."
+        fi
     fi
+    pause
 }
 
 show_proxy_port_details() {
