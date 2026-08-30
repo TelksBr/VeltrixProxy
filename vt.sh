@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="50"
+readonly MENU_REV="51"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly MENU_BIN="/usr/local/bin/vt"
@@ -901,6 +901,34 @@ get_global_proxy_setting() {
     local key="$1"
     local default_val="$2"
     local configured_ports port val
+
+    local exec_line flag_name match
+    exec_line=$(systemctl cat "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null | grep -E '^ExecStart=' | head -n1 | sed 's/^ExecStart=//' || true)
+    if [[ -n "$exec_line" ]]; then
+        case "$key" in
+            HTTP_RESPONSE) flag_name="--response" ;;
+            BUFFER_SIZE) flag_name="--buffer-size" ;;
+            MAX_CONNECTIONS) flag_name="--max-connections" ;;
+            WRITE_TIMEOUT) flag_name="--write-timeout" ;;
+            IDLE_TIMEOUT) flag_name="--idle-timeout" ;;
+            LOG_LEVEL) flag_name="--log-level" ;;
+            SSH_PORT) flag_name="--ssh-port" ;;
+            OPENVPN_PORT) flag_name="--openvpn-port" ;;
+            V2RAY_PORT) flag_name="--v2ray-port" ;;
+            SSH_ONLY) flag_name="--ssh-only" ;;
+            CERT_INTERNAL) flag_name="--cert-internal" ;;
+            DISPLAY_BANNER) flag_name="--display-banner" ;;
+            *) flag_name="" ;;
+        esac
+
+        if [[ -n "$flag_name" ]]; then
+            match=$(echo "$exec_line" | grep -oE "${flag_name}=[^ ]+" | cut -d'=' -f2 || true)
+            if [[ -n "$match" ]]; then
+                echo "$match"
+                return 0
+            fi
+        fi
+    fi
 
     configured_ports=$(list_configured_proxy_ports)
     if [[ -n "$configured_ports" ]]; then
