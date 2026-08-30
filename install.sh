@@ -13,8 +13,8 @@ BINARY_NAME="proxy-server"
 UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
-INSTALLER_REV="36"
-MENU_REV_EXPECTED="46"
+INSTALLER_REV="37"
+MENU_REV_EXPECTED="47"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 UDPGW_VERSION_FILE="/etc/udpgw-version"
@@ -40,6 +40,13 @@ MAX_VERSIONS=10
 PROXY_TOKEN=""
 INSTALL_IP=""
 SKIP_UDPGW=false
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
 
 STEP_TITLES=(
   "Privilégios de Root e Sudo"

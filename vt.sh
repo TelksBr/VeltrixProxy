@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="46"
+readonly MENU_REV="47"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly MENU_BIN="/usr/local/bin/vt"
