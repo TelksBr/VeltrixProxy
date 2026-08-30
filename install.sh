@@ -1,20 +1,25 @@
 #!/bin/bash
 set -euo pipefail
 
+RED="${RED:-\033[0;31m}"
+GREEN="${GREEN:-\033[0;32m}"
+YELLOW="${YELLOW:-\033[1;33m}"
+BLUE="${BLUE:-\033[0;34m}"
+CYAN="${CYAN:-\033[0;36m}"
+NC="${NC:-\033[0m}"
+
 REPO="TelksBr/VeltrixProxy"
 PROJECT_NAME="VTProxy"
 INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 MENU_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/vt.sh"
-# Artefato proxy no GitHub (padrão original): proxy-linux-amd64
 RELEASE_BINARY_PREFIX="proxy"
 UDPGW_REPO="${UDPGW_REPO:-TelksBr/VeltrixUPGW}"
-# Binário instalado (novo nome — não sobrescreve /usr/local/bin/proxy legado)
 BINARY_NAME="proxy-server"
 UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
-INSTALLER_REV="37"
-MENU_REV_EXPECTED="47"
+INSTALLER_REV="38"
+MENU_REV_EXPECTED="48"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 UDPGW_VERSION_FILE="/etc/udpgw-version"
@@ -41,12 +46,6 @@ PROXY_TOKEN=""
 INSTALL_IP=""
 SKIP_UDPGW=false
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
 
 STEP_TITLES=(
   "Privilégios de Root e Sudo"
@@ -228,17 +227,17 @@ parse_args() {
 }
 
 render_step_dashboard() {
-  [[ "$SKIP_HEADER" == true ]] && return 0
+  [[ "${SKIP_HEADER:-false}" == true ]] && return 0
 
   if [[ -t 1 ]]; then
     printf '\033[H'
   fi
 
-  local title="INSTALADOR & ATUALIZADOR ${PROJECT_NAME}"
-  echo -e "${BLUE}╔═════════════════════════════════════════════════════════╗${NC}"
-  printf "${BLUE}║${NC}%-57s${BLUE}║${NC}\n" "            ${title}            "
-  printf "${BLUE}║${NC}%-57s${BLUE}║${NC}\n" "     Repositório: ${REPO}  |  Modo: ${MODE}     "
-  echo -e "${BLUE}╠═════════════════════════════════════════════════════════╣${NC}"
+  local title="INSTALADOR & ATUALIZADOR ${PROJECT_NAME:-VTProxy}"
+  echo -e "${BLUE:-\033[0;34m}╔═════════════════════════════════════════════════════════╗${NC:-\033[0m}"
+  printf "${BLUE:-\033[0;34m}║${NC:-\033[0m}%-57s${BLUE:-\033[0;34m}║${NC:-\033[0m}\n" "            ${title}            "
+  printf "${BLUE:-\033[0;34m}║${NC:-\033[0m}%-57s${BLUE:-\033[0;34m}║${NC:-\033[0m}\n" "     Repositório: ${REPO:-}  |  Modo: ${MODE:-install}     "
+  echo -e "${BLUE:-\033[0;34m}╠═════════════════════════════════════════════════════════╣${NC:-\033[0m}"
 
   for i in "${!STEP_TITLES[@]}"; do
     local st_title="${STEP_TITLES[$i]}"
@@ -247,11 +246,11 @@ render_step_dashboard() {
     local tag=""
 
     case "$st_status" in
-    0) tag="${BLUE}[  ]${NC}" ;;
-    1) tag="${YELLOW}[➜ ]${NC}" ;;
-    2) tag="${GREEN}[OK]${NC}" ;;
-    3) tag="${YELLOW}[!!]${NC}" ;;
-    4) tag="${RED}[X ]${NC}" ;;
+    0) tag="${BLUE:-\033[0;34m}[  ]${NC:-\033[0m}" ;;
+    1) tag="${YELLOW:-\033[1;33m}[➜ ]${NC:-\033[0m}" ;;
+    2) tag="${GREEN:-\033[0;32m}[OK]${NC:-\033[0m}" ;;
+    3) tag="${YELLOW:-\033[1;33m}[!!]${NC:-\033[0m}" ;;
+    4) tag="${RED:-\033[0;31m}[X ]${NC:-\033[0m}" ;;
     esac
 
     local line_str="${st_title}"
@@ -263,10 +262,10 @@ render_step_dashboard() {
       line_str="${line_str:0:45}..."
     fi
 
-    printf "${BLUE}║${NC}  %b %-48s ${BLUE}║${NC}\n" "$tag" "$line_str"
+    printf "${BLUE:-\033[0;34m}║${NC:-\033[0m}  %b %-48s ${BLUE:-\033[0;34m}║${NC:-\033[0m}\n" "$tag" "$line_str"
   done
 
-  echo -e "${BLUE}╚═════════════════════════════════════════════════════════╝${NC}"
+  echo -e "${BLUE:-\033[0;34m}╚═════════════════════════════════════════════════════════╝${NC:-\033[0m}"
   echo
 }
 
