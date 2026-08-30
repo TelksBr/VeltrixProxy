@@ -661,7 +661,7 @@ print_status() {
 
     local udpgw_ports
     udpgw_ports=$(format_udpgw_ports_status)
-    if [[ "$udpgw_ports" == *":ON"* ]] || systemctl is-active --quiet "$UDPGW_SERVICE_NAME" 2>/dev/null; then
+    if is_udpgw_active; then
         udpgw_status="$(mark_online)"
     else
         udpgw_status="$(mark_offline)"
