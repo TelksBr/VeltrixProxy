@@ -41,17 +41,54 @@ PROXY_TOKEN=""
 INSTALL_IP=""
 SKIP_UDPGW=false
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+STEP_TITLES=(
+  "Privilégios de Root e Sudo"
+  "Dependências (curl, checksum, iptables)"
+  "Sincronização de Relógio do Sistema (NTP)"
+  "Plataforma e Releases do GitHub"
+  "Baixando e Instalando Binários (proxy & udpgw)"
+  "Otimizações de Kernel, BBR e Descritores"
+  "Instalando Script do Menu (vt.sh)"
+  "Sincronizando e Reiniciando Serviços Systemd"
+)
 
-log_info() { echo -e "${CYAN}👉 $1${NC}"; }
-log_success() { echo -e "${GREEN}✅ $1${NC}"; }
-log_warn() { echo -e "${YELLOW}⚠️  $1${NC}"; }
-log_error() { echo -e "${RED}❌ $1${NC}" >&2; }
+STEP_STATUSES=(0 0 0 0 0 0 0 0)
+STEP_SUBTITLES=("" "" "" "" "" "" "" "")
+
+set_step_status() {
+  local step_idx="$1"
+  local status="$2"
+  local sub="${3:-}"
+
+  STEP_STATUSES[$step_idx]="$status"
+  [[ -n "$sub" ]] && STEP_SUBTITLES[$step_idx]="$sub"
+
+  render_step_dashboard
+}
+
+log_info() {
+  if [[ "$SKIP_HEADER" == true ]]; then
+    echo -e "${CYAN}👉 $1${NC}"
+  fi
+}
+
+log_success() {
+  if [[ "$SKIP_HEADER" == true ]]; then
+    echo -e "${GREEN}✅ $1${NC}"
+  fi
+}
+
+log_warn() {
+  if [[ "$SKIP_HEADER" == true ]]; then
+    echo -e "${YELLOW}⚠️  $1${NC}"
+  else
+    echo -e "${YELLOW}⚠️  $1${NC}" >&2
+  fi
+}
+
+log_error() {
+  echo -e "${RED}❌ $1${NC}" >&2
+}
 
 has_command() {
   local cmd="$1"
@@ -183,21 +220,53 @@ parse_args() {
   esac
 }
 
+render_step_dashboard() {
+  [[ "$SKIP_HEADER" == true ]] && return 0
+
+  if [[ -t 1 ]]; then
+    printf '\033[H'
+  fi
+
+  local title="INSTALADOR & ATUALIZADOR ${PROJECT_NAME}"
+  echo -e "${BLUE}╔═════════════════════════════════════════════════════════╗${NC}"
+  printf "${BLUE}║${NC}%-57s${BLUE}║${NC}\n" "            ${title}            "
+  printf "${BLUE}║${NC}%-57s${BLUE}║${NC}\n" "     Repositório: ${REPO}  |  Modo: ${MODE}     "
+  echo -e "${BLUE}╠═════════════════════════════════════════════════════════╣${NC}"
+
+  for i in "${!STEP_TITLES[@]}"; do
+    local st_title="${STEP_TITLES[$i]}"
+    local st_status="${STEP_STATUSES[$i]}"
+    local st_sub="${STEP_SUBTITLES[$i]}"
+    local tag=""
+
+    case "$st_status" in
+    0) tag="${BLUE}[  ]${NC}" ;;
+    1) tag="${YELLOW}[➜ ]${NC}" ;;
+    2) tag="${GREEN}[OK]${NC}" ;;
+    3) tag="${YELLOW}[!!]${NC}" ;;
+    4) tag="${RED}[X ]${NC}" ;;
+    esac
+
+    local line_str="${st_title}"
+    if [[ -n "$st_sub" ]]; then
+      line_str="${st_title} (${st_sub})"
+    fi
+
+    if ((${#line_str} > 48)); then
+      line_str="${line_str:0:45}..."
+    fi
+
+    printf "${BLUE}║${NC}  %b %-48s ${BLUE}║${NC}\n" "$tag" "$line_str"
+  done
+
+  echo -e "${BLUE}╚═════════════════════════════════════════════════════════╝${NC}"
+  echo
+}
+
 print_header() {
   [[ "$SKIP_HEADER" == true ]] && return 0
-  local title="INSTALADOR ${PROJECT_NAME}"
   clear
-  echo -e "${BLUE}╔═══════════════════════════════════════════════════╗${NC}"
-  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" "$title"
-  echo -e "${BLUE}╠═══════════════════════════════════════════════════╣${NC}"
-  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Repositório: ${REPO}"
-  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Modo:        ${MODE}"
-  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Binário proxy: ${INSTALL_DIR}/${BINARY_NAME}"
-  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Binário udpgw: ${INSTALL_DIR}/${UDPGW_BINARY_NAME}"
-  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Menu:          ${INSTALL_DIR}/${MENU_NAME}"
-  printf "${BLUE}║${NC}%-${BOX_WIDTH}s${BLUE}║${NC}\n" " Revisão:       ${INSTALLER_REV}"
-  echo -e "${BLUE}╚═══════════════════════════════════════════════════╝${NC}"
-  echo
+  render_step_dashboard
 }
 
 run_privileged() {
@@ -1783,65 +1852,101 @@ install_provided_tokens() {
 }
 
 print_finish_message() {
-  echo ""
-  log_success "Operação concluída com sucesso!"
-  log_info "Versão proxy: $VERSION"
+  if [[ "$SKIP_HEADER" == true ]]; then
+    log_success "Operação concluída com sucesso! (proxy: $VERSION)"
+    return 0
+  fi
+
+  clear
+  render_step_dashboard
+
+  echo -e "${GREEN}╔═════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${GREEN}║${NC}             ${GREEN}✅  INSTALAÇÃO CONCLUÍDA COM SUCESSO!${NC}        ${GREEN}║${NC}"
+  echo -e "${GREEN}╠═════════════════════════════════════════════════════════╣${NC}"
+  printf "${GREEN}║${NC}  %-55s${GREEN}║${NC}\n" "Versão Proxy:   $VERSION"
   if [[ -n "$INSTALLED_UDPGW_VERSION" ]]; then
-    log_info "Versão udpgw: v${INSTALLED_UDPGW_VERSION}"
+    printf "${GREEN}║${NC}  %-55s${GREEN}║${NC}\n" "Versão UDPgw:   v${INSTALLED_UDPGW_VERSION#v}"
   fi
   if [[ "$BINARY_ONLY" == false ]]; then
-    log_info "Execute o menu com: ${MENU_NAME}"
-    if [[ -f "$MENU_REV_FILE" ]]; then
-      log_info "Revisão do menu: $(tr -d '\r\n' <"$MENU_REV_FILE")"
-    fi
-    if [[ -n "$PROXY_TOKEN" ]]; then
-      log_info "Token proxy já configurado — não será solicitado na primeira execução."
-    fi
+    local rev="-"
+    [[ -f "$MENU_REV_FILE" ]] && rev=$(tr -d '\r\n' <"$MENU_REV_FILE")
+    printf "${GREEN}║${NC}  %-55s${GREEN}║${NC}\n" "Menu vt:         Instalado (${INSTALL_DIR}/${MENU_NAME} rev ${rev})"
   fi
-  if should_manage_services; then
-    log_info "Serviços existentes foram sincronizados (tokens/binários) e reiniciados quando ativos."
-  fi
-  echo ""
-  log_info "Para reinstalar/atualizar depois:"
-  echo -e "  ${CYAN}curl -fsSL \"${INSTALL_URL}?$(date +%s)\" | bash -s -- --update --yes${NC}"
+  printf "${GREEN}║${NC}  %-55s${GREEN}║${NC}\n" "Serviços:        Sincronizados e Ativos (vtproxy)"
+  echo -e "${GREEN}╠═════════════════════════════════════════════════════════╣${NC}"
+  echo -e "${GREEN}║${NC}  Execute o menu a qualquer momento com o comando:       ${GREEN}║${NC}"
+  echo -e "${GREEN}║${CYAN}  👉  vt                                                 ${GREEN}║${NC}"
+  echo -e "${GREEN}╚═════════════════════════════════════════════════════════╝${NC}"
+  echo
 }
 
 main() {
   parse_args "$@"
   print_header
+
+  # Step 0: Root & Sudo
+  set_step_status 0 1
   ensure_sudo
+  set_step_status 0 2 "Root OK"
+
+  # Step 1: Dependências
+  set_step_status 1 1
   ensure_dependencies
-  ensure_system_clock || log_warn "Sincronização de relógio falhou — a licença pode rejeitar client_ts (±5min)."
+  set_step_status 1 2 "curl, checksum, iptables OK"
+
+  # Step 2: Sincronização de Relógio
+  set_step_status 2 1
+  ensure_system_clock || true
+  set_step_status 2 2 "NTP OK"
+
+  # Step 3: Plataforma & Releases
+  set_step_status 3 1
   detect_platform
-  show_current_installation
   capture_active_services
-  report_existing_services
   fetch_releases
   if [[ "$SKIP_UDPGW" != true ]]; then
     fetch_udpgw_releases
   fi
   show_versions_and_select
   confirm_installation
+  set_step_status 3 2 "Proxy ${VERSION}"
 
+  # Parar serviços ativos se necessário
   if should_manage_services; then
     SERVICES_WERE_STOPPED=true
     stop_proxy_services
     stop_udpgw_server
   fi
 
+  # Step 4: Binários
+  set_step_status 4 1
   download_and_install_binary
   if [[ "$SKIP_UDPGW" != true && -n "$UDPGW_VERSION" ]]; then
     download_and_install_udpgw_binary
   fi
+  set_step_status 4 2 "${VERSION} / v${INSTALLED_UDPGW_VERSION#v}"
+
+  # Step 5: Kernel & Sysctl
+  set_step_status 5 1
   configure_system_tuning
+  set_step_status 5 2 "BBR & 65k limits OK"
+
+  # Step 6: Script do Menu
+  set_step_status 6 1
   install_menu_script
   install_provided_tokens
-  refresh_existing_services
+  local rev_installed="-"
+  [[ -f "$MENU_REV_FILE" ]] && rev_installed=$(tr -d '\r\n' <"$MENU_REV_FILE")
+  set_step_status 6 2 "vt rev ${rev_installed}"
 
+  # Step 7: Serviços Systemd
+  set_step_status 7 1
+  refresh_existing_services
   if should_manage_services; then
     restart_proxy_services
     restart_udpgw_server
   fi
+  set_step_status 7 2 "vtproxy ativo"
 
   INSTALL_COMPLETED=true
   print_finish_message
