@@ -596,11 +596,8 @@ render_menu_option() {
     local item="$1"
     local emphasis="${2:-normal}"
     local num="${item%% *}"
-    local label="${item#* - }"
-    # Compatível com itens antigos "N • label"
-    if [[ "$item" == *" • "* ]]; then
-        label="${item#* • }"
-    fi
+    local label="${item#"$num"}"
+    label=$(echo "$label" | sed -E 's/^[[:space:]]*[^[:alnum:]]+[[:space:]]*//')
     local content
 
     if is_narrow_menu; then
