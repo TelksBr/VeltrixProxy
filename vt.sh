@@ -526,9 +526,8 @@ truncate_visible() {
         printf '%s' "$text"
         return
     fi
-    cut=$((max - 1))
+    cut=$((max - 3))
     ((cut < 1)) && cut=1
-    # "..." ASCII — reticência unicode quebra em alguns terminais mobile
     printf '%s...' "${plain:0:cut}"
 }
 
@@ -899,9 +898,8 @@ format_proxy_port_flags() {
 }
 
 format_proxy_ports_status() {
-    local configured active port status_line="" mark extras
+    local configured active status_items=() port ssl enabled item
     configured=$(list_configured_proxy_ports)
-    active=$(list_active_proxies)
 
     if [[ -z "$configured" ]]; then
         echo "nenhuma"
@@ -911,22 +909,29 @@ format_proxy_ports_status() {
     IFS=',' read -ra port_array <<< "$configured"
     for port in "${port_array[@]}"; do
         [[ -z "$port" ]] && continue
-        if [[ ",${active}," == *",${port},"* ]]; then
-            mark="ON"
-        else
-            mark="OFF"
+        ssl=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
+        enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
+
+        item="$port"
+        if [[ "$ssl" == "true" ]]; then
+            item="${port} [SSL]"
         fi
-        extras=$(format_proxy_port_flags "$port")
-        if [[ -n "$status_line" ]]; then
-            status_line+=", "
+        if [[ "$enabled" == "false" ]]; then
+            item="${item} (OFF)"
         fi
-        if [[ -n "$extras" ]]; then
-            status_line+="${port} ${mark} (${extras})"
-        else
-            status_line+="${port} ${mark}"
-        fi
+        status_items+=("$item")
     done
-    echo "$status_line"
+
+    local count=${#status_items[@]}
+    if (( count <= 4 )); then
+        local IFS=,
+        echo "${status_items[*]}" | sed 's/,/, /g'
+    else
+        local first_four=("${status_items[@]:0:4}")
+        local remaining=$(( count - 4 ))
+        local IFS=,
+        echo "${first_four[*]}" | sed 's/,/, /g' | sed "s/$/ (+${remaining} portas)/"
+    fi
 }
 
 is_port_in_use() {
@@ -2839,7 +2844,7 @@ is_udpgw_active() {
 }
 
 format_udpgw_ports_status() {
-    local configured port mark line="" active_ports=""
+    local configured items=() port
     configured=$(list_configured_udpgw_ports)
 
     if [[ -z "$configured" ]]; then
@@ -2851,16 +2856,22 @@ format_udpgw_ports_status() {
     for port in "${pa[@]}"; do
         [[ -z "$port" ]] && continue
         if is_udpgw_port_active "$port"; then
-            mark="ON"
-            [[ -n "$active_ports" ]] && active_ports+=","
-            active_ports+="$port"
+            items+=("$port")
         else
-            mark="OFF"
+            items+=("${port} [OFF]")
         fi
-        if [[ -n "$line" ]]; then line+=","; fi
-        line+="${port}:${mark}"
     done
-    echo "$line"
+
+    local count=${#items[@]}
+    if (( count <= 4 )); then
+        local IFS=,
+        echo "${items[*]}" | sed 's/,/, /g'
+    else
+        local first_four=("${items[@]:0:4}")
+        local remaining=$(( count - 4 ))
+        local IFS=,
+        echo "${first_four[*]}" | sed 's/,/, /g' | sed "s/$/ (+${remaining} portas)/"
+    fi
 }
 
 append_udpgw_flag_if_set() {
