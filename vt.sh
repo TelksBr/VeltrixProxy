@@ -2243,17 +2243,27 @@ toggle_unified_proxy_service() {
 
 
 show_proxy_logs() {
-    print_header
     local log_file="$PROXY_LOG_DIR/proxy.log"
-    print_info "Exibindo logs do VTProxy (${PROXY_UNIFIED_SERVICE_NAME})..."
-    echo -e "${GRAY}Arquivo: $log_file | Pressione Ctrl+C para sair${RESET}"
-    echo
-    if [[ -f "$log_file" ]]; then
-        sudo tail -n 60 -f "$log_file" || true
-    else
-        sudo journalctl -u "$PROXY_UNIFIED_SERVICE_NAME" -n 60 -f 2>/dev/null || print_warning "Sem logs disponiveis."
-    fi
-    pause
+    local key=""
+
+    while true; do
+        print_header
+        print_box_open
+        print_box_heading "MONITOR & LOGS EM TEMPO REAL" "$CYAN"
+        print_box_close
+        echo -e "${GRAY}Pressione qualquer tecla ou Ctrl+C para retornar ao menu...${RESET}"
+        echo
+
+        if [[ -f "$log_file" ]]; then
+            cat "$log_file" 2>/dev/null || true
+        else
+            sudo journalctl -u "$PROXY_UNIFIED_SERVICE_NAME" -n 30 --no-pager 2>/dev/null || print_warning "Sem logs disponiveis."
+        fi
+
+        if read -t 1 -n 1 key 2>/dev/null; then
+            break
+        fi
+    done
 }
 
 connection_menu() {
