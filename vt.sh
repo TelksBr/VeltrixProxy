@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="44"
+readonly MENU_REV="45"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly MENU_BIN="/usr/local/bin/vt"
@@ -2249,6 +2249,9 @@ show_proxy_logs() {
     tput civis 2>/dev/null || printf '\033[?25l'
     clear
 
+    # Captura Ctrl+C (SIGINT) para retornar ao menu sem encerrar o script vt
+    trap 'tput cnorm 2>/dev/null || printf "\033[?25h"; trap - INT; return 0' INT
+
     while true; do
         printf '\033[H'
 
@@ -2272,6 +2275,7 @@ show_proxy_logs() {
         fi
     done
 
+    trap - INT
     tput cnorm 2>/dev/null || printf '\033[?25h'
 }
 
