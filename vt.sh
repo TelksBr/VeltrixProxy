@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="45"
+readonly MENU_REV="46"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly MENU_BIN="/usr/local/bin/vt"
@@ -2134,60 +2134,87 @@ show_proxy_port_details() {
 
     local configured_ports
     configured_ports=$(list_configured_proxy_ports)
-    if [[ -z "$configured_ports" ]]; then
-        print_error "Nenhuma porta configurada."
-        pause
-        return
-    fi
 
-    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
-    echo -e "${BLUE}Digite a porta para ver detalhes:${RESET}"
-    read -rp "> " port
-    port=$(echo "$port" | tr -d '[:space:]')
-
-    if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
-        print_error "Porta invalida ou nao configurada."
-        pause
-        return
-    fi
-
-    migrate_proxy_conf_from_unit_if_needed "$port" || true
-
-    local service_name conf_file
-    service_name=$(get_proxy_service_name "$port")
-    conf_file=$(get_proxy_config_file "$port")
-
-    echo
     print_box_open
-    print_box_heading "DETALHES PORTA $port"
+    print_box_heading "DETALHES DO SERVIÇO PROXY" "$CYAN"
     print_box_divider
 
-    local port_is_active=false
-    local port_enabled
-    port_enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
-    if systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null && [[ "$port_enabled" == "true" ]]; then
-        port_is_active=true
-    elif systemctl is-active --quiet "$service_name" 2>/dev/null; then
-        port_is_active=true
+    local service_active=false
+    if systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null; then
+        service_active=true
     fi
 
-    if [[ "$port_is_active" == "true" ]]; then
-        print_box_line "${WHITE}  Estado: ${GREEN}ATIVO${RESET}"
+    if [[ "$service_active" == "true" ]]; then
+        print_box_line "${WHITE}  Status do Serviço (${PROXY_UNIFIED_SERVICE_NAME}): ${GREEN}ATIVO${RESET}"
     else
-        print_box_line "${WHITE}  Estado: ${RED}PARADO${RESET}"
+        print_box_line "${WHITE}  Status do Serviço (${PROXY_UNIFIED_SERVICE_NAME}): ${RED}PARADO${RESET}"
     fi
-    print_box_line "${WHITE}  SSL: ${CYAN}$(get_proxy_conf_value "$port" SSL_ENABLED false)${RESET}"
-    print_box_line "${WHITE}  Cert interno: ${CYAN}$(get_proxy_conf_value "$port" CERT_INTERNAL true)${RESET}"
-    print_box_line "${WHITE}  Cert path: ${CYAN}$(get_proxy_conf_value "$port" SSL_CERT_PATH "-")${RESET}"
-    print_box_line "${WHITE}  SSH-only: ${CYAN}$(get_proxy_conf_value "$port" SSH_ONLY false)${RESET}"
-    print_box_line "${WHITE}  Response: ${CYAN}$(get_proxy_conf_value "$port" HTTP_RESPONSE "$DEFAULT_HTTP_RESPONSE")${RESET}"
-    print_box_line "${WHITE}  Buffer: ${CYAN}$(get_proxy_conf_value "$port" BUFFER_SIZE "$DEFAULT_BUFFER_SIZE")${RESET}"
-    print_box_line "${WHITE}  Max conn: ${CYAN}$(get_proxy_conf_value "$port" MAX_CONNECTIONS 0)${RESET}"
-    print_box_line "${WHITE}  Timeouts W/I: ${CYAN}$(get_proxy_conf_value "$port" WRITE_TIMEOUT 0)/$(get_proxy_conf_value "$port" IDLE_TIMEOUT 0)${RESET}"
-    print_box_line "${WHITE}  Log level: ${CYAN}$(get_proxy_conf_value "$port" LOG_LEVEL info)${RESET}"
-    print_box_line "${WHITE}  Backends SSH/OVPN/V2Ray: ${CYAN}$(get_proxy_conf_value "$port" SSH_PORT 22)/$(get_proxy_conf_value "$port" OPENVPN_PORT 1194)/$(get_proxy_conf_value "$port" V2RAY_PORT 1080)${RESET}"
-    print_box_line "${WHITE}  Conf: ${CYAN}$conf_file${RESET}"
-    print_box_line "${WHITE}  Log/banner file: ${CYAN}$(get_proxy_log_file "$port")${RESET}"
+
+    local token
+    token=$(load_proxy_token)
+    if [[ -n "$token" ]]; then
+        print_box_line "${WHITE}  Token de Licença: ${GREEN}OK${WHITE} (${CYAN}${token:0:8}...${WHITE})${RESET}"
+    else
+        print_box_line "${WHITE}  Token de Licença: ${RED}NÃO CONFIGURADO${RESET}"
+    fi
+
+    print_box_divider
+    print_box_line "${WHITE}  --- PORTAS CONFIGURADAS ---${RESET}"
+
+    if [[ -z "$configured_ports" ]]; then
+        print_box_line "${YELLOW}  Nenhuma porta configurada.${RESET}"
+    else
+        IFS=',' read -ra port_array <<< "$configured_ports"
+        for port in "${port_array[@]}"; do
+            [[ -z "$port" ]] && continue
+            local enabled ssl cert_internal cert_path ssh_only status_str mode_str
+            enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
+            ssl=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
+            cert_internal=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
+            cert_path=$(get_proxy_conf_value "$port" "SSL_CERT_PATH" "")
+            ssh_only=$(get_proxy_conf_value "$port" "SSH_ONLY" "false")
+
+            if [[ "$enabled" == "true" ]]; then
+                status_str="${GREEN}Ativa${RESET}"
+            else
+                status_str="${RED}Pausada${RESET}"
+            fi
+
+            if [[ "$ssl" == "true" ]]; then
+                if [[ "$cert_internal" == "true" ]]; then
+                    mode_str="${CYAN}SSL (Cert Interno)${RESET}"
+                else
+                    mode_str="${CYAN}SSL (Cert Ext: ${cert_path:-custom})${RESET}"
+                fi
+            else
+                mode_str="${WHITE}HTTP${RESET}"
+            fi
+
+            [[ "$ssh_only" == "true" ]] && mode_str="${mode_str} ${YELLOW}[SSH-only]${RESET}"
+
+            print_box_line "${WHITE}  • Porta ${CYAN}${port}${WHITE}: ${mode_str} | Status: ${status_str}${RESET}"
+        done
+    fi
+
+    print_box_divider
+    print_box_line "${WHITE}  --- PARÂMETROS DO PROXY ---${RESET}"
+    local buffer_val http_val max_conn write_t idle_t ssh_p ovpn_p v2ray_p
+    buffer_val=$(get_global_proxy_setting "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
+    http_val=$(get_global_proxy_setting "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
+    max_conn=$(get_global_proxy_setting "MAX_CONNECTIONS" "$DEFAULT_MAX_CONNECTIONS")
+    write_t=$(get_global_proxy_setting "WRITE_TIMEOUT" "$DEFAULT_WRITE_TIMEOUT")
+    idle_t=$(get_global_proxy_setting "IDLE_TIMEOUT" "$DEFAULT_IDLE_TIMEOUT")
+    ssh_p=$(get_global_proxy_setting "SSH_PORT" "$DEFAULT_SSH_PORT")
+    ovpn_p=$(get_global_proxy_setting "OPENVPN_PORT" "$DEFAULT_OPENVPN_PORT")
+    v2ray_p=$(get_global_proxy_setting "V2RAY_PORT" "$DEFAULT_V2RAY_PORT")
+
+    print_box_line "${WHITE}  Resposta HTTP: ${CYAN}${http_val}${RESET}"
+    print_box_line "${WHITE}  Buffer size: ${CYAN}${buffer_val} bytes${RESET}"
+    print_box_line "${WHITE}  Max conexões: ${CYAN}${max_conn}${RESET}"
+    print_box_line "${WHITE}  Timeouts W/I: ${CYAN}${write_t}s / ${idle_t}s${RESET}"
+    print_box_line "${WHITE}  Backends (SSH/OVPN/V2Ray): ${CYAN}${ssh_p} / ${ovpn_p} / ${v2ray_p}${RESET}"
+    print_box_line "${WHITE}  Arquivo de log: ${CYAN}$PROXY_LOG_DIR/proxy.log${RESET}"
+
     print_box_divider
     local exec_line
     exec_line=$(systemctl cat "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null | grep -E '^ExecStart=' | head -n1 | sed 's/^ExecStart=//')
@@ -2195,8 +2222,9 @@ show_proxy_port_details() {
         print_box_line "${WHITE}  ExecStart (${PROXY_UNIFIED_SERVICE_NAME}):${RESET}"
         echo -e "${GRAY}$exec_line${RESET}"
     else
-        print_box_line "${YELLOW}  Unit systemd (${PROXY_UNIFIED_SERVICE_NAME}) ainda nao criada${RESET}"
+        print_box_line "${YELLOW}  Unit systemd (${PROXY_UNIFIED_SERVICE_NAME}) ainda não criada${RESET}"
     fi
+
     print_box_close
     pause
 }
