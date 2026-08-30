@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="43"
+readonly MENU_REV="44"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly MENU_BIN="/usr/local/bin/vt"
@@ -2246,8 +2246,13 @@ show_proxy_logs() {
     local log_file="$PROXY_LOG_DIR/proxy.log"
     local key=""
 
+    tput civis 2>/dev/null || printf '\033[?25l'
+    clear
+
     while true; do
-        print_header
+        printf '\033[H'
+
+        refresh_menu_layout
         print_box_open
         print_box_heading "MONITOR & LOGS EM TEMPO REAL" "$CYAN"
         print_box_close
@@ -2260,10 +2265,14 @@ show_proxy_logs() {
             sudo journalctl -u "$PROXY_UNIFIED_SERVICE_NAME" -n 30 --no-pager 2>/dev/null || print_warning "Sem logs disponiveis."
         fi
 
-        if read -t 1 -n 1 key 2>/dev/null; then
+        printf '\033[J'
+
+        if read -t 0.5 -n 1 key 2>/dev/null; then
             break
         fi
     done
+
+    tput cnorm 2>/dev/null || printf '\033[?25h'
 }
 
 connection_menu() {
