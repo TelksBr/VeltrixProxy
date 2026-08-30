@@ -18,8 +18,8 @@ BINARY_NAME="proxy-server"
 UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
-INSTALLER_REV="39"
-MENU_REV_EXPECTED="49"
+INSTALLER_REV="40"
+MENU_REV_EXPECTED="50"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 UDPGW_VERSION_FILE="/etc/udpgw-version"
@@ -1920,16 +1920,16 @@ print_finish_message() {
   print_dash_rule
   print_dashboard_center "✅  INSTALAÇÃO CONCLUÍDA COM SUCESSO!" "${GREEN:-\033[0;32m}"
   print_dash_rule
-  print_dashboard_center "Versão Proxy:   $VERSION" "${CYAN:-\033[0;36m}"
+  print_dashboard_item "" "  Versão Proxy:   $VERSION"
   if [[ -n "$INSTALLED_UDPGW_VERSION" ]]; then
-    print_dashboard_center "Versão UDPgw:   v${INSTALLED_UDPGW_VERSION#v}" "${CYAN:-\033[0;36m}"
+    print_dashboard_item "" "  Versão UDPgw:   v${INSTALLED_UDPGW_VERSION#v}"
   fi
   if [[ "$BINARY_ONLY" == false ]]; then
     local rev="-"
     [[ -f "$MENU_REV_FILE" ]] && rev=$(tr -d '\r\n' <"$MENU_REV_FILE")
-    print_dashboard_center "Menu vt:         Instalado (${INSTALL_DIR}/${MENU_NAME} rev ${rev})" "${CYAN:-\033[0;36m}"
+    print_dashboard_item "" "  Menu vt:        rev ${rev} (${INSTALL_DIR}/${MENU_NAME})"
   fi
-  print_dashboard_center "Serviços:        Sincronizados e Ativos (vtproxy)" "${CYAN:-\033[0;36m}"
+  print_dashboard_item "" "  Serviços:       Sincronizados e Ativos (vtproxy)"
   print_dash_rule
   print_dashboard_center "Execute o menu a qualquer momento com o comando:" "${YELLOW:-\033[1;33m}"
   print_dashboard_center "👉  vt" "${GREEN:-\033[0;32m}"
@@ -1949,7 +1949,7 @@ main() {
   # Step 1: Dependências
   set_step_status 1 1
   ensure_dependencies
-  set_step_status 1 2 "curl, checksum, iptables OK"
+  set_step_status 1 2 "OK"
 
   # Step 2: Sincronização de Relógio
   set_step_status 2 1
@@ -1986,7 +1986,7 @@ main() {
   # Step 5: Kernel & Sysctl
   set_step_status 5 1
   configure_system_tuning
-  set_step_status 5 2 "BBR & 65k limits OK"
+  set_step_status 5 2 "BBR OK"
 
   # Step 6: Script do Menu
   set_step_status 6 1
@@ -2003,7 +2003,7 @@ main() {
     restart_proxy_services
     restart_udpgw_server
   fi
-  set_step_status 7 2 "vtproxy ativo"
+  set_step_status 7 2 "vtproxy OK"
 
   INSTALL_COMPLETED=true
   print_finish_message
