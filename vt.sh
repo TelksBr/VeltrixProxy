@@ -125,10 +125,10 @@ I18N_PT[proxy_opt_start]="Iniciar porta configurada"
 I18N_PT[proxy_opt_stop]="Parar porta (mantém config)"
 I18N_PT[proxy_opt_restart]="Reiniciar serviço proxy"
 I18N_PT[proxy_opt_edit]="Editar / Alternar porta (SSL, Pausar/Ativar)"
-I18N_PT[proxy_opt_adv]="Opções avançadas globais (buffer/flags)"
-I18N_PT[proxy_opt_http]="Alterar resposta HTTP global"
-I18N_PT[proxy_opt_details]="Detalhes do serviço unificado"
-I18N_PT[proxy_opt_logs]="Ver log da porta"
+I18N_PT[proxy_opt_adv]="Opções avançadas (buffer/flags)"
+I18N_PT[proxy_opt_http]="Alterar resposta HTTP"
+I18N_PT[proxy_opt_details]="Detalhes do serviço proxy"
+I18N_PT[proxy_opt_logs]="Ver logs do VTProxy"
 I18N_PT[proxy_opt_remove]="Remover porta"
 I18N_PT[proxy_opt_back]="Voltar ao Menu Inicial"
 
@@ -228,7 +228,7 @@ I18N_EN[proxy_opt_edit]="Edit port"
 I18N_EN[proxy_opt_adv]="Advanced options (buffer/flags)"
 I18N_EN[proxy_opt_http]="Change HTTP response"
 I18N_EN[proxy_opt_details]="Details / ExecStart"
-I18N_EN[proxy_opt_logs]="View port log"
+I18N_EN[proxy_opt_logs]="View VTProxy logs"
 I18N_EN[proxy_opt_remove]="Remove port"
 I18N_EN[proxy_opt_back]="Back to Main Menu"
 
@@ -328,7 +328,7 @@ I18N_ES[proxy_opt_edit]="Editar puerto"
 I18N_ES[proxy_opt_adv]="Opciones avanzadas (buffer/flags)"
 I18N_ES[proxy_opt_http]="Cambiar respuesta HTTP"
 I18N_ES[proxy_opt_details]="Detalles / ExecStart"
-I18N_ES[proxy_opt_logs]="Ver registros del puerto"
+I18N_ES[proxy_opt_logs]="Ver registros de VTProxy"
 I18N_ES[proxy_opt_remove]="Eliminar puerto"
 I18N_ES[proxy_opt_back]="Volver al Menú Principal"
 
@@ -1076,8 +1076,8 @@ get_proxy_config_file() {
 }
 
 get_proxy_log_file() {
-    local port="$1"
-    echo "$PROXY_LOG_DIR/proxy-$port.log"
+    local port="${1:-}"
+    echo "$PROXY_LOG_DIR/proxy.log"
 }
 
 get_proxy_service_name() {
@@ -1968,7 +1968,7 @@ pause_proxy_service() {
     print_info "Pausando porta $port (config preservada)..."
     set_proxy_conf_key "$port" "ENABLED" "false"
     apply_unified_proxy_service "true"
-    print_success "Porta $port pausada. As demais portas continuam ativas no servico unificado."
+    print_success "Porta $port pausada. As demais portas continuam ativas."
     pause
 }
 
@@ -1996,7 +1996,7 @@ remove_proxy_service() {
     print_info "Removendo porta $port..."
     sudo rm -f "$(get_proxy_config_file "$port")"
     apply_unified_proxy_service "true"
-    print_success "Porta $port removida do servico unificado."
+    print_success "Porta $port removida."
     pause
 }
 
@@ -2030,7 +2030,7 @@ start_configured_proxy_service() {
     local enabled
     enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
     if [[ "$enabled" == "true" ]] && systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null; then
-        print_warning "Porta $port ja esta ativa no servico unificado."
+        print_warning "Porta $port ja esta ativa no serviço proxy."
         pause
         return
     fi
@@ -2040,10 +2040,10 @@ start_configured_proxy_service() {
         return
     fi
 
-    print_info "Ativando porta $port no servico unificado..."
+    print_info "Ativando porta $port..."
     set_proxy_conf_key "$port" "ENABLED" "true"
     if apply_unified_proxy_service "true"; then
-        print_success "Porta $port ativada no servico unificado."
+        print_success "Porta $port ativada no serviço proxy."
     else
         print_error "Falha ao ativar porta $port."
     fi
@@ -2195,7 +2195,7 @@ show_proxy_port_details() {
         print_box_line "${WHITE}  ExecStart (${PROXY_UNIFIED_SERVICE_NAME}):${RESET}"
         echo -e "${GRAY}$exec_line${RESET}"
     else
-        print_box_line "${YELLOW}  Unit systemd unificada (${PROXY_UNIFIED_SERVICE_NAME}) ainda nao criada${RESET}"
+        print_box_line "${YELLOW}  Unit systemd (${PROXY_UNIFIED_SERVICE_NAME}) ainda nao criada${RESET}"
     fi
     print_box_close
     pause
@@ -2204,7 +2204,7 @@ show_proxy_port_details() {
 restart_proxy_service() {
     print_header
 
-    print_info "Reiniciando servico unificado de proxy (${PROXY_UNIFIED_SERVICE_NAME})..."
+    print_info "Reiniciando servico proxy (${PROXY_UNIFIED_SERVICE_NAME})..."
 
     if apply_unified_proxy_service "true"; then
         print_success "Servico proxy reiniciado com sucesso!"
@@ -2220,21 +2220,21 @@ toggle_unified_proxy_service() {
     print_header
 
     if systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null; then
-        print_warning "O servico unificado de proxy ($PROXY_UNIFIED_SERVICE_NAME) esta ATIVO."
-        if confirm_action "Deseja PARAR o servico unificado de proxy?" "n"; then
-            print_info "Parando servico unificado..."
+        print_warning "O servico proxy ($PROXY_UNIFIED_SERVICE_NAME) esta ATIVO."
+        if confirm_action "Deseja PARAR o servico proxy?" "n"; then
+            print_info "Parando servico proxy..."
             sudo systemctl stop "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null || true
-            print_success "Servico unificado de proxy parado."
+            print_success "Servico proxy parado."
         fi
     else
-        print_info "O servico unificado de proxy ($PROXY_UNIFIED_SERVICE_NAME) esta PARADO."
-        if confirm_action "Deseja INICIAR o servico unificado de proxy?" "s"; then
-            print_info "Iniciando servico unificado..."
+        print_info "O servico proxy ($PROXY_UNIFIED_SERVICE_NAME) esta PARADO."
+        if confirm_action "Deseja INICIAR o servico proxy?" "s"; then
+            print_info "Iniciando servico proxy..."
             if apply_unified_proxy_service "true"; then
-                print_success "Servico unificado de proxy iniciado com sucesso!"
+                print_success "Servico proxy iniciado com sucesso!"
                 show_proxy_execstart_line
             else
-                print_error "Falha ao iniciar servico unificado de proxy."
+                print_error "Falha ao iniciar servico proxy."
             fi
         fi
     fi
@@ -2245,13 +2245,13 @@ toggle_unified_proxy_service() {
 show_proxy_logs() {
     print_header
     local log_file="$PROXY_LOG_DIR/proxy.log"
-    print_info "Exibindo logs do servico unificado (${PROXY_UNIFIED_SERVICE_NAME})..."
+    print_info "Exibindo logs do VTProxy (${PROXY_UNIFIED_SERVICE_NAME})..."
     echo -e "${GRAY}Arquivo: $log_file | Pressione Ctrl+C para sair${RESET}"
     echo
     if [[ -f "$log_file" ]]; then
-        sudo tail -n 80 -f "$log_file" || true
+        sudo tail -n 60 -f "$log_file" || true
     else
-        sudo journalctl -u "$PROXY_UNIFIED_SERVICE_NAME" -n 80 -f 2>/dev/null || print_warning "Sem logs disponiveis."
+        sudo journalctl -u "$PROXY_UNIFIED_SERVICE_NAME" -n 60 -f 2>/dev/null || print_warning "Sem logs disponiveis."
     fi
     pause
 }
@@ -2276,7 +2276,7 @@ connection_menu() {
             "2 — $(t proxy_opt_edit)"
             "3 — $(t proxy_opt_remove)"
             "4 — $(t proxy_opt_restart)"
-            "5 — Parar / Iniciar serviço proxy unificado"
+            "5 — Parar / Iniciar serviço proxy"
             "6 — $(t proxy_opt_adv)"
             "7 — $(t proxy_opt_http)"
             "8 — $(t proxy_opt_details)"

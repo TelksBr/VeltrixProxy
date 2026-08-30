@@ -1387,7 +1387,7 @@ migrate_legacy_proxy_services() {
   [[ ${#legacy_files[@]} -eq 0 ]] && return 0
 
   log_info "Detectados ${#legacy_files[@]} serviço(s) proxy legados (separados por porta)."
-  log_info "Iniciando unificação inteligente para 'vtproxy.service'..."
+  log_info "Iniciando migração de serviços para 'vtproxy.service'..."
 
   for service_file in "${legacy_files[@]}"; do
     port=$(basename "$service_file" .service | sed -n 's/^proxy-\([0-9]\+\)$/\1/p')
@@ -1411,7 +1411,7 @@ migrate_legacy_proxy_services() {
     generate_standalone_unified_service
   fi
 
-  log_info "Migração concluída com sucesso! Portas unificadas no serviço 'vtproxy.service'."
+  log_info "Migração concluída com sucesso! Serviço 'vtproxy.service' configurado."
 }
 
 refresh_existing_services() {
