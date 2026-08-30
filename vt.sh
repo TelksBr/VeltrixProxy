@@ -88,13 +88,15 @@ I18N_PT[status_token]="Token:"
 I18N_PT[status_token_proxy]="Token proxy:"
 I18N_PT[status_none]="nenhuma"
 I18N_PT[status_ip]="IP:"
-I18N_PT[status_ssh_onlines]="Onlines SSH:"
+I18N_PT[status_ssh_onlines]="SSH Online:"
 I18N_PT[status_udpgw]="UDP Gateway:"
-I18N_PT[status_ports]="portas"
+I18N_PT[status_ports]="Portas:"
+I18N_PT[status_cpu]="CPU:"
+I18N_PT[status_ram]="RAM:"
 
 I18N_PT[menu_main_title]="MENU INICIAL"
 I18N_PT[menu_proxy]="Proxy / Portas"
-I18N_PT[menu_online_users]="Usuarios Online (SSH:%s)"
+I18N_PT[menu_online_users]="Usuários Online (SSH:%s)"
 I18N_PT[menu_tokens]="Gerenciar Tokens"
 I18N_PT[menu_update]="Atualizar Sistema"
 I18N_PT[menu_udpgw]="UDP Gateway (udpgw)"
@@ -188,7 +190,9 @@ I18N_EN[status_none]="none"
 I18N_EN[status_ip]="IP:"
 I18N_EN[status_ssh_onlines]="SSH Online:"
 I18N_EN[status_udpgw]="UDP Gateway:"
-I18N_EN[status_ports]="ports"
+I18N_EN[status_ports]="Ports:"
+I18N_EN[status_cpu]="CPU:"
+I18N_EN[status_ram]="RAM:"
 
 I18N_EN[menu_main_title]="MAIN MENU"
 I18N_EN[menu_proxy]="Proxy / Ports"
@@ -286,7 +290,9 @@ I18N_ES[status_none]="ninguna"
 I18N_ES[status_ip]="IP:"
 I18N_ES[status_ssh_onlines]="SSH Online:"
 I18N_ES[status_udpgw]="UDP Gateway:"
-I18N_ES[status_ports]="puertos"
+I18N_ES[status_ports]="Puertos:"
+I18N_ES[status_cpu]="CPU:"
+I18N_ES[status_ram]="RAM:"
 
 I18N_ES[menu_main_title]="MENÚ PRINCIPAL"
 I18N_ES[menu_proxy]="Proxy / Puertos"
@@ -601,13 +607,13 @@ render_menu_option() {
         if [[ "$emphasis" == "red" ]]; then
             content="${RED}[${num}] ${label}${RESET}"
         else
-            content="${WHITE}[${CYAN}${num}${WHITE}] ${BLUE}${label}${RESET}"
+            content="${WHITE}[${CYAN}${num}${WHITE}] ${WHITE}${label}${RESET}"
         fi
     else
-    if [[ "$emphasis" == "red" ]]; then
-        content="${RED}  [${num}] ${label}${RESET}"
-    else
-        content="${WHITE}  [${CYAN}${num}${WHITE}] ${BLUE}${label}${RESET}"
+        if [[ "$emphasis" == "red" ]]; then
+            content="${RED}  [${num}] ${label}${RESET}"
+        else
+            content="${WHITE}  [${CYAN}${num}${WHITE}] ${WHITE}${label}${RESET}"
         fi
     fi
     print_box_line "$content"
@@ -633,6 +639,73 @@ print_header() {
     echo
 }
 
+# Medição de uso da CPU (%) via /proc/stat
+get_cpu_usage() {
+    if [[ -f /proc/stat ]]; then
+        local cpu1 cpu2
+        cpu1=($(grep '^cpu ' /proc/stat 2>/dev/null))
+        sleep 0.1
+        cpu2=($(grep '^cpu ' /proc/stat 2>/dev/null))
+        
+        if [[ ${#cpu1[@]} -ge 8 && ${#cpu2[@]} -ge 8 ]]; then
+            local user1=${cpu1[1]} nice1=${cpu1[2]} sys1=${cpu1[3]} idle1=${cpu1[4]} iowait1=${cpu1[5]} irq1=${cpu1[6]} softirq1=${cpu1[7]}
+            local user2=${cpu2[1]} nice2=${cpu2[2]} sys2=${cpu2[3]} idle2=${cpu2[4]} iowait2=${cpu2[5]} irq2=${cpu2[6]} softirq2=${cpu2[7]}
+            
+            local total1=$((user1 + nice1 + sys1 + idle1 + iowait1 + irq1 + softirq1))
+            local total2=$((user2 + nice2 + sys2 + idle2 + iowait2 + irq2 + softirq2))
+            
+            local total_diff=$((total2 - total1))
+            local idle_diff=$((idle2 - idle1))
+            
+            if ((total_diff > 0)); then
+                local usage=$(( (total_diff - idle_diff) * 100 / total_diff ))
+                printf '%d' "$usage"
+                return 0
+            fi
+        fi
+    fi
+    echo "0"
+}
+
+# Medição de uso de RAM (usado_mb, total_mb, pct_usado) via /proc/meminfo
+get_ram_info() {
+    local total_mb=0 avail_mb=0 used_mb=0 used_pct=0
+    if [[ -f /proc/meminfo ]]; then
+        local total_kb avail_kb free_kb buffers_kb cached_kb
+        total_kb=$(grep '^MemTotal:' /proc/meminfo 2>/dev/null | awk '{print $2}')
+        avail_kb=$(grep '^MemAvailable:' /proc/meminfo 2>/dev/null | awk '{print $2}')
+        
+        if [[ -z "$avail_kb" ]]; then
+            free_kb=$(grep '^MemFree:' /proc/meminfo 2>/dev/null | awk '{print $2}')
+            buffers_kb=$(grep '^Buffers:' /proc/meminfo 2>/dev/null | awk '{print $2}')
+            cached_kb=$(grep '^Cached:' /proc/meminfo 2>/dev/null | awk '{print $2}')
+            avail_kb=$(( free_kb + buffers_kb + cached_kb ))
+        fi
+        
+        if [[ -n "$total_kb" && "$total_kb" =~ ^[0-9]+$ && -n "$avail_kb" && "$avail_kb" =~ ^[0-9]+$ ]]; then
+            total_mb=$(( total_kb / 1024 ))
+            local used_kb=$(( total_kb - avail_kb ))
+            ((used_kb < 0)) && used_kb=0
+            used_mb=$(( used_kb / 1024 ))
+            if ((total_mb > 0)); then
+                used_pct=$(( used_mb * 100 / total_mb ))
+            fi
+        fi
+    fi
+    printf '%d %d %d' "$used_mb" "$total_mb" "$used_pct"
+}
+
+format_stat_color() {
+    local val="$1"
+    if ((val >= 90)); then
+        printf '%s%d%%%s' "${RED}" "$val" "${RESET}"
+    elif ((val >= 70)); then
+        printf '%s%d%%%s' "${YELLOW}" "$val" "${RESET}"
+    else
+        printf '%s%d%%%s' "${GREEN}" "$val" "${RESET}"
+    fi
+}
+
 # Usuários SSH únicos com sessão sshd (filhos sshd:), excluindo root.
 get_ssh_online_users_count() {
     local count
@@ -651,6 +724,8 @@ get_ssh_online_users_count() {
 
 print_status() {
     local proxy_ports proxy_label proxy_tok udpgw_status bound_ip ssh_onlines
+    local cpu_usage ram_info ram_used_mb ram_total_mb ram_pct
+    local cpu_colored ram_colored
 
     proxy_ports=$(format_proxy_ports_status)
     proxy_label="${proxy_ports:-$(t status_none)}"
@@ -658,6 +733,15 @@ print_status() {
     bound_ip=""
     [[ -f /etc/vtproxy/ip ]] && bound_ip=$(cat /etc/vtproxy/ip)
     ssh_onlines=$(get_ssh_online_users_count)
+
+    cpu_usage=$(get_cpu_usage)
+    ram_info=($(get_ram_info))
+    ram_used_mb="${ram_info[0]:-0}"
+    ram_total_mb="${ram_info[1]:-0}"
+    ram_pct="${ram_info[2]:-0}"
+
+    cpu_colored=$(format_stat_color "$cpu_usage")
+    ram_colored=$(format_stat_color "$ram_pct")
 
     local udpgw_ports
     udpgw_ports=$(format_udpgw_ports_status)
@@ -671,12 +755,12 @@ print_status() {
 
     if is_narrow_menu; then
         print_box_line "${WHITE}$(t status_proxy) ${CYAN}${proxy_label}${RESET}"
-        print_box_line "${WHITE}$(t status_token) ${proxy_tok}${RESET}"
-        if [[ -n "$bound_ip" ]]; then
-            print_box_line "${WHITE}$(t status_ip) ${CYAN}${bound_ip}${RESET}"
-        fi
-        print_box_line "${WHITE}$(t status_ssh_onlines)${CYAN}${ssh_onlines}${RESET}"
-        print_box_line "${WHITE}UDPgw: ${udpgw_status}${WHITE} ${CYAN}${udpgw_ports}${RESET}"
+        local tok_line="${WHITE}$(t status_token) ${proxy_tok}"
+        [[ -n "$bound_ip" ]] && tok_line+=" ${WHITE}| ${CYAN}${bound_ip}${RESET}"
+        print_box_line "$tok_line"
+        print_box_line "${WHITE}$(t status_ssh_onlines) ${CYAN}${ssh_onlines}${RESET}"
+        print_box_line "${WHITE}$(t status_cpu) ${cpu_colored}${WHITE} | $(t status_ram) ${CYAN}${ram_used_mb}/${ram_total_mb}MB${WHITE} (${ram_colored}${WHITE})${RESET}"
+        print_box_line "${WHITE}UDPgw: ${udpgw_status}${WHITE} | $(t status_ports) ${CYAN}${udpgw_ports}${RESET}"
     else
         print_box_line "${WHITE} $(t status_proxy) ${CYAN}${proxy_label}${RESET}"
         local tokens_line="${WHITE} $(t status_token_proxy) ${proxy_tok}"
@@ -684,8 +768,8 @@ print_status() {
             tokens_line+="${WHITE} | $(t status_ip) ${CYAN}${bound_ip}${RESET}"
         fi
         print_box_line "$tokens_line"
-        print_box_line "${WHITE} $(t status_ssh_onlines) ${CYAN}${ssh_onlines}${RESET}"
-        print_box_line "${WHITE} $(t status_udpgw) ${udpgw_status}${WHITE} $(t status_ports) ${CYAN}${udpgw_ports}${RESET}"
+        print_box_line "${WHITE} $(t status_ssh_onlines) ${CYAN}${ssh_onlines}${WHITE} | $(t status_cpu) ${cpu_colored}${WHITE} | $(t status_ram) ${CYAN}${ram_used_mb}/${ram_total_mb}MB${WHITE} (${ram_colored}${WHITE})${RESET}"
+        print_box_line "${WHITE} $(t status_udpgw) ${udpgw_status}${WHITE} | $(t status_ports) ${CYAN}${udpgw_ports}${RESET}"
     fi
     print_box_close
     echo
@@ -936,7 +1020,22 @@ format_proxy_ports_status() {
 
 is_port_in_use() {
     local port="$1"
-    command -v ss >/dev/null 2>&1 && ss -tuln | grep -q ":$port "
+    if command -v ss >/dev/null 2>&1; then
+        ss -tuln 2>/dev/null | grep -qE ":${port}([[:space:]]|$)" && return 0
+    elif command -v netstat >/dev/null 2>&1; then
+        netstat -tuln 2>/dev/null | grep -qE ":${port}([[:space:]]|$)" && return 0
+    elif command -v lsof >/dev/null 2>&1; then
+        lsof -i ":$port" >/dev/null 2>&1 && return 0
+    elif command -v fuser >/dev/null 2>&1; then
+        fuser "$port/tcp" >/dev/null 2>&1 && return 0
+    elif [[ -f /proc/net/tcp ]]; then
+        local hex_port
+        hex_port=$(printf '%04X' "$port" 2>/dev/null || true)
+        if [[ -n "$hex_port" ]]; then
+            grep -qE ":${hex_port}[[:space:]]" /proc/net/tcp /proc/net/tcp6 2>/dev/null && return 0
+        fi
+    fi
+    return 1
 }
 
 escape_sed_replacement() {
@@ -3963,9 +4062,9 @@ EOF
     ulimit -n 65536 2>/dev/null || true
 
     # 2. Otimizações de Kernel e Rede (TCP / BBR / sysctl)
-    local sysctl_conf="/etc/sysctl.d/99-veltrix-proxy.conf"
+    local sysctl_conf="/etc/sysctl.d/99-proxy.conf"
 
-    sudo rm -f /etc/sysctl.d/99-vtproxy.conf /etc/sysctl.d/zz-custom-network.conf 2>/dev/null || true
+    sudo rm -f /etc/sysctl.d/99-vtproxy.conf /etc/sysctl.d/99-veltrix-proxy.conf /etc/sysctl.d/zz-custom-network.conf 2>/dev/null || true
     sudo mkdir -p /etc/sysctl.d 2>/dev/null || true
 
     if [[ -f /etc/sysctl.conf ]]; then

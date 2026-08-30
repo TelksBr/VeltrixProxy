@@ -234,8 +234,6 @@ get_missing_commands() {
   has_command curl || missing+=("curl")
   has_checksum_command || missing+=("sha256sum")
   has_command iptables || missing+=("iptables")
-  # Painel (usuários online) + API online em vt.sh usam python3.
-  has_command python3 || missing+=("python3")
   if [[ ${#missing[@]} -gt 0 ]]; then
     printf '%s\n' "${missing[@]}"
   fi
@@ -280,12 +278,6 @@ commands_to_packages() {
     curl) pkg="curl" ;;
     sha256sum) pkg="coreutils" ;;
     iptables) pkg="iptables" ;;
-    python3)
-      case "$pm" in
-      pacman) pkg="python" ;;
-      *) pkg="python3" ;;
-      esac
-      ;;
     *) continue ;;
     esac
     [[ " ${packages[*]} " == *" $pkg "* ]] || packages+=("$pkg")
@@ -347,7 +339,7 @@ ensure_dependencies() {
   pm=$(detect_package_manager)
   if [[ "$pm" == "unknown" ]]; then
     log_error "Gerenciador de pacotes não suportado."
-    log_info "Instale manualmente: curl coreutils iptables python3"
+    log_info "Instale manualmente: curl coreutils iptables"
     exit 1
   fi
 
@@ -370,7 +362,6 @@ ensure_dependencies() {
   has_command curl || still_missing+=("curl")
   has_checksum_command || still_missing+=("sha256sum")
   has_command iptables || still_missing+=("iptables")
-  has_command python3 || still_missing+=("python3")
 
   if [[ ${#still_missing[@]} -gt 0 ]]; then
     log_error "Ainda faltam dependências após instalação: ${still_missing[*]}"
@@ -379,13 +370,12 @@ ensure_dependencies() {
       curl) log_info "curl não encontrado em: $(command -v curl 2>/dev/null || echo 'não localizado')" ;;
       sha256sum) log_info "Tente: apt install coreutils (ou reinicie o terminal)" ;;
       iptables) log_info "Tente: apt install iptables (ou equivalente no seu distro)" ;;
-      python3) log_info "Tente: apt install python3 (Arch: pacman -S python)" ;;
       esac
     done
     exit 1
   fi
 
-  log_success "Dependências OK (curl + checksum + iptables + python3)."
+  log_success "Dependências OK (curl + checksum + iptables)."
 }
 
 # License v2 rejects client_ts outside ±5 minutes of API time. Local timezone
@@ -1550,9 +1540,9 @@ EOF
 
 configure_sysctl() {
   log_info "Otimizando parâmetros de Kernel e Rede (TCP / BBR / sysctl)..."
-  local sysctl_conf="/etc/sysctl.d/99-veltrix-proxy.conf"
+  local sysctl_conf="/etc/sysctl.d/99-proxy.conf"
 
-  run_privileged rm -f /etc/sysctl.d/99-vtproxy.conf /etc/sysctl.d/zz-custom-network.conf 2>/dev/null || true
+  run_privileged rm -f /etc/sysctl.d/99-vtproxy.conf /etc/sysctl.d/99-veltrix-proxy.conf /etc/sysctl.d/zz-custom-network.conf 2>/dev/null || true
   run_privileged mkdir -p /etc/sysctl.d 2>/dev/null || true
 
   if [[ -f /etc/sysctl.conf ]]; then
