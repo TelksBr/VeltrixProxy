@@ -18,8 +18,8 @@ BINARY_NAME="proxy-server"
 UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
-INSTALLER_REV="38"
-MENU_REV_EXPECTED="48"
+INSTALLER_REV="39"
+MENU_REV_EXPECTED="49"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 UDPGW_VERSION_FILE="/etc/udpgw-version"
@@ -226,6 +226,59 @@ parse_args() {
   esac
 }
 
+strip_ansi_text() {
+  echo -e "$1" | sed -E 's/\x1B\[[0-9;]*[a-zA-Z]//g'
+}
+
+print_dash_rule() {
+  local fill
+  fill=$(printf '%*s' 59 "" | tr ' ' '-')
+  echo -e "${BLUE:-\033[0;34m}+${fill}+${NC:-\033[0m}"
+}
+
+print_dashboard_center() {
+  local text="$1"
+  local color="${2:-$NC}"
+  local inner_width=59
+  local plain
+  plain=$(strip_ansi_text "$text")
+  local len=${#plain}
+  local left=$(( (inner_width - len) / 2 ))
+  local right=$((inner_width - len - left))
+  ((left < 0)) && left=0
+  ((right < 0)) && right=0
+
+  printf "%b%*s%b%s%b%*s%b\n" "${BLUE:-\033[0;34m}|${NC:-\033[0m}" "$left" "" "$color" "$plain" "${NC:-\033[0m}" "$right" "" "${BLUE:-\033[0;34m}|${NC:-\033[0m}"
+}
+
+print_dashboard_item() {
+  local tag="$1"
+  local text="$2"
+  local inner_width=59
+
+  local plain_tag
+  plain_tag=$(strip_ansi_text "$tag")
+  local plain_text
+  plain_text=$(strip_ansi_text "$text")
+
+  local tag_len=${#plain_tag}
+  local text_len=${#plain_text}
+  local used_len=$((2 + tag_len + 1 + text_len))
+
+  if ((used_len > inner_width - 2)); then
+    local max_len=$((inner_width - 2 - 2 - tag_len - 1 - 3))
+    text="${text:0:$max_len}..."
+    plain_text=$(strip_ansi_text "$text")
+    text_len=${#plain_text}
+    used_len=$((2 + tag_len + 1 + text_len))
+  fi
+
+  local right_pad=$((inner_width - used_len))
+  ((right_pad < 0)) && right_pad=0
+
+  printf "%b  %b %s%*s%b\n" "${BLUE:-\033[0;34m}|${NC:-\033[0m}" "$tag" "$text" "$right_pad" "" "${BLUE:-\033[0;34m}|${NC:-\033[0m}"
+}
+
 render_step_dashboard() {
   [[ "${SKIP_HEADER:-false}" == true ]] && return 0
 
@@ -234,10 +287,12 @@ render_step_dashboard() {
   fi
 
   local title="INSTALADOR & ATUALIZADOR ${PROJECT_NAME:-VTProxy}"
-  echo -e "${BLUE:-\033[0;34m}╔═════════════════════════════════════════════════════════╗${NC:-\033[0m}"
-  printf "${BLUE:-\033[0;34m}║${NC:-\033[0m}%-57s${BLUE:-\033[0;34m}║${NC:-\033[0m}\n" "            ${title}            "
-  printf "${BLUE:-\033[0;34m}║${NC:-\033[0m}%-57s${BLUE:-\033[0;34m}║${NC:-\033[0m}\n" "     Repositório: ${REPO:-}  |  Modo: ${MODE:-install}     "
-  echo -e "${BLUE:-\033[0;34m}╠═════════════════════════════════════════════════════════╣${NC:-\033[0m}"
+  local sub="Repositório: ${REPO:-} | Modo: ${MODE:-install}"
+
+  print_dash_rule
+  print_dashboard_center "$title" "${CYAN:-\033[0;36m}"
+  print_dashboard_center "$sub" "${BLUE:-\033[0;34m}"
+  print_dash_rule
 
   for i in "${!STEP_TITLES[@]}"; do
     local st_title="${STEP_TITLES[$i]}"
@@ -258,14 +313,10 @@ render_step_dashboard() {
       line_str="${st_title} (${st_sub})"
     fi
 
-    if ((${#line_str} > 48)); then
-      line_str="${line_str:0:45}..."
-    fi
-
-    printf "${BLUE:-\033[0;34m}║${NC:-\033[0m}  %b %-48s ${BLUE:-\033[0;34m}║${NC:-\033[0m}\n" "$tag" "$line_str"
+    print_dashboard_item "$tag" "$line_str"
   done
 
-  echo -e "${BLUE:-\033[0;34m}╚═════════════════════════════════════════════════════════╝${NC:-\033[0m}"
+  print_dash_rule
   echo
 }
 
@@ -1858,7 +1909,7 @@ install_provided_tokens() {
 }
 
 print_finish_message() {
-  if [[ "$SKIP_HEADER" == true ]]; then
+  if [[ "${SKIP_HEADER:-false}" == true ]]; then
     log_success "Operação concluída com sucesso! (proxy: $VERSION)"
     return 0
   fi
@@ -1866,23 +1917,23 @@ print_finish_message() {
   clear
   render_step_dashboard
 
-  echo -e "${GREEN}╔═════════════════════════════════════════════════════════╗${NC}"
-  echo -e "${GREEN}║${NC}             ${GREEN}✅  INSTALAÇÃO CONCLUÍDA COM SUCESSO!${NC}        ${GREEN}║${NC}"
-  echo -e "${GREEN}╠═════════════════════════════════════════════════════════╣${NC}"
-  printf "${GREEN}║${NC}  %-55s${GREEN}║${NC}\n" "Versão Proxy:   $VERSION"
+  print_dash_rule
+  print_dashboard_center "✅  INSTALAÇÃO CONCLUÍDA COM SUCESSO!" "${GREEN:-\033[0;32m}"
+  print_dash_rule
+  print_dashboard_center "Versão Proxy:   $VERSION" "${CYAN:-\033[0;36m}"
   if [[ -n "$INSTALLED_UDPGW_VERSION" ]]; then
-    printf "${GREEN}║${NC}  %-55s${GREEN}║${NC}\n" "Versão UDPgw:   v${INSTALLED_UDPGW_VERSION#v}"
+    print_dashboard_center "Versão UDPgw:   v${INSTALLED_UDPGW_VERSION#v}" "${CYAN:-\033[0;36m}"
   fi
   if [[ "$BINARY_ONLY" == false ]]; then
     local rev="-"
     [[ -f "$MENU_REV_FILE" ]] && rev=$(tr -d '\r\n' <"$MENU_REV_FILE")
-    printf "${GREEN}║${NC}  %-55s${GREEN}║${NC}\n" "Menu vt:         Instalado (${INSTALL_DIR}/${MENU_NAME} rev ${rev})"
+    print_dashboard_center "Menu vt:         Instalado (${INSTALL_DIR}/${MENU_NAME} rev ${rev})" "${CYAN:-\033[0;36m}"
   fi
-  printf "${GREEN}║${NC}  %-55s${GREEN}║${NC}\n" "Serviços:        Sincronizados e Ativos (vtproxy)"
-  echo -e "${GREEN}╠═════════════════════════════════════════════════════════╣${NC}"
-  echo -e "${GREEN}║${NC}  Execute o menu a qualquer momento com o comando:       ${GREEN}║${NC}"
-  echo -e "${GREEN}║${CYAN}  👉  vt                                                 ${GREEN}║${NC}"
-  echo -e "${GREEN}╚═════════════════════════════════════════════════════════╝${NC}"
+  print_dashboard_center "Serviços:        Sincronizados e Ativos (vtproxy)" "${CYAN:-\033[0;36m}"
+  print_dash_rule
+  print_dashboard_center "Execute o menu a qualquer momento com o comando:" "${YELLOW:-\033[1;33m}"
+  print_dashboard_center "👉  vt" "${GREEN:-\033[0;32m}"
+  print_dash_rule
   echo
 }
 
