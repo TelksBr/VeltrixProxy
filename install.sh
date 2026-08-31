@@ -18,8 +18,8 @@ BINARY_NAME="proxy-server"
 UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
-INSTALLER_REV="41"
-MENU_REV_EXPECTED="51"
+INSTALLER_REV="42"
+MENU_REV_EXPECTED="52"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 UDPGW_VERSION_FILE="/etc/udpgw-version"
@@ -53,7 +53,7 @@ STEP_TITLES=(
   "Sincronização de Relógio do Sistema (NTP)"
   "Plataforma e Releases do GitHub"
   "Baixando e Instalando Binários (proxy & udpgw)"
-  "Otimizações de Kernel, BBR e Descritores"
+  "Otimizações de Kernel, BBR e OpenSSH"
   "Instalando Script do Menu (vt.sh)"
   "Sincronizando e Reiniciando Serviços Systemd"
 )
@@ -1752,9 +1752,94 @@ EOF
   log_success "Otimizações de Kernel aplicadas (Algoritmo TCP ativo: ${active_cc})."
 }
 
+configure_ssh_tuning() {
+  local sshd_config="/etc/ssh/sshd_config"
+  local sshd_dropin_dir="/etc/ssh/sshd_config.d"
+  local sshd_dropin_conf="${sshd_dropin_dir}/99-proxy.conf"
+
+  # 1. Configura drop-in modular em /etc/ssh/sshd_config.d/
+  if [[ -d /etc/ssh ]]; then
+    run_privileged mkdir -p "$sshd_dropin_dir" 2>/dev/null || true
+    run_privileged rm -f "${sshd_dropin_dir}/99-vtproxy.conf" "${sshd_dropin_dir}/99-veltrix-proxy.conf" 2>/dev/null || true
+
+    cat << 'EOF' | run_privileged tee "$sshd_dropin_conf" >/dev/null
+# VTProxy / VeltrixProxy OpenSSH Optimizations for High Concurrency Tunnels
+MaxStartups 2000:30:5000
+MaxSessions 500
+MaxAuthTries 10
+LoginGraceTime 30
+UseDNS no
+GSSAPIAuthentication no
+TCPKeepAlive yes
+ClientAliveInterval 15
+ClientAliveCountMax 3
+AllowTcpForwarding yes
+GatewayPorts yes
+PermitTunnel yes
+X11Forwarding no
+Compression no
+PrintMotd no
+PrintLastLog no
+EOF
+    run_privileged chmod 644 "$sshd_dropin_conf" 2>/dev/null || true
+  fi
+
+  # 2. Atualiza /etc/ssh/sshd_config diretamente sem duplicar
+  if [[ -f "$sshd_config" ]]; then
+    local params=(
+      "MaxStartups 2000:30:5000"
+      "MaxSessions 500"
+      "MaxAuthTries 10"
+      "LoginGraceTime 30"
+      "UseDNS no"
+      "GSSAPIAuthentication no"
+      "TCPKeepAlive yes"
+      "ClientAliveInterval 15"
+      "ClientAliveCountMax 3"
+      "AllowTcpForwarding yes"
+      "GatewayPorts yes"
+      "PermitTunnel yes"
+      "Compression no"
+      "PrintMotd no"
+      "PrintLastLog no"
+    )
+
+    for item in "${params[@]}"; do
+      local key="${item%% *}"
+      local val="${item#* }"
+      if grep -qiE "^[#[:space:]]*${key}[[:space:]]+" "$sshd_config"; then
+        safe_sed_inplace "$sshd_config" -e "s|^[#[:space:]]*${key}[[:space:]].*|${key} ${val}|I" || true
+      else
+        echo "${key} ${val}" | run_privileged tee -a "$sshd_config" >/dev/null || true
+      fi
+    done
+  fi
+
+  # 3. Systemd Limits & TasksMax Override para ssh / sshd
+  for svc_dir in /etc/systemd/system/ssh.service.d /etc/systemd/system/sshd.service.d; do
+    run_privileged mkdir -p "$svc_dir" 2>/dev/null || true
+    cat << 'EOF' | run_privileged tee "${svc_dir}/99-proxy-limits.conf" >/dev/null
+[Service]
+LimitNOFILE=1048576
+LimitNPROC=65536
+TasksMax=infinity
+EOF
+  done
+
+  # 4. Validação segura antes de recarregar
+  if sshd -t >/dev/null 2>&1; then
+    has_systemd && run_privileged systemctl daemon-reload >/dev/null 2>&1 || true
+    run_privileged systemctl reload ssh >/dev/null 2>&1 || run_privileged systemctl reload sshd >/dev/null 2>&1 || run_privileged service ssh reload >/dev/null 2>&1 || run_privileged service sshd reload >/dev/null 2>&1 || true
+    log_success "Otimizações do OpenSSH aplicadas com sucesso (MaxStartups 2000, Anti-Ghosting, NoDNS)."
+  else
+    log_warn "Validação do sshd -t encontrou avisos. Mantendo configuração sem forçar reload."
+  fi
+}
+
 configure_system_tuning() {
   configure_limits
   configure_sysctl
+  configure_ssh_tuning
 }
 
 download_and_install_binary() {

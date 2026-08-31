@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="51"
+readonly MENU_REV="52"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly MENU_BIN="/usr/local/bin/vt"
@@ -4218,6 +4218,86 @@ EOF
 
     sudo sysctl -p "$sysctl_conf" >/dev/null 2>&1 || true
     sudo sysctl --system >/dev/null 2>&1 || true
+
+    # 3. Otimizações de alta concorrência e estabilidade do OpenSSH
+    ensure_ssh_tuning || true
+}
+
+ensure_ssh_tuning() {
+    local sshd_config="/etc/ssh/sshd_config"
+    local sshd_dropin_dir="/etc/ssh/sshd_config.d"
+    local sshd_dropin_conf="${sshd_dropin_dir}/99-proxy.conf"
+
+    if [[ -d /etc/ssh ]]; then
+        sudo mkdir -p "$sshd_dropin_dir" 2>/dev/null || true
+        sudo rm -f "${sshd_dropin_dir}/99-vtproxy.conf" "${sshd_dropin_dir}/99-veltrix-proxy.conf" 2>/dev/null || true
+
+        cat << 'EOF' | sudo tee "$sshd_dropin_conf" >/dev/null
+# VTProxy / VeltrixProxy OpenSSH Optimizations
+MaxStartups 2000:30:5000
+MaxSessions 500
+MaxAuthTries 10
+LoginGraceTime 30
+UseDNS no
+GSSAPIAuthentication no
+TCPKeepAlive yes
+ClientAliveInterval 15
+ClientAliveCountMax 3
+AllowTcpForwarding yes
+GatewayPorts yes
+PermitTunnel yes
+X11Forwarding no
+Compression no
+PrintMotd no
+PrintLastLog no
+EOF
+        sudo chmod 644 "$sshd_dropin_conf" 2>/dev/null || true
+    fi
+
+    if [[ -f "$sshd_config" ]]; then
+        local params=(
+            "MaxStartups 2000:30:5000"
+            "MaxSessions 500"
+            "MaxAuthTries 10"
+            "LoginGraceTime 30"
+            "UseDNS no"
+            "GSSAPIAuthentication no"
+            "TCPKeepAlive yes"
+            "ClientAliveInterval 15"
+            "ClientAliveCountMax 3"
+            "AllowTcpForwarding yes"
+            "GatewayPorts yes"
+            "PermitTunnel yes"
+            "Compression no"
+            "PrintMotd no"
+            "PrintLastLog no"
+        )
+
+        for item in "${params[@]}"; do
+            local key="${item%% *}"
+            local val="${item#* }"
+            if grep -qiE "^[#[:space:]]*${key}[[:space:]]+" "$sshd_config"; then
+                sudo sed -i -E "s|^[#[:space:]]*${key}[[:space:]].*|${key} ${val}|I" "$sshd_config" 2>/dev/null || true
+            else
+                echo "${key} ${val}" | sudo tee -a "$sshd_config" >/dev/null || true
+            fi
+        done
+    fi
+
+    for svc_dir in /etc/systemd/system/ssh.service.d /etc/systemd/system/sshd.service.d; do
+        sudo mkdir -p "$svc_dir" 2>/dev/null || true
+        cat << 'EOF' | sudo tee "${svc_dir}/99-proxy-limits.conf" >/dev/null
+[Service]
+LimitNOFILE=1048576
+LimitNPROC=65536
+TasksMax=infinity
+EOF
+    done
+
+    if sshd -t >/dev/null 2>&1; then
+        sudo systemctl daemon-reload >/dev/null 2>&1 || true
+        sudo systemctl reload ssh >/dev/null 2>&1 || sudo systemctl reload sshd >/dev/null 2>&1 || sudo service ssh reload >/dev/null 2>&1 || sudo service sshd reload >/dev/null 2>&1 || true
+    fi
 }
 
 if [[ "$1" == "--migrate" ]]; then
