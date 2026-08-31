@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="53"
+readonly MENU_REV="54"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly MENU_BIN="/usr/local/bin/vt"
@@ -4227,7 +4227,7 @@ ensure_ssh_tuning() {
     local sshd_config="/etc/ssh/sshd_config"
     local sshd_dropin_dir="/etc/ssh/sshd_config.d"
     local sshd_dropin_conf="${sshd_dropin_dir}/99-proxy.conf"
-    local keys_regex="MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|Compression|PrintMotd|PrintLastLog"
+    local keys_regex="MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|X11Forwarding|Compression|PrintMotd|PrintLastLog"
 
     if [[ -d /etc/ssh ]]; then
         sudo mkdir -p "$sshd_dropin_dir" 2>/dev/null || true
@@ -4260,7 +4260,7 @@ EOF
             sudo sed -i '1i Include /etc/ssh/sshd_config.d/*.conf\n' "$sshd_config" 2>/dev/null || true
         fi
 
-        sudo sed -i -E "/^[[:space:]]*(${keys_regex})[[:space:]]/d" "$sshd_config" 2>/dev/null || true
+        sudo sed -i -E -e "/^[[:space:]]*(${keys_regex})([[:space:]=]|$)/Id" "$sshd_config" 2>/dev/null || true
     fi
 
     for svc_dir in /etc/systemd/system/ssh.service.d /etc/systemd/system/sshd.service.d; do

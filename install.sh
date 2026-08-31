@@ -18,8 +18,8 @@ BINARY_NAME="proxy-server"
 UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
-INSTALLER_REV="43"
-MENU_REV_EXPECTED="53"
+INSTALLER_REV="44"
+MENU_REV_EXPECTED="54"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 UDPGW_VERSION_FILE="/etc/udpgw-version"
@@ -1756,7 +1756,7 @@ configure_ssh_tuning() {
   local sshd_config="/etc/ssh/sshd_config"
   local sshd_dropin_dir="/etc/ssh/sshd_config.d"
   local sshd_dropin_conf="${sshd_dropin_dir}/99-proxy.conf"
-  local keys_regex="MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|Compression|PrintMotd|PrintLastLog"
+  local keys_regex="MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|X11Forwarding|Compression|PrintMotd|PrintLastLog"
 
   # 1. Configura drop-in modular em /etc/ssh/sshd_config.d/
   if [[ -d /etc/ssh ]]; then
@@ -1791,8 +1791,8 @@ EOF
       safe_sed_inplace "$sshd_config" -e '1i Include /etc/ssh/sshd_config.d/*.conf\n' || true
     fi
 
-    # Remove qualquer ocorrência duplicada/antiga das chaves gerenciadas
-    safe_sed_inplace "$sshd_config" -e "/^[[:space:]]*(${keys_regex})[[:space:]]/d" || true
+    # Remove qualquer ocorrência duplicada/antiga das chaves gerenciadas de forma case-insensitive
+    safe_sed_inplace "$sshd_config" -e "/^[[:space:]]*(${keys_regex})([[:space:]=]|$)/Id" || true
   fi
 
   # 3. Systemd Limits & TasksMax Override para ssh / sshd
