@@ -3,13 +3,16 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="54"
+readonly MENU_REV="55"
+readonly PROXY_REPO="TelksBr/VeltrixProxy"
+readonly UDPGW_REPO="TelksBr/VeltrixUPGW"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly MENU_BIN="/usr/local/bin/vt"
 readonly PROXY_VERSION_FILE="/etc/proxy-version"
 readonly UDPGW_VERSION_FILE="/etc/udpgw-version"
-readonly UDPGW_REPO="TelksBr/VeltrixUPGW"
+readonly UPDATE_CACHE_FILE="/tmp/.vt_update_check.cache"
+readonly UPDATE_CACHE_TTL=300
 readonly QUICK_SETUP_MARKER="/etc/vtproxy/.quick-setup-done"
 readonly QUICK_SETUP_ASKED_MARKER="/etc/vtproxy/.quick-setup-asked"
 
@@ -172,6 +175,13 @@ I18N_PT[update_downloading]="Baixando e executando instalador oficial..."
 I18N_PT[update_failed]="Falha na atualização."
 I18N_PT[update_success]="Atualização concluída (binários + menu)."
 I18N_PT[update_reloading]="Recarregando o novo menu vt..."
+I18N_PT[update_notice_title]="ATUALIZAÇÃO DISPONÍVEL!"
+I18N_PT[update_notice_prompt]="Selecione a Opção [4] para atualizar o sistema."
+I18N_PT[update_badge_available]="NOVO UPDATE!"
+I18N_PT[update_badge_current]="ATUALIZADO"
+I18N_PT[update_component_proxy]="Proxy Server:"
+I18N_PT[update_component_udpgw]="UDP Gateway:"
+I18N_PT[update_component_menu]="Menu Core:"
 
 I18N_PT[remove_title]="REMOÇÃO COMPLETA"
 I18N_PT[remove_warning_banner]="Esta ação irá remover TODOS os dados e serviços"
@@ -272,6 +282,13 @@ I18N_EN[update_downloading]="Downloading and running official installer..."
 I18N_EN[update_failed]="Update failed."
 I18N_EN[update_success]="Update completed (binaries + menu)."
 I18N_EN[update_reloading]="Reloading new vt menu..."
+I18N_EN[update_notice_title]="UPDATE AVAILABLE!"
+I18N_EN[update_notice_prompt]="Select Option [4] to update the system."
+I18N_EN[update_badge_available]="NEW UPDATE!"
+I18N_EN[update_badge_current]="UP TO DATE"
+I18N_EN[update_component_proxy]="Proxy Server:"
+I18N_EN[update_component_udpgw]="UDP Gateway:"
+I18N_EN[update_component_menu]="Menu Core:"
 
 I18N_EN[remove_title]="COMPLETE UNINSTALL"
 I18N_EN[remove_warning_banner]="This action will remove ALL data and services"
@@ -372,6 +389,13 @@ I18N_ES[update_downloading]="Descargando y ejecutando instalador oficial..."
 I18N_ES[update_failed]="Fallo en la actualización."
 I18N_ES[update_success]="Actualización completada (binarios + menú)."
 I18N_ES[update_reloading]="Recargando nuevo menú vt..."
+I18N_ES[update_notice_title]="¡ACTUALIZACIÓN DISPONIBLE!"
+I18N_ES[update_notice_prompt]="Seleccione la Opción [4] para actualizar el sistema."
+I18N_ES[update_badge_available]="¡NUEVO UPDATE!"
+I18N_ES[update_badge_current]="ACTUALIZADO"
+I18N_ES[update_component_proxy]="Proxy Server:"
+I18N_ES[update_component_udpgw]="UDP Gateway:"
+I18N_ES[update_component_menu]="Menú Core:"
 
 I18N_ES[remove_title]="DESINSTALACIÓN COMPLETA"
 I18N_ES[remove_warning_banner]="Esta acción eliminará TODOS los datos y servicios"
@@ -772,7 +796,39 @@ print_status() {
     echo
 }
 
+print_update_available_notice() {
+    check_system_updates false
+
+    if [[ "${HAS_SYSTEM_UPDATE:-0}" -ne 1 ]]; then
+        return 0
+    fi
+
+    local local_proxy local_udpgw
+    local_proxy=$(get_installed_proxy_version_label)
+    local_udpgw=$(get_installed_udpgw_version_label)
+
+    print_box_open
+    print_box_heading "$(t update_notice_title)" "$YELLOW"
+    print_box_divider
+
+    if [[ "${HAS_PROXY_UPDATE:-0}" -eq 1 ]]; then
+        print_box_line "${WHITE}  • Proxy:  ${CYAN}v${local_proxy}${RESET} ${WHITE}➜ ${GREEN}v${REMOTE_PROXY_VER}${RESET}"
+    fi
+    if [[ "${HAS_UDPGW_UPDATE:-0}" -eq 1 ]]; then
+        print_box_line "${WHITE}  • UDPgw:  ${CYAN}v${local_udpgw}${RESET} ${WHITE}➜ ${GREEN}v${REMOTE_UDPGW_VER}${RESET}"
+    fi
+    if [[ "${HAS_MENU_UPDATE:-0}" -eq 1 ]]; then
+        print_box_line "${WHITE}  • Menu:   ${CYAN}rev ${MENU_REV}${RESET} ${WHITE}➜ ${GREEN}rev ${REMOTE_MENU_REV}${RESET}"
+    fi
+
+    print_box_line "${YELLOW}  $(t update_notice_prompt)${RESET}"
+    print_box_close
+    echo
+}
+
 print_initial_menu() {
+    print_update_available_notice
+
     print_box_open
     print_box_heading "$(t menu_main_title)"
     print_box_divider
@@ -780,11 +836,16 @@ print_initial_menu() {
     local ssh_onlines
     ssh_onlines=$(get_ssh_online_users_count)
     
+    local update_label="$(t menu_update)"
+    if [[ "${HAS_SYSTEM_UPDATE:-0}" -eq 1 ]]; then
+        update_label+=" ${YELLOW}[$(t update_badge_available)]"
+    fi
+
     local menu_items=(
         "1 • $(t menu_proxy)"
         "2 • $(t menu_online_users "$ssh_onlines")"
         "3 • $(t menu_tokens)"
-        "4 • $(t menu_update)"
+        "4 • ${update_label}"
         "5 • $(t menu_udpgw)"
         "6 • $(t menu_lang) [${LANG_ACTIVE^^}]"
         "7 • $(t menu_uninstall)"
@@ -794,6 +855,8 @@ print_initial_menu() {
     for item in "${menu_items[@]}"; do
         if [[ $item == *"$(t menu_uninstall)"* || $item == *"$(t menu_exit)"* || $item == *"Remover"* || $item == *"Uninstall"* || $item == *"Desinstalar"* || $item == *"Sair"* || $item == *"Exit"* || $item == *"Salir"* ]]; then
             render_menu_option "$item" "red"
+        elif [[ $item == *"$(t update_badge_available)"* ]]; then
+            render_menu_option "$item" "yellow"
         else
             render_menu_option "$item"
         fi
@@ -3866,6 +3929,7 @@ run_system_update() {
     print_info "Proxy: v$(get_installed_proxy_version_label) | UDPgw: v$(get_installed_udpgw_version_label)"
 
     restart_udpgw_configured_ports || true
+    rm -f "$UPDATE_CACHE_FILE" 2>/dev/null || true
 
     if [[ -x "$MENU_BIN" ]]; then
         echo
@@ -3878,18 +3942,134 @@ run_system_update() {
     return 0
 }
 
+version_is_newer() {
+    local remote="${1#v}"
+    local local_ver="${2#v}"
+    [[ -z "$remote" || -z "$local_ver" || "$local_ver" == "desconhecida" || "$remote" == "desconhecida" ]] && return 1
+    [[ "$remote" == "$local_ver" ]] && return 1
+
+    local highest
+    highest=$(printf '%s\n%s\n' "$remote" "$local_ver" | sort -V | tail -n1)
+    if [[ "$highest" == "$remote" && "$remote" != "$local_ver" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+fetch_remote_proxy_version() {
+    local json tag
+    json=$(curl -fsSL --connect-timeout 2 --max-time 3 \
+        -H "Cache-Control: no-cache" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/${PROXY_REPO}/releases/latest" 2>/dev/null || true)
+    tag=$(echo "$json" | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n1 | sed -E 's/.*"([^"]+)"$/\1/' | tr -d 'v\r\n' || true)
+    echo "$tag"
+}
+
+fetch_remote_udpgw_version() {
+    local json tag
+    json=$(curl -fsSL --connect-timeout 2 --max-time 3 \
+        -H "Cache-Control: no-cache" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/${UDPGW_REPO}/releases/latest" 2>/dev/null || true)
+    tag=$(echo "$json" | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n1 | sed -E 's/.*"([^"]+)"$/\1/' | tr -d 'v\r\n' || true)
+    echo "$tag"
+}
+
+fetch_remote_menu_revision() {
+    local rev
+    rev=$(curl -fsSL --connect-timeout 2 --max-time 3 "${INSTALL_URL}?$(date +%s)" 2>/dev/null | grep -E '^INSTALLER_REV=' | head -n1 | cut -d'"' -f2 | tr -d '\r\n' || true)
+    echo "$rev"
+}
+
+check_system_updates() {
+    local force="${1:-false}"
+    local now
+    now=$(date +%s)
+
+    if [[ "$force" != "true" && -f "$UPDATE_CACHE_FILE" ]]; then
+        local cache_time
+        cache_time=$(sed -n '1p' "$UPDATE_CACHE_FILE" 2>/dev/null || echo 0)
+        if [[ "$cache_time" =~ ^[0-9]+$ ]] && (( now - cache_time < UPDATE_CACHE_TTL )); then
+            REMOTE_PROXY_VER=$(sed -n '2p' "$UPDATE_CACHE_FILE" 2>/dev/null || echo "")
+            REMOTE_UDPGW_VER=$(sed -n '3p' "$UPDATE_CACHE_FILE" 2>/dev/null || echo "")
+            REMOTE_MENU_REV=$(sed -n '4p' "$UPDATE_CACHE_FILE" 2>/dev/null || echo "")
+            HAS_PROXY_UPDATE=$(sed -n '5p' "$UPDATE_CACHE_FILE" 2>/dev/null || echo 0)
+            HAS_UDPGW_UPDATE=$(sed -n '6p' "$UPDATE_CACHE_FILE" 2>/dev/null || echo 0)
+            HAS_MENU_UPDATE=$(sed -n '7p' "$UPDATE_CACHE_FILE" 2>/dev/null || echo 0)
+            HAS_SYSTEM_UPDATE=$(sed -n '8p' "$UPDATE_CACHE_FILE" 2>/dev/null || echo 0)
+            return 0
+        fi
+    fi
+
+    REMOTE_PROXY_VER=$(fetch_remote_proxy_version)
+    REMOTE_UDPGW_VER=$(fetch_remote_udpgw_version)
+    REMOTE_MENU_REV=$(fetch_remote_menu_revision)
+
+    local local_proxy local_udpgw local_menu_rev
+    local_proxy=$(get_installed_proxy_version_label)
+    local_udpgw=$(get_installed_udpgw_version_label)
+    local_menu_rev="$MENU_REV"
+
+    HAS_PROXY_UPDATE=0
+    HAS_UDPGW_UPDATE=0
+    HAS_MENU_UPDATE=0
+    HAS_SYSTEM_UPDATE=0
+
+    if [[ -n "$REMOTE_PROXY_VER" ]] && version_is_newer "$REMOTE_PROXY_VER" "$local_proxy"; then
+        HAS_PROXY_UPDATE=1
+    fi
+
+    if [[ -n "$REMOTE_UDPGW_VER" ]] && version_is_newer "$REMOTE_UDPGW_VER" "$local_udpgw"; then
+        HAS_UDPGW_UPDATE=1
+    fi
+
+    if [[ -n "$REMOTE_MENU_REV" && "$REMOTE_MENU_REV" =~ ^[0-9]+$ && "$local_menu_rev" =~ ^[0-9]+$ ]]; then
+        if (( REMOTE_MENU_REV > local_menu_rev )); then
+            HAS_MENU_UPDATE=1
+        fi
+    fi
+
+    if (( HAS_PROXY_UPDATE || HAS_UDPGW_UPDATE || HAS_MENU_UPDATE )); then
+        HAS_SYSTEM_UPDATE=1
+    fi
+
+    cat << EOF > "$UPDATE_CACHE_FILE" 2>/dev/null || true
+$now
+$REMOTE_PROXY_VER
+$REMOTE_UDPGW_VER
+$REMOTE_MENU_REV
+$HAS_PROXY_UPDATE
+$HAS_UDPGW_UPDATE
+$HAS_MENU_UPDATE
+$HAS_SYSTEM_UPDATE
+EOF
+    chmod 666 "$UPDATE_CACHE_FILE" 2>/dev/null || true
+}
+
 update_system_menu() {
     print_header
+
+    check_system_updates true
 
     local proxy_ver udpgw_ver
     proxy_ver=$(get_installed_proxy_version_label)
     udpgw_ver=$(get_installed_udpgw_version_label)
 
+    local proxy_badge="${GREEN}[$(t update_badge_current)]${RESET}"
+    local udpgw_badge="${GREEN}[$(t update_badge_current)]${RESET}"
+    local menu_badge="${GREEN}[$(t update_badge_current)]${RESET}"
+
+    [[ "${HAS_PROXY_UPDATE:-0}" -eq 1 ]] && proxy_badge="${YELLOW}[➜ v${REMOTE_PROXY_VER}]${RESET}"
+    [[ "${HAS_UDPGW_UPDATE:-0}" -eq 1 ]] && udpgw_badge="${YELLOW}[➜ v${REMOTE_UDPGW_VER}]${RESET}"
+    [[ "${HAS_MENU_UPDATE:-0}" -eq 1 ]] && menu_badge="${YELLOW}[➜ rev ${REMOTE_MENU_REV}]${RESET}"
+
     print_box_open
     print_box_heading "$(t update_menu_title)" "$CYAN"
     print_box_divider
-    print_box_line "${WHITE}  $(t update_installed_proxy "${GREEN}v${proxy_ver}")"
-    print_box_line "${WHITE}  $(t update_installed_udpgw "${GREEN}v${udpgw_ver}")"
+    print_box_line "${WHITE}  • $(t update_component_proxy) ${CYAN}v${proxy_ver}${RESET} ${proxy_badge}"
+    print_box_line "${WHITE}  • $(t update_component_udpgw) ${CYAN}v${udpgw_ver}${RESET} ${udpgw_badge}"
+    print_box_line "${WHITE}  • $(t update_component_menu)  ${CYAN}rev ${MENU_REV}${RESET} ${menu_badge}"
     print_box_close
     echo
 
