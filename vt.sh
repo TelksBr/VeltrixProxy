@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="52"
+readonly MENU_REV="53"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
 readonly LICENSE_API_URL="${LICENSE_API_URL:-https://proxyvt.sshtproject.com}"
 readonly MENU_BIN="/usr/local/bin/vt"
@@ -4227,6 +4227,7 @@ ensure_ssh_tuning() {
     local sshd_config="/etc/ssh/sshd_config"
     local sshd_dropin_dir="/etc/ssh/sshd_config.d"
     local sshd_dropin_conf="${sshd_dropin_dir}/99-proxy.conf"
+    local keys_regex="MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|Compression|PrintMotd|PrintLastLog"
 
     if [[ -d /etc/ssh ]]; then
         sudo mkdir -p "$sshd_dropin_dir" 2>/dev/null || true
@@ -4255,33 +4256,11 @@ EOF
     fi
 
     if [[ -f "$sshd_config" ]]; then
-        local params=(
-            "MaxStartups 2000:30:5000"
-            "MaxSessions 500"
-            "MaxAuthTries 10"
-            "LoginGraceTime 30"
-            "UseDNS no"
-            "GSSAPIAuthentication no"
-            "TCPKeepAlive yes"
-            "ClientAliveInterval 15"
-            "ClientAliveCountMax 3"
-            "AllowTcpForwarding yes"
-            "GatewayPorts yes"
-            "PermitTunnel yes"
-            "Compression no"
-            "PrintMotd no"
-            "PrintLastLog no"
-        )
+        if ! grep -qiE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' "$sshd_config"; then
+            sudo sed -i '1i Include /etc/ssh/sshd_config.d/*.conf\n' "$sshd_config" 2>/dev/null || true
+        fi
 
-        for item in "${params[@]}"; do
-            local key="${item%% *}"
-            local val="${item#* }"
-            if grep -qiE "^[#[:space:]]*${key}[[:space:]]+" "$sshd_config"; then
-                sudo sed -i -E "s|^[#[:space:]]*${key}[[:space:]].*|${key} ${val}|I" "$sshd_config" 2>/dev/null || true
-            else
-                echo "${key} ${val}" | sudo tee -a "$sshd_config" >/dev/null || true
-            fi
-        done
+        sudo sed -i -E "/^[[:space:]]*(${keys_regex})[[:space:]]/d" "$sshd_config" 2>/dev/null || true
     fi
 
     for svc_dir in /etc/systemd/system/ssh.service.d /etc/systemd/system/sshd.service.d; do

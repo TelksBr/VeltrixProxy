@@ -18,8 +18,8 @@ BINARY_NAME="proxy-server"
 UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
-INSTALLER_REV="42"
-MENU_REV_EXPECTED="52"
+INSTALLER_REV="43"
+MENU_REV_EXPECTED="53"
 MENU_REV_FILE="/etc/vt-menu-revision"
 VERSION_FILE="/etc/proxy-version"
 UDPGW_VERSION_FILE="/etc/udpgw-version"
@@ -1756,6 +1756,7 @@ configure_ssh_tuning() {
   local sshd_config="/etc/ssh/sshd_config"
   local sshd_dropin_dir="/etc/ssh/sshd_config.d"
   local sshd_dropin_conf="${sshd_dropin_dir}/99-proxy.conf"
+  local keys_regex="MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|Compression|PrintMotd|PrintLastLog"
 
   # 1. Configura drop-in modular em /etc/ssh/sshd_config.d/
   if [[ -d /etc/ssh ]]; then
@@ -1784,35 +1785,14 @@ EOF
     run_privileged chmod 644 "$sshd_dropin_conf" 2>/dev/null || true
   fi
 
-  # 2. Atualiza /etc/ssh/sshd_config diretamente sem duplicar
+  # 2. Garante o Include e remove duplicatas do /etc/ssh/sshd_config principal
   if [[ -f "$sshd_config" ]]; then
-    local params=(
-      "MaxStartups 2000:30:5000"
-      "MaxSessions 500"
-      "MaxAuthTries 10"
-      "LoginGraceTime 30"
-      "UseDNS no"
-      "GSSAPIAuthentication no"
-      "TCPKeepAlive yes"
-      "ClientAliveInterval 15"
-      "ClientAliveCountMax 3"
-      "AllowTcpForwarding yes"
-      "GatewayPorts yes"
-      "PermitTunnel yes"
-      "Compression no"
-      "PrintMotd no"
-      "PrintLastLog no"
-    )
+    if ! grep -qiE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' "$sshd_config"; then
+      safe_sed_inplace "$sshd_config" -e '1i Include /etc/ssh/sshd_config.d/*.conf\n' || true
+    fi
 
-    for item in "${params[@]}"; do
-      local key="${item%% *}"
-      local val="${item#* }"
-      if grep -qiE "^[#[:space:]]*${key}[[:space:]]+" "$sshd_config"; then
-        safe_sed_inplace "$sshd_config" -e "s|^[#[:space:]]*${key}[[:space:]].*|${key} ${val}|I" || true
-      else
-        echo "${key} ${val}" | run_privileged tee -a "$sshd_config" >/dev/null || true
-      fi
-    done
+    # Remove qualquer ocorrência duplicada/antiga das chaves gerenciadas
+    safe_sed_inplace "$sshd_config" -e "/^[[:space:]]*(${keys_regex})[[:space:]]/d" || true
   fi
 
   # 3. Systemd Limits & TasksMax Override para ssh / sshd
