@@ -4324,29 +4324,33 @@ EOF
     sudo mkdir -p /etc/sysctl.d 2>/dev/null || true
 
     if [[ -f /etc/sysctl.conf ]]; then
-        sudo sed -i -E '/^(net\.core\.(somaxconn|rmem_max|wmem_max|rmem_default|wmem_default|netdev_max_backlog|default_qdisc)|net\.ipv4\.(tcp_tw_reuse|tcp_fin_timeout|tcp_max_tw_buckets|ip_local_port_range|tcp_max_syn_backlog|tcp_slow_start_after_idle|tcp_fastopen|tcp_rmem|tcp_wmem|tcp_congestion_control))/d' /etc/sysctl.conf 2>/dev/null || true
+        sudo sed -i -E '/^(net\.core\.(somaxconn|rmem_max|wmem_max|rmem_default|wmem_default|netdev_max_backlog|default_qdisc)|net\.ipv4\.(tcp_tw_reuse|tcp_fin_timeout|tcp_max_tw_buckets|ip_local_port_range|tcp_max_syn_backlog|tcp_slow_start_after_idle|tcp_fastopen|tcp_rmem|tcp_wmem|tcp_congestion_control|tcp_keepalive_time|tcp_keepalive_intvl|tcp_keepalive_probes)|vm\.swappiness)/d' /etc/sysctl.conf 2>/dev/null || true
     fi
 
     cat << 'EOF' | sudo tee "$sysctl_conf" >/dev/null
 # VTProxy / VeltrixProxy Network & Kernel Optimizations
 net.ipv4.ip_forward = 1
 
-# === 1. Reciclagem Rápida de Sockets (Vital para BHTTP e XHTTP) ===
+# === 1. Reciclagem Rápida de Sockets e Anti-Ghosting ===
 # Permite reusar portas em TIME_WAIT de forma segura sem colisão
 net.ipv4.tcp_tw_reuse = 1
 # Reduz o tempo de vida de conexões mortas de 60s para 15s (libera RAM 4x mais rápido)
 net.ipv4.tcp_fin_timeout = 15
 # Limite seguro de sockets em TIME_WAIT na memória (ocupa no máximo ~30 MB)
 net.ipv4.tcp_max_tw_buckets = 131072
+# Reduz keepalive de 7200s (2h) para 300s (5min) para limpar conexões fantasmas de redes móveis
+net.ipv4.tcp_keepalive_time = 300
+net.ipv4.tcp_keepalive_intvl = 15
+net.ipv4.tcp_keepalive_probes = 5
 
 # === 2. Expansão de Portas Locais ===
 # Libera mais de 55.000 portas para conectar ao OpenSSH, V2Ray e OpenVPN locais
 net.ipv4.ip_local_port_range = 10240 65535
 
-# === 3. Filas de Conexão (Evita 'Connection Refused' nos disparos do BHTTP) ===
-net.core.somaxconn = 8192
-net.ipv4.tcp_max_syn_backlog = 8192
-net.core.netdev_max_backlog = 8192
+# === 3. Filas de Conexão de Alta Concorrência (Suporta até 65k conexões simultâneas) ===
+net.core.somaxconn = 65535
+net.ipv4.tcp_max_syn_backlog = 65535
+net.core.netdev_max_backlog = 65535
 
 # === 4. Desempenho e Latência ===
 # Não reseta a janela de velocidade para o mínimo após pequenas pausas
@@ -4354,7 +4358,11 @@ net.ipv4.tcp_slow_start_after_idle = 0
 # Acelera o handshake inicial
 net.ipv4.tcp_fastopen = 3
 
-# === 5. Auto-Tuning de Memória Seguro (Mínimo Leve, Escala se Precisar) ===
+# === 5. Gerenciamento de Memória / Swap ===
+# Prioriza o uso da RAM ao máximo antes de utilizar o disco swap
+vm.swappiness = 10
+
+# === 6. Auto-Tuning de Memória Seguro (Mínimo Leve, Escala se Precisar) ===
 # O socket inicia leve (4KB a 64KB) e só cresce até 8MB se o cliente tiver muita banda
 net.core.rmem_default = 65536
 net.core.wmem_default = 65536
@@ -4363,7 +4371,7 @@ net.core.wmem_max = 8388608
 net.ipv4.tcp_rmem = 4096 87380 8388608
 net.ipv4.tcp_wmem = 4096 65536 8388608
 
-# === 6. Algoritmo BBR do Google (Mais velocidade em conexões móveis 4G/5G) ===
+# === 7. Algoritmo BBR do Google (Mais velocidade em conexões móveis 4G/5G) ===
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 EOF
@@ -4376,12 +4384,16 @@ EOF
         "net.ipv4.tcp_tw_reuse=1"
         "net.ipv4.tcp_fin_timeout=15"
         "net.ipv4.tcp_max_tw_buckets=131072"
+        "net.ipv4.tcp_keepalive_time=300"
+        "net.ipv4.tcp_keepalive_intvl=15"
+        "net.ipv4.tcp_keepalive_probes=5"
         "net.ipv4.ip_local_port_range=10240 65535"
-        "net.core.somaxconn=8192"
-        "net.ipv4.tcp_max_syn_backlog=8192"
-        "net.core.netdev_max_backlog=8192"
+        "net.core.somaxconn=65535"
+        "net.ipv4.tcp_max_syn_backlog=65535"
+        "net.core.netdev_max_backlog=65535"
         "net.ipv4.tcp_slow_start_after_idle=0"
         "net.ipv4.tcp_fastopen=3"
+        "vm.swappiness=10"
         "net.core.rmem_default=65536"
         "net.core.wmem_default=65536"
         "net.core.rmem_max=8388608"
@@ -4407,7 +4419,7 @@ ensure_ssh_tuning() {
     local sshd_config="/etc/ssh/sshd_config"
     local sshd_dropin_dir="/etc/ssh/sshd_config.d"
     local sshd_dropin_conf="${sshd_dropin_dir}/99-proxy.conf"
-    local keys_regex="MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|X11Forwarding|Compression|PrintMotd|PrintLastLog"
+    local keys_regex="MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UsePAM|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|X11Forwarding|Compression|PrintMotd|PrintLastLog"
 
     if [[ -d /etc/ssh ]]; then
         sudo mkdir -p "$sshd_dropin_dir" 2>/dev/null || true
@@ -4419,6 +4431,7 @@ MaxStartups 2000:30:5000
 MaxSessions 500
 MaxAuthTries 10
 LoginGraceTime 30
+UsePAM no
 UseDNS no
 GSSAPIAuthentication no
 TCPKeepAlive yes
