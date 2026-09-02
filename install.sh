@@ -1764,11 +1764,35 @@ EOF
   log_success "Otimizações de Kernel aplicadas (Algoritmo TCP ativo: ${active_cc})."
 }
 
+configure_locale_tuning() {
+  if [[ -d /etc/profile.d ]]; then
+    cat << 'EOF' | run_privileged tee /etc/profile.d/99-utf8.sh >/dev/null
+export LANG="C.UTF-8"
+export LC_ALL="C.UTF-8"
+export LC_CTYPE="C.UTF-8"
+EOF
+    run_privileged chmod 644 /etc/profile.d/99-utf8.sh 2>/dev/null || true
+  fi
+
+  if [[ -f /etc/bash.bashrc ]] && ! grep -q "LANG=C.UTF-8" /etc/bash.bashrc 2>/dev/null; then
+    echo 'export LANG="C.UTF-8" LC_ALL="C.UTF-8"' | run_privileged tee -a /etc/bash.bashrc >/dev/null || true
+  fi
+
+  if [[ -f /etc/environment ]] && ! grep -q "LANG=" /etc/environment 2>/dev/null; then
+    echo 'LANG="C.UTF-8"' | run_privileged tee -a /etc/environment >/dev/null || true
+  fi
+
+  export LANG="C.UTF-8"
+  export LC_ALL="C.UTF-8"
+  export LC_CTYPE="C.UTF-8"
+  log_success "Configuração global de locale UTF-8 aplicada (C.UTF-8)."
+}
+
 configure_ssh_tuning() {
   local sshd_config="/etc/ssh/sshd_config"
   local sshd_dropin_dir="/etc/ssh/sshd_config.d"
   local sshd_dropin_conf="${sshd_dropin_dir}/99-proxy.conf"
-  local keys_regex="LogLevel|MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UsePAM|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|X11Forwarding|Compression|PrintMotd|PrintLastLog"
+  local keys_regex="LogLevel|AcceptEnv|MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UsePAM|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|X11Forwarding|Compression|PrintMotd|PrintLastLog"
 
   # 1. Configura drop-in modular em /etc/ssh/sshd_config.d/
   if [[ -d /etc/ssh ]]; then
@@ -1778,6 +1802,7 @@ configure_ssh_tuning() {
     cat << 'EOF' | run_privileged tee "$sshd_dropin_conf" >/dev/null
 # VTProxy / VeltrixProxy OpenSSH Optimizations for High Concurrency Tunnels
 LogLevel ERROR
+AcceptEnv LANG LC_*
 MaxStartups 2000:30:5000
 MaxSessions 500
 MaxAuthTries 10
@@ -1833,6 +1858,7 @@ EOF
 configure_system_tuning() {
   configure_limits
   configure_sysctl
+  configure_locale_tuning
   configure_ssh_tuning
 }
 

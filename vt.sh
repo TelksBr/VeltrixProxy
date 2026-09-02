@@ -4411,15 +4411,41 @@ EOF
     sudo sysctl -p "$sysctl_conf" >/dev/null 2>&1 || true
     sudo sysctl --system >/dev/null 2>&1 || true
 
-    # 3. Otimizações de alta concorrência e estabilidade do OpenSSH
+    # 3. Configuração de locale UTF-8 global leve
+    ensure_locale_tuning || true
+
+    # 4. Otimizações de alta concorrência e estabilidade do OpenSSH
     ensure_ssh_tuning || true
+}
+
+ensure_locale_tuning() {
+    if [[ -d /etc/profile.d ]]; then
+        cat << 'EOF' | sudo tee /etc/profile.d/99-utf8.sh >/dev/null
+export LANG="C.UTF-8"
+export LC_ALL="C.UTF-8"
+export LC_CTYPE="C.UTF-8"
+EOF
+        sudo chmod 644 /etc/profile.d/99-utf8.sh 2>/dev/null || true
+    fi
+
+    if [[ -f /etc/bash.bashrc ]] && ! grep -q "LANG=C.UTF-8" /etc/bash.bashrc 2>/dev/null; then
+        echo 'export LANG="C.UTF-8" LC_ALL="C.UTF-8"' | sudo tee -a /etc/bash.bashrc >/dev/null || true
+    fi
+
+    if [[ -f /etc/environment ]] && ! grep -q "LANG=" /etc/environment 2>/dev/null; then
+        echo 'LANG="C.UTF-8"' | sudo tee -a /etc/environment >/dev/null || true
+    fi
+
+    export LANG="C.UTF-8"
+    export LC_ALL="C.UTF-8"
+    export LC_CTYPE="C.UTF-8"
 }
 
 ensure_ssh_tuning() {
     local sshd_config="/etc/ssh/sshd_config"
     local sshd_dropin_dir="/etc/ssh/sshd_config.d"
     local sshd_dropin_conf="${sshd_dropin_dir}/99-proxy.conf"
-    local keys_regex="LogLevel|MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UsePAM|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|X11Forwarding|Compression|PrintMotd|PrintLastLog"
+    local keys_regex="LogLevel|AcceptEnv|MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UsePAM|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|X11Forwarding|Compression|PrintMotd|PrintLastLog"
 
     if [[ -d /etc/ssh ]]; then
         sudo mkdir -p "$sshd_dropin_dir" 2>/dev/null || true
@@ -4428,6 +4454,7 @@ ensure_ssh_tuning() {
         cat << 'EOF' | sudo tee "$sshd_dropin_conf" >/dev/null
 # VTProxy / VeltrixProxy OpenSSH Optimizations
 LogLevel ERROR
+AcceptEnv LANG LC_*
 MaxStartups 2000:30:5000
 MaxSessions 500
 MaxAuthTries 10
