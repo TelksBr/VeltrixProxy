@@ -1768,7 +1768,7 @@ configure_ssh_tuning() {
   local sshd_config="/etc/ssh/sshd_config"
   local sshd_dropin_dir="/etc/ssh/sshd_config.d"
   local sshd_dropin_conf="${sshd_dropin_dir}/99-proxy.conf"
-  local keys_regex="MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UsePAM|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|X11Forwarding|Compression|PrintMotd|PrintLastLog"
+  local keys_regex="LogLevel|MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UsePAM|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|X11Forwarding|Compression|PrintMotd|PrintLastLog"
 
   # 1. Configura drop-in modular em /etc/ssh/sshd_config.d/
   if [[ -d /etc/ssh ]]; then
@@ -1777,6 +1777,7 @@ configure_ssh_tuning() {
 
     cat << 'EOF' | run_privileged tee "$sshd_dropin_conf" >/dev/null
 # VTProxy / VeltrixProxy OpenSSH Optimizations for High Concurrency Tunnels
+LogLevel ERROR
 MaxStartups 2000:30:5000
 MaxSessions 500
 MaxAuthTries 10
