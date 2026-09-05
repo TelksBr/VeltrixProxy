@@ -3,7 +3,7 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="55"
+readonly MENU_REV="56"
 readonly PROXY_REPO="TelksBr/VeltrixProxy"
 readonly UDPGW_REPO="TelksBr/VeltrixUPGW"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
@@ -1547,6 +1547,8 @@ build_unified_proxy_command() {
         command="$command --ssh-only"
     fi
 
+    command="$command --btun-enable"
+
     echo "$command"
 }
 
@@ -1563,6 +1565,7 @@ After=network.target
 [Service]
 Environment="GOMEMLIMIT=${gomemlimit}"
 Environment="GOGC=100"
+ExecStartPre=-/usr/local/bin/vt-iptables
 ExecStart=$proxy_command
 Restart=always
 RestartSec=3
@@ -1592,6 +1595,9 @@ apply_unified_proxy_service() {
         fi
         return 0
     fi
+
+    install_vt_iptables_script || true
+    sudo /usr/local/bin/vt-iptables >/dev/null 2>&1 || true
 
     write_unified_proxy_systemd_unit "$proxy_command"
 
@@ -4166,6 +4172,7 @@ remove_completely() {
     sudo rm -f "$PROXY_EXECUTABLE"
     sudo rm -f "/usr/local/bin/vt"
     sudo rm -f "/usr/local/bin/main"
+    sudo rm -f "/usr/local/bin/vt-iptables"
     print_info "Removendo configurações e dados..."
     sudo rm -rf /etc/udpgw
     sudo rm -f "$UDPGW_VERSION_FILE"
@@ -4297,6 +4304,151 @@ vt_set_limit_entry() {
     fi
 }
 
+install_vt_iptables_script() {
+    local target="/usr/local/bin/vt-iptables"
+    cat << 'EOF' | sudo tee "$target" >/dev/null
+#!/usr/bin/env bash
+# ==============================================================================
+# VTProxy / VeltrixProxy - Auto-configurador inteligente de iptables para BTUN
+# ==============================================================================
+set -u
+
+TUN_SUBNET="${BTUN_SUBNET:-10.77.0.0/16}"
+
+detect_tun_interface() {
+  local iface=""
+  # 1. Procura interface btun ativa
+  iface=$(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | grep -E '^btun[0-9]*' | head -n1)
+  if [[ -n "$iface" ]]; then
+    echo "$iface"
+    return 0
+  fi
+
+  # 2. Procura flag --btun-tun nos servicos systemd
+  for svc in /etc/systemd/system/vtproxy.service /etc/systemd/system/proxy-*.service; do
+    [[ -f "$svc" ]] || continue
+    iface=$(grep -oE '--btun-tun=[^ ]+' "$svc" 2>/dev/null | cut -d= -f2 | head -n1)
+    if [[ -n "$iface" ]]; then
+      echo "$iface"
+      return 0
+    fi
+  done
+
+  # 3. Procura interface com IP na faixa 10.77.
+  iface=$(ip -4 addr show 2>/dev/null | grep -B2 '10\.77\.' | awk -F': ' '/^[0-9]+: / {print $2}' | head -n1)
+  if [[ -n "$iface" ]]; then
+    echo "$iface"
+    return 0
+  fi
+
+  # 4. Fallback padrao oficial
+  echo "btun0"
+}
+
+detect_wan_interface() {
+  local iface=""
+  # 1. Rota padrao IPv4
+  iface=$(ip -4 route show default 2>/dev/null | awk '{print $5}' | head -n1)
+  if [[ -n "$iface" ]]; then
+    echo "$iface"
+    return 0
+  fi
+
+  # 2. Sondagem de rota publica (8.8.8.8)
+  iface=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); break}}' | head -n1)
+  if [[ -n "$iface" ]]; then
+    echo "$iface"
+    return 0
+  fi
+
+  # 3. Rota padrao IPv6
+  iface=$(ip -6 route show default 2>/dev/null | awk '{print $5}' | head -n1)
+  if [[ -n "$iface" ]]; then
+    echo "$iface"
+    return 0
+  fi
+
+  # 4. Primeira interface ativa que nao seja virtual/loopback/tun/docker
+  iface=$(ip -o link show up 2>/dev/null | awk -F': ' '{print $2}' | grep -vE '^(lo|btun|tun|tap|docker|veth|br-|wg|virbr)' | head -n1)
+  if [[ -n "$iface" ]]; then
+    echo "$iface"
+    return 0
+  fi
+
+  echo "eth0"
+}
+
+persist_rules() {
+  if command -v netfilter-persistent >/dev/null 2>&1; then
+    netfilter-persistent save >/dev/null 2>&1 || true
+  fi
+  if [[ -d /etc/iptables ]]; then
+    iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+  fi
+  if [[ -d /etc/sysconfig ]]; then
+    iptables-save > /etc/sysconfig/iptables 2>/dev/null || true
+  fi
+}
+
+TUN_IFACE=$(detect_tun_interface)
+WAN_IFACE=$(detect_wan_interface)
+
+echo "[VT-IPTABLES] Configurando roteamento: TUN=$TUN_IFACE | WAN=$WAN_IFACE | Subnet=$TUN_SUBNET"
+
+# 1. Habilitar encaminhamento de pacotes IPv4 no Kernel
+sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+
+if ! command -v iptables >/dev/null 2>&1; then
+  echo "[VT-IPTABLES] Aviso: comando iptables nao encontrado." >&2
+  exit 0
+fi
+
+# 2. NAT (MASQUERADE)
+if [[ -n "$WAN_IFACE" ]]; then
+  iptables -t nat -C POSTROUTING -s "$TUN_SUBNET" -o "$WAN_IFACE" -j MASQUERADE 2>/dev/null || \
+    iptables -t nat -A POSTROUTING -s "$TUN_SUBNET" -o "$WAN_IFACE" -j MASQUERADE 2>/dev/null || true
+fi
+
+iptables -t nat -C POSTROUTING -s "$TUN_SUBNET" ! -o "$TUN_IFACE" -j MASQUERADE 2>/dev/null || \
+  iptables -t nat -A POSTROUTING -s "$TUN_SUBNET" ! -o "$TUN_IFACE" -j MASQUERADE 2>/dev/null || true
+
+# 3. FORWARD - Subnet
+iptables -C FORWARD -s "$TUN_SUBNET" -j ACCEPT 2>/dev/null || \
+  iptables -A FORWARD -s "$TUN_SUBNET" -j ACCEPT 2>/dev/null || true
+
+iptables -C FORWARD -d "$TUN_SUBNET" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+  iptables -A FORWARD -d "$TUN_SUBNET" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+
+# 4. FORWARD - Interface TUN
+if [[ -n "$TUN_IFACE" ]]; then
+  iptables -C FORWARD -i "$TUN_IFACE" -j ACCEPT 2>/dev/null || \
+    iptables -A FORWARD -i "$TUN_IFACE" -j ACCEPT 2>/dev/null || true
+
+  iptables -C FORWARD -o "$TUN_IFACE" -j ACCEPT 2>/dev/null || \
+    iptables -A FORWARD -o "$TUN_IFACE" -j ACCEPT 2>/dev/null || true
+
+  if [[ -n "$WAN_IFACE" ]]; then
+    iptables -C FORWARD -i "$TUN_IFACE" -o "$WAN_IFACE" -j ACCEPT 2>/dev/null || \
+      iptables -A FORWARD -i "$TUN_IFACE" -o "$WAN_IFACE" -j ACCEPT 2>/dev/null || true
+
+    iptables -C FORWARD -i "$WAN_IFACE" -o "$TUN_IFACE" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+      iptables -A FORWARD -i "$WAN_IFACE" -o "$TUN_IFACE" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+  fi
+fi
+
+# 5. TCP MSS Clamping (evita travamento de pacotes grandes / TLS em tunelamento)
+iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || \
+  iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+
+# 6. Salvar persistencia das regras
+persist_rules
+
+echo "[VT-IPTABLES] Regras de iptables aplicadas com sucesso!"
+exit 0
+EOF
+    sudo chmod +x "$target" 2>/dev/null || true
+}
+
 ensure_system_tuning() {
     # 1. Limites de descritores de arquivos (File Descriptors / limits.d / limits.conf)
     if [[ -d /etc/security ]]; then
@@ -4419,7 +4571,11 @@ EOF
     sudo sysctl -p "$sysctl_conf" >/dev/null 2>&1 || true
     sudo sysctl --system >/dev/null 2>&1 || true
 
-    # 3. Configuração de locale UTF-8 global leve
+    # 3. Auto-configurador de iptables para BTUN
+    install_vt_iptables_script || true
+    sudo /usr/local/bin/vt-iptables >/dev/null 2>&1 || true
+
+    # 4. Configuração de locale UTF-8 global leve
     ensure_locale_tuning || true
 
     # 4. Otimizações de alta concorrência e estabilidade do OpenSSH
@@ -4510,6 +4666,12 @@ EOF
 
 if [[ "$1" == "--migrate" ]]; then
     migrate_legacy_services_to_unified || true
+    exit 0
+fi
+
+if [[ "$1" == "--iptables" || "$1" == "iptables" ]]; then
+    install_vt_iptables_script || true
+    sudo /usr/local/bin/vt-iptables
     exit 0
 fi
 
