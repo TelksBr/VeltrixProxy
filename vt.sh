@@ -110,7 +110,7 @@ I18N_PT[menu_udpgw]="UDP Gateway (udpgw)"
 I18N_PT[menu_lang]="Idioma / Language"
 I18N_PT[menu_uninstall]="Remover Instalação"
 I18N_PT[menu_exit]="Sair"
-I18N_PT[prompt_select_option]="Selecione uma opção [%s]:"
+I18N_PT[prompt_select_option]="Selecione uma opção [%s]"
 I18N_PT[invalid_option]="Opção inválida: %s"
 I18N_PT[press_enter]="Pressione Enter para continuar..."
 I18N_PT[exiting]="Saindo..."
@@ -217,7 +217,7 @@ I18N_EN[menu_udpgw]="UDP Gateway (udpgw)"
 I18N_EN[menu_lang]="Language"
 I18N_EN[menu_uninstall]="Uninstall"
 I18N_EN[menu_exit]="Exit"
-I18N_EN[prompt_select_option]="Select an option [%s]:"
+I18N_EN[prompt_select_option]="Select an option [%s]"
 I18N_EN[invalid_option]="Invalid option: %s"
 I18N_EN[press_enter]="Press Enter to continue..."
 I18N_EN[exiting]="Exiting..."
@@ -322,7 +322,7 @@ I18N_ES[menu_udpgw]="UDP Gateway (udpgw)"
 I18N_ES[menu_lang]="Idioma"
 I18N_ES[menu_uninstall]="Desinstalar"
 I18N_ES[menu_exit]="Salir"
-I18N_ES[prompt_select_option]="Seleccione una opción [%s]:"
+I18N_ES[prompt_select_option]="Seleccione una opción [%s]"
 I18N_ES[invalid_option]="Opción no válida: %s"
 I18N_ES[press_enter]="Presione Enter para continuar..."
 I18N_ES[exiting]="Saliendo..."
@@ -587,6 +587,13 @@ print_box_close() {
 print_box_line() {
     local content="$1"
     local inner_width="${2:-$MENU_BOX_WIDTH}"
+    if [[ "$content" == *$'\n'* ]]; then
+        local line
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            print_box_line "$line" "$inner_width"
+        done <<< "$content"
+        return 0
+    fi
     local len pad
     len=$(visible_len "$content")
     [[ "$len" =~ ^[0-9]+$ ]] || len=0
@@ -1788,6 +1795,7 @@ format_proxy_ports_status() {
     if (( count <= 4 )); then
         local IFS=,
         echo "${status_items[*]}" | sed 's/,/, /g'
+    else
         local first_four=("${status_items[@]:0:4}")
         local remaining=$(( count - 4 ))
         local IFS=,
