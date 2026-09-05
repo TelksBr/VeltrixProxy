@@ -978,15 +978,23 @@ get_global_proxy_setting() {
             SSH_ONLY) flag_name="--ssh-only" ;;
             CERT_INTERNAL) flag_name="--cert-internal" ;;
             DISPLAY_BANNER) flag_name="--display-banner" ;;
+            SSL_CERT_PATH) flag_name="--cert" ;;
             *) flag_name="" ;;
         esac
 
         if [[ -n "$flag_name" ]]; then
-            match=$(echo "$exec_line" | grep -oE "${flag_name}=[^ ]+" | cut -d'=' -f2 || true)
-            if [[ -n "$match" ]]; then
-                echo "$match"
+            if [[ "$exec_line" =~ ${flag_name}=([^[:space:]]+) ]]; then
+                echo "${BASH_REMATCH[1]}"
+                return 0
+            elif [[ "$key" == "SSH_ONLY" ]] && [[ "$exec_line" =~ (^|[[:space:]])--ssh-only([[:space:]]|$) ]]; then
+                echo "true"
                 return 0
             fi
+        fi
+
+        if [[ "$key" == "SSL_ENABLED" && "$exec_line" == *":ssl"* ]]; then
+            echo "true"
+            return 0
         fi
     fi
 
