@@ -95,6 +95,7 @@ I18N_PT[status_token]="Token:"
 I18N_PT[status_token_proxy]="Token proxy:"
 I18N_PT[status_none]="nenhuma"
 I18N_PT[status_ip]="IP:"
+I18N_PT[status_onlines]="Online:"
 I18N_PT[status_ssh_onlines]="SSH Online:"
 I18N_PT[status_udpgw]="UDP Gateway:"
 I18N_PT[status_ports]="Portas:"
@@ -103,7 +104,7 @@ I18N_PT[status_ram]="RAM:"
 
 I18N_PT[menu_main_title]="MENU INICIAL"
 I18N_PT[menu_proxy]="Proxy / Portas"
-I18N_PT[menu_online_users]="Usuários Online (SSH:%s)"
+I18N_PT[menu_online_users]="Usuários Online (VT:%s | SSH:%s)"
 I18N_PT[menu_tokens]="Gerenciar Tokens"
 I18N_PT[menu_update]="Atualizar Sistema"
 I18N_PT[menu_udpgw]="UDP Gateway (udpgw)"
@@ -164,10 +165,10 @@ I18N_PT[token_syncing]="Sincronizando token nos serviços proxy..."
 I18N_PT[token_applied_ports]="Token aplicado em %s porta(s) proxy."
 I18N_PT[token_invalid_retry]="Token proxy inválido. Tente novamente."
 
-I18N_PT[ssh_menu_title]="USUARIOS ONLINE SSH (%s)"
-I18N_PT[ssh_opt_list]="Listar usuarios SSH online"
+I18N_PT[ssh_menu_title]="USUARIOS ONLINE (VT:%s | SSH:%s)"
+I18N_PT[ssh_opt_list]="Listar usuarios online detalhado"
 I18N_PT[ssh_opt_back]="Voltar"
-I18N_PT[ssh_no_users]="Nenhum usuario SSH online (excluindo root)."
+I18N_PT[ssh_no_users]="Nenhum usuario online no momento."
 I18N_PT[ssh_user_row]="Usuario: %s | PID: %s | Tempo: %s"
 
 I18N_PT[update_menu_title]="ATUALIZAR SISTEMA"
@@ -202,6 +203,7 @@ I18N_EN[status_token]="Token:"
 I18N_EN[status_token_proxy]="Proxy token:"
 I18N_EN[status_none]="none"
 I18N_EN[status_ip]="IP:"
+I18N_EN[status_onlines]="Online:"
 I18N_EN[status_ssh_onlines]="SSH Online:"
 I18N_EN[status_udpgw]="UDP Gateway:"
 I18N_EN[status_ports]="Ports:"
@@ -210,7 +212,7 @@ I18N_EN[status_ram]="RAM:"
 
 I18N_EN[menu_main_title]="MAIN MENU"
 I18N_EN[menu_proxy]="Proxy / Ports"
-I18N_EN[menu_online_users]="Online Users (SSH:%s)"
+I18N_EN[menu_online_users]="Online Users (VT:%s | SSH:%s)"
 I18N_EN[menu_tokens]="Manage Tokens"
 I18N_EN[menu_update]="Update System"
 I18N_EN[menu_udpgw]="UDP Gateway (udpgw)"
@@ -269,10 +271,10 @@ I18N_EN[token_syncing]="Syncing token across proxy services..."
 I18N_EN[token_applied_ports]="Token applied to %s proxy port(s)."
 I18N_EN[token_invalid_retry]="Invalid proxy token. Try again."
 
-I18N_EN[ssh_menu_title]="ONLINE SSH USERS (%s)"
-I18N_EN[ssh_opt_list]="List online SSH users"
+I18N_EN[ssh_menu_title]="ONLINE USERS (VT:%s | SSH:%s)"
+I18N_EN[ssh_opt_list]="List detailed online users"
 I18N_EN[ssh_opt_back]="Back"
-I18N_EN[ssh_no_users]="No online SSH users (excluding root)."
+I18N_EN[ssh_no_users]="No online users at the moment."
 I18N_EN[ssh_user_row]="User: %s | PID: %s | Time: %s"
 
 I18N_EN[update_menu_title]="UPDATE SYSTEM"
@@ -307,6 +309,7 @@ I18N_ES[status_token]="Token:"
 I18N_ES[status_token_proxy]="Token proxy:"
 I18N_ES[status_none]="ninguna"
 I18N_ES[status_ip]="IP:"
+I18N_ES[status_onlines]="Online:"
 I18N_ES[status_ssh_onlines]="SSH Online:"
 I18N_ES[status_udpgw]="UDP Gateway:"
 I18N_ES[status_ports]="Puertos:"
@@ -315,7 +318,7 @@ I18N_ES[status_ram]="RAM:"
 
 I18N_ES[menu_main_title]="MENÚ PRINCIPAL"
 I18N_ES[menu_proxy]="Proxy / Puertos"
-I18N_ES[menu_online_users]="Usuarios Online (SSH:%s)"
+I18N_ES[menu_online_users]="Usuarios Online (VT:%s | SSH:%s)"
 I18N_ES[menu_tokens]="Gestionar Tokens"
 I18N_ES[menu_update]="Actualizar Sistema"
 I18N_ES[menu_udpgw]="UDP Gateway (udpgw)"
@@ -376,10 +379,10 @@ I18N_ES[token_syncing]="Sincronizando token en los servicios proxy..."
 I18N_ES[token_applied_ports]="Token aplicado a %s puerto(s) proxy."
 I18N_ES[token_invalid_retry]="Token proxy no válido. Intente de nuevo."
 
-I18N_ES[ssh_menu_title]="USUARIOS ONLINE SSH (%s)"
-I18N_ES[ssh_opt_list]="Listar usuarios SSH online"
+I18N_ES[ssh_menu_title]="USUARIOS ONLINE (VT:%s | SSH:%s)"
+I18N_ES[ssh_opt_list]="Listar usuarios online detallado"
 I18N_ES[ssh_opt_back]="Volver"
-I18N_ES[ssh_no_users]="Ningún usuario SSH online (excluyendo root)."
+I18N_ES[ssh_no_users]="Ningún usuario online en este momento."
 I18N_ES[ssh_user_row]="Usuario: %s | PID: %s | Tiempo: %s"
 
 I18N_ES[update_menu_title]="ACTUALIZAR SISTEMA"
@@ -736,19 +739,47 @@ format_stat_color() {
     fi
 }
 
-# Usuários SSH únicos com sessão sshd (filhos sshd:), excluindo root.
-get_ssh_online_users_count() {
-    local count=""
-    # 1. Se o servico proxy unificado estiver ativo, consulta a CLI nativa de conexoes
-    if systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null && [[ -x "$PROXY_EXECUTABLE" ]]; then
-        count=$("$PROXY_EXECUTABLE" --onlines-total 2>/dev/null | tr -d '[:space:]' || true)
-        if [[ "$count" =~ ^[0-9]+$ ]]; then
-            echo "$count"
-            return 0
-        fi
+# Conexões ativas no daemon VTProxy a partir de proxy-server --onlines-json
+get_vtproxy_online_users_count() {
+    if ! systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null || [[ ! -x "$PROXY_EXECUTABLE" ]]; then
+        echo "0"
+        return 0
     fi
 
-    # 2. Fallback para contagem do OpenSSH externo legado
+    local raw total
+    raw=$("$PROXY_EXECUTABLE" --onlines-json 2>/dev/null || true)
+    if [[ -z "$raw" ]]; then
+        echo "0"
+        return 0
+    fi
+
+    # Extrai o campo "total": <numero> do JSON (imune a logs prévios como [INFO])
+    total=$(echo "$raw" | sed -n 's/.*"total"[[:space:]]*:[[:space:]]*\([0-9]\+\).*/\1/p' | head -n1 || echo "0")
+    if [[ "$total" =~ ^[0-9]+$ ]]; then
+        echo "$total"
+        return 0
+    fi
+
+    total=$(echo "$raw" | python3 -c '
+import sys, json, re
+text = sys.stdin.read()
+m = re.search(r"\{.*\}", text, re.DOTALL)
+if m:
+    try:
+        data = json.loads(m.group(0))
+        print(data.get("total", 0))
+        sys.exit(0)
+    except Exception:
+        pass
+print(0)
+' 2>/dev/null || echo "0")
+    [[ "$total" =~ ^[0-9]+$ ]] || total=0
+    echo "$total"
+}
+
+# Usuários SSH únicos com sessão sshd (filhos sshd:), excluindo root.
+get_ssh_online_users_count() {
+    local count
     count=$(
         pgrep -f 'sshd:' 2>/dev/null \
             | xargs -r ps -o user= 2>/dev/null \
@@ -763,7 +794,7 @@ get_ssh_online_users_count() {
 }
 
 print_status() {
-    local proxy_ports proxy_label proxy_tok udpgw_status bound_ip ssh_onlines
+    local proxy_ports proxy_label proxy_tok udpgw_status bound_ip ssh_onlines vt_onlines
     local cpu_usage ram_info ram_used_mb ram_total_mb ram_pct
     local cpu_colored ram_colored
 
@@ -772,6 +803,7 @@ print_status() {
     [[ -n "$(load_proxy_token)" ]] && proxy_tok="$(mark_ok)" || proxy_tok="$(mark_fail)"
     bound_ip=""
     [[ -f /etc/vtproxy/ip ]] && bound_ip=$(cat /etc/vtproxy/ip)
+    vt_onlines=$(get_vtproxy_online_users_count)
     ssh_onlines=$(get_ssh_online_users_count)
 
     cpu_usage=$(get_cpu_usage)
@@ -798,7 +830,7 @@ print_status() {
         local tok_line="${WHITE}$(t status_token) ${proxy_tok}"
         [[ -n "$bound_ip" ]] && tok_line+=" ${WHITE}| ${CYAN}${bound_ip}${RESET}"
         print_box_line "$tok_line"
-        print_box_line "${WHITE}$(t status_ssh_onlines) ${CYAN}${ssh_onlines}${RESET}"
+        print_box_line "${WHITE}$(t status_onlines) ${CYAN}VT: ${vt_onlines}${WHITE} | ${CYAN}SSH: ${ssh_onlines}${RESET}"
         print_box_line "${WHITE}$(t status_cpu) ${cpu_colored}${WHITE} | $(t status_ram) ${CYAN}${ram_used_mb}/${ram_total_mb}MB${WHITE} (${ram_colored}${WHITE})${RESET}"
         print_box_line "${WHITE}UDPgw: ${udpgw_status}${WHITE} | $(t status_ports) ${CYAN}${udpgw_ports}${RESET}"
     else
@@ -808,7 +840,7 @@ print_status() {
             tokens_line+="${WHITE} | $(t status_ip) ${CYAN}${bound_ip}${RESET}"
         fi
         print_box_line "$tokens_line"
-        print_box_line "${WHITE} $(t status_ssh_onlines) ${CYAN}${ssh_onlines}${WHITE} | $(t status_cpu) ${cpu_colored}${WHITE} | $(t status_ram) ${CYAN}${ram_used_mb}/${ram_total_mb}MB${WHITE} (${ram_colored}${WHITE})${RESET}"
+        print_box_line "${WHITE} $(t status_onlines) ${CYAN}VT: ${vt_onlines}${WHITE} | ${CYAN}SSH: ${ssh_onlines}${WHITE} | $(t status_cpu) ${cpu_colored}${WHITE} | $(t status_ram) ${CYAN}${ram_used_mb}/${ram_total_mb}MB${WHITE} (${ram_colored}${WHITE})${RESET}"
         print_box_line "${WHITE} $(t status_udpgw) ${udpgw_status}${WHITE} | $(t status_ports) ${CYAN}${udpgw_ports}${RESET}"
     fi
     print_box_close
@@ -852,7 +884,8 @@ print_initial_menu() {
     print_box_heading "$(t menu_main_title)"
     print_box_divider
 
-    local ssh_onlines
+    local vt_onlines ssh_onlines
+    vt_onlines=$(get_vtproxy_online_users_count)
     ssh_onlines=$(get_ssh_online_users_count)
     
     local update_label="$(t menu_update)"
@@ -862,7 +895,7 @@ print_initial_menu() {
 
     local menu_items=(
         "1 • $(t menu_proxy)"
-        "2 • $(t menu_online_users "$ssh_onlines")"
+        "2 • $(t menu_online_users "$vt_onlines" "$ssh_onlines")"
         "3 • $(t menu_tokens)"
         "4 • ${update_label}"
         "5 • $(t menu_udpgw)"
@@ -4542,24 +4575,48 @@ udpgw_main_menu() {
 show_ssh_online_users_details() {
     print_header
 
-    local ssh_onlines
+    local vt_onlines ssh_onlines
+    vt_onlines=$(get_vtproxy_online_users_count)
     ssh_onlines=$(get_ssh_online_users_count)
 
     print_box_open
-    print_box_heading "$(t ssh_menu_title "$ssh_onlines")" "$CYAN"
+    print_box_heading "$(t ssh_menu_title "$vt_onlines" "$ssh_onlines")" "$CYAN"
     print_box_close
     echo
 
     if systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null && [[ -x "$PROXY_EXECUTABLE" ]]; then
-        echo -e "${BLUE}=== Conexões ativas no motor ProxyVT ===${RESET}"
-        "$PROXY_EXECUTABLE" --onlines 2>/dev/null || echo "Nenhuma conexão reportada pelo proxy-server."
+        echo -e "${BLUE}=== Conexões ativas no motor VTProxy (Total: ${vt_onlines}) ===${RESET}"
+        local raw_json
+        raw_json=$("$PROXY_EXECUTABLE" --onlines-json 2>/dev/null || true)
+        if [[ -n "$raw_json" ]]; then
+            python3 -c '
+import sys, json, re
+text = sys.stdin.read()
+m = re.search(r"\{.*\}", text, re.DOTALL)
+if m:
+    try:
+        data = json.loads(m.group(0))
+        users = data.get("users", {})
+        if users:
+            for u, c in users.items():
+                print(f"  • Usuário: {u} | Conexões: {c}")
+        else:
+            print("  (Nenhum usuário conectado via VTProxy no momento)")
+        sys.exit(0)
+    except Exception:
+        pass
+print("  (Não foi possível decodificar os usuários do VTProxy)")
+' <<< "$raw_json" 2>/dev/null || "$PROXY_EXECUTABLE" --onlines 2>/dev/null || echo "Nenhuma conexão reportada pelo proxy-server."
+        else
+            "$PROXY_EXECUTABLE" --onlines 2>/dev/null || echo "Nenhuma conexão reportada pelo proxy-server."
+        fi
         echo
     fi
 
     local sshd_count
     sshd_count=$(pgrep -f 'sshd:' 2>/dev/null | grep -v '^root$' | wc -l || echo 0)
     if (( sshd_count > 0 )); then
-        echo -e "${BLUE}=== Sessões OpenSSH externas (sistema Linux) ===${RESET}"
+        echo -e "${BLUE}=== Sessões OpenSSH Diretas no Linux (Total: ${ssh_onlines}) ===${RESET}"
         pgrep -f 'sshd:' 2>/dev/null \
             | xargs -r ps -o user=,pid=,etime= 2>/dev/null \
             | grep -v '^root ' \
@@ -4571,7 +4628,7 @@ show_ssh_online_users_details() {
         echo
     fi
 
-    if [[ "$ssh_onlines" == "0" && $sshd_count -eq 0 ]]; then
+    if [[ "$vt_onlines" == "0" && "$ssh_onlines" == "0" && $sshd_count -eq 0 ]]; then
         echo "$(t ssh_no_users)"
     fi
 
@@ -4583,11 +4640,12 @@ online_users_menu() {
     while true; do
         print_header
 
-        local ssh_onlines
+        local vt_onlines ssh_onlines
+        vt_onlines=$(get_vtproxy_online_users_count)
         ssh_onlines=$(get_ssh_online_users_count)
 
         print_box_open
-        print_box_heading "$(t ssh_menu_title "$ssh_onlines")" "$CYAN"
+        print_box_heading "$(t ssh_menu_title "$vt_onlines" "$ssh_onlines")" "$CYAN"
         print_box_divider
         render_menu_option "1 • $(t ssh_opt_list)"
         render_menu_option "2 • Desconectar usuário específico (--kill-user)"
