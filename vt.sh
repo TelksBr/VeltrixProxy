@@ -840,7 +840,8 @@ print_status() {
             tokens_line+="${WHITE} | $(t status_ip) ${CYAN}${bound_ip}${RESET}"
         fi
         print_box_line "$tokens_line"
-        print_box_line "${WHITE} $(t status_onlines) ${CYAN}VT: ${vt_onlines}${WHITE} | ${CYAN}SSH: ${ssh_onlines}${WHITE} | $(t status_cpu) ${cpu_colored}${WHITE} | $(t status_ram) ${CYAN}${ram_used_mb}/${ram_total_mb}MB${WHITE} (${ram_colored}${WHITE})${RESET}"
+        print_box_line "${WHITE} $(t status_onlines) ${CYAN}VT: ${vt_onlines}${WHITE} | ${CYAN}SSH: ${ssh_onlines}${RESET}"
+        print_box_line "${WHITE} $(t status_cpu) ${cpu_colored}${WHITE} | $(t status_ram) ${CYAN}${ram_used_mb}/${ram_total_mb}MB${WHITE} (${ram_colored}${WHITE})${RESET}"
         print_box_line "${WHITE} $(t status_udpgw) ${udpgw_status}${WHITE} | $(t status_ports) ${CYAN}${udpgw_ports}${RESET}"
     fi
     print_box_close
