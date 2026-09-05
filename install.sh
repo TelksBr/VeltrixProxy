@@ -361,6 +361,7 @@ get_missing_commands() {
   has_command curl || missing+=("curl")
   has_checksum_command || missing+=("sha256sum")
   has_command iptables || missing+=("iptables")
+  has_command python3 || missing+=("python3")
   if [[ ${#missing[@]} -gt 0 ]]; then
     printf '%s\n' "${missing[@]}"
   fi
@@ -405,6 +406,7 @@ commands_to_packages() {
     curl) pkg="curl" ;;
     sha256sum) pkg="coreutils" ;;
     iptables) pkg="iptables" ;;
+    python3) pkg="python3" ;;
     *) continue ;;
     esac
     [[ " ${packages[*]} " == *" $pkg "* ]] || packages+=("$pkg")
@@ -1461,6 +1463,23 @@ sync_proxy_service_tokens() {
       safe_sed_inplace "$service_file" "s|--token=[^ ]+|--token=${safe_token}|g" || true
     fi
   done
+
+  if [[ -f "/etc/proxyvt/config.json" ]] && command -v python3 >/dev/null 2>&1; then
+    run_privileged python3 -c '
+import json, sys
+p = "/etc/proxyvt/config.json"
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        d = json.load(f)
+    if d.get("token") != sys.argv[1]:
+        d["token"] = sys.argv[1]
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(d, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+except Exception:
+    pass
+' "$token" 2>/dev/null || true
+  fi
 }
 
 calculate_dynamic_gomemlimit() {
@@ -1578,34 +1597,420 @@ DISPLAY_BANNER=true
 EOF
 }
 
+PROXY_JSON_DIR="/etc/proxyvt"
+PROXY_JSON_FILE="/etc/proxyvt/config.json"
+
+ensure_proxy_json_config() {
+  local token="${1:-}"
+  [[ -z "$token" ]] && token="$PROXY_TOKEN"
+  [[ -z "$token" ]] && token=$(load_saved_proxy_token || true)
+
+  run_privileged mkdir -p "$PROXY_JSON_DIR" "/var/log/proxy" 2>/dev/null || true
+
+  if [[ ! -f "$PROXY_JSON_FILE" ]]; then
+    if [[ -x "/usr/local/bin/proxy-server" ]] && /usr/local/bin/proxy-server --dump-config >/dev/null 2>&1; then
+      /usr/local/bin/proxy-server --dump-config 2>/dev/null | run_privileged tee "$PROXY_JSON_FILE" >/dev/null || true
+    fi
+  fi
+
+  if [[ ! -s "$PROXY_JSON_FILE" ]] && command -v python3 >/dev/null 2>&1; then
+    run_privileged python3 -c '
+import json, os, sys
+path = "/etc/proxyvt/config.json"
+token = sys.argv[1] if len(sys.argv) > 1 else ""
+default_cfg = {
+  "token": token,
+  "ports": ["80", "443:ssl"],
+  "disabled_ports": [],
+  "log_level": "info",
+  "log_file": "",
+  "buffer_size": 32768,
+  "max_connections": 0,
+  "idle_timeout": 0,
+  "write_timeout": 0,
+  "cert": "",
+  "cert_internal": True,
+  "display_banner": True,
+  "response": "VeltrixProxy",
+  "ssh_only": False,
+  "ulimit": 65536,
+  "ssh": {
+    "internal": True,
+    "internal_port": 0,
+    "port": 22,
+    "auth": "shadow",
+    "auth_file": "",
+    "allow_root": True,
+    "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3"
+  },
+  "btun": {
+    "enable": True,
+    "tun": "btun0",
+    "subnet": "10.77.0.0/16",
+    "auth": "shadow",
+    "auth_file": "/etc/btun/users",
+    "udp_port": 0
+  },
+  "limits": {
+    "default_user_limit": 0,
+    "passwd_file": "/etc/passwd",
+    "expire_check_interval": "1m"
+  },
+  "connectors": {
+    "openvpn_port": 1194,
+    "v2ray_port": 1080
+  },
+  "xhttp": {
+    "path": "/ssh",
+    "grace": 120,
+    "idle": 120
+  }
+}
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(default_cfg, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+' "$token" 2>/dev/null || true
+  fi
+
+  if command -v python3 >/dev/null 2>&1 && [[ -f "$PROXY_JSON_FILE" ]]; then
+    run_privileged python3 -c '
+import json, sys
+p = "/etc/proxyvt/config.json"
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        d = json.load(f)
+    changed = False
+    if "limits" in d and isinstance(d["limits"], dict) and "kill_expired" in d["limits"]:
+        d["limits"].pop("kill_expired", None)
+        changed = True
+    if "kill_expired" in d:
+        d.pop("kill_expired", None)
+        changed = True
+    if sys.argv[1] and (not d.get("token") or d.get("token") != sys.argv[1]):
+        d["token"] = sys.argv[1]
+        changed = True
+    if changed:
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(d, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+except Exception:
+    pass
+' "$token" 2>/dev/null || true
+  fi
+}
+
+migrate_flags_to_json_config() {
+  local token="$PROXY_TOKEN"
+  [[ -z "$token" ]] && token=$(load_saved_proxy_token || true)
+
+  log_info "Verificando migração de configurações do proxy para JSON (/etc/proxyvt/config.json)..."
+
+  run_privileged mkdir -p "$PROXY_JSON_DIR" 2>/dev/null || true
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    log_warn "Python 3 não disponível; garantindo modelo básico de config.json."
+    ensure_proxy_json_config "$token"
+    return 0
+  fi
+
+  run_privileged python3 -c '
+import json, os, re, glob, sys
+
+json_path = "/etc/proxyvt/config.json"
+default_token = sys.argv[1] if len(sys.argv) > 1 else ""
+
+config = {
+    "token": default_token or "",
+    "ports": [],
+    "disabled_ports": [],
+    "log_level": "info",
+    "log_file": "",
+    "buffer_size": 32768,
+    "max_connections": 0,
+    "idle_timeout": 0,
+    "write_timeout": 0,
+    "cert": "",
+    "cert_internal": True,
+    "display_banner": True,
+    "response": "VeltrixProxy",
+    "ssh_only": False,
+    "ulimit": 65536,
+    "ssh": {
+        "internal": True,
+        "internal_port": 0,
+        "port": 22,
+        "auth": "shadow",
+        "auth_file": "",
+        "allow_root": True,
+        "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3"
+    },
+    "btun": {
+        "enable": True,
+        "tun": "btun0",
+        "subnet": "10.77.0.0/16",
+        "auth": "shadow",
+        "auth_file": "/etc/btun/users",
+        "udp_port": 0
+    },
+    "limits": {
+        "default_user_limit": 0,
+        "passwd_file": "/etc/passwd",
+        "expire_check_interval": "1m"
+    },
+    "connectors": {
+        "openvpn_port": 1194,
+        "v2ray_port": 1080
+    },
+    "xhttp": {
+        "path": "/ssh",
+        "grace": 120,
+        "idle": 120
+    }
+}
+
+if os.path.exists(json_path):
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            existing = json.load(f)
+            for k, v in existing.items():
+                if isinstance(v, dict) and k in config and isinstance(config[k], dict):
+                    config[k].update(v)
+                else:
+                    config[k] = v
+    except Exception:
+        pass
+
+token_files = ["/etc/vtproxy/proxy.token", "/etc/proxy/token", "/root/.proxy_token"]
+if not config.get("token"):
+    for tf in token_files:
+        if os.path.isfile(tf):
+            try:
+                with open(tf, "r", encoding="utf-8") as f:
+                    tok = f.read().strip()
+                    if tok:
+                        config["token"] = tok
+                        break
+            except Exception:
+                pass
+
+def normalize_port_list(ports_list):
+    res = []
+    for p in ports_list:
+        if isinstance(p, dict):
+            p_num = str(p.get("port", "")).strip()
+            if p.get("ssl"):
+                res.append(f"{p_num}:ssl")
+            else:
+                res.append(p_num)
+        else:
+            res.append(str(p).strip())
+    return res
+
+found_active = normalize_port_list(config.get("ports", []))
+found_disabled = normalize_port_list(config.get("disabled_ports", []))
+
+service_files = glob.glob("/etc/systemd/system/proxy-*.service")
+if os.path.isfile("/etc/systemd/system/vtproxy.service"):
+    service_files.append("/etc/systemd/system/vtproxy.service")
+
+for sf in service_files:
+    try:
+        with open(sf, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception:
+        continue
+
+    for line in content.splitlines():
+        line = line.strip()
+        if not line.startswith("ExecStart="):
+            continue
+        exec_cmd = line[len("ExecStart="):]
+
+        m_tok = re.search(r"--token[= ]([^\s]+)", exec_cmd)
+        if m_tok and not config.get("token"):
+            config["token"] = m_tok.group(1).strip()
+
+        for m_port in re.finditer(r"--port[= ]([^\s]+)", exec_cmd):
+            pval = m_port.group(1).strip()
+            if pval and pval not in found_active and pval not in found_disabled:
+                found_active.append(pval)
+
+        m_svc_port = re.search(r"proxy-([0-9]+)\.service", os.path.basename(sf))
+        if m_svc_port:
+            pnum = m_svc_port.group(1)
+            is_ssl = ":ssl" in exec_cmd or "--cert=" in exec_cmd
+            entry = f"{pnum}:ssl" if is_ssl else pnum
+            if entry not in found_active and entry not in found_disabled:
+                found_active.append(entry)
+
+        m_buf = re.search(r"--buffer-size[= ]([0-9]+)", exec_cmd)
+        if m_buf:
+            config["buffer_size"] = int(m_buf.group(1))
+
+        m_resp = re.search(r"--response[= ]([^\s]+)", exec_cmd)
+        if m_resp:
+            config["response"] = m_resp.group(1).strip()
+
+        m_idle = re.search(r"--idle-timeout[= ]([0-9]+)", exec_cmd)
+        if m_idle:
+            config["idle_timeout"] = int(m_idle.group(1))
+        m_write = re.search(r"--write-timeout[= ]([0-9]+)", exec_cmd)
+        if m_write:
+            config["write_timeout"] = int(m_write.group(1))
+
+        m_max = re.search(r"--max-connections[= ]([0-9]+)", exec_cmd)
+        if m_max:
+            config["max_connections"] = int(m_max.group(1))
+
+        m_ll = re.search(r"--log-level[= ]([a-zA-Z]+)", exec_cmd)
+        if m_ll:
+            config["log_level"] = m_ll.group(1).lower()
+        m_lf = re.search(r"--log-file[= ]([^\s]+)", exec_cmd)
+        if m_lf:
+            config["log_file"] = m_lf.group(1)
+
+        if "--cert-internal=false" in exec_cmd:
+            config["cert_internal"] = False
+        elif "--cert-internal" in exec_cmd:
+            config["cert_internal"] = True
+
+        m_cert = re.search(r"--cert[= ]([^\s]+)", exec_cmd)
+        if m_cert:
+            config["cert"] = m_cert.group(1)
+            if "--cert-internal" not in exec_cmd:
+                config["cert_internal"] = False
+
+        if "--ssh-only" in exec_cmd:
+            config["ssh_only"] = True
+        if "--display-banner=false" in exec_cmd:
+            config["display_banner"] = False
+
+        m_sp = re.search(r"--ssh-port[= ]([0-9]+)", exec_cmd)
+        if m_sp:
+            config["ssh"]["port"] = int(m_sp.group(1))
+        m_op = re.search(r"--openvpn-port[= ]([0-9]+)", exec_cmd)
+        if m_op:
+            config["connectors"]["openvpn_port"] = int(m_op.group(1))
+        m_vp = re.search(r"--v2ray-port[= ]([0-9]+)", exec_cmd)
+        if m_vp:
+            config["connectors"]["v2ray_port"] = int(m_vp.group(1))
+
+        if "--btun-enable=false" in exec_cmd:
+            config["btun"]["enable"] = False
+        elif "--btun-enable" in exec_cmd:
+            config["btun"]["enable"] = True
+        m_tun = re.search(r"--btun-tun[= ]([^\s]+)", exec_cmd)
+        if m_tun:
+            config["btun"]["tun"] = m_tun.group(1)
+        m_sub = re.search(r"--btun-subnet[= ]([^\s]+)", exec_cmd)
+        if m_sub:
+            config["btun"]["subnet"] = m_sub.group(1)
+        m_udp = re.search(r"--btun-udp-port[= ]([0-9]+)", exec_cmd)
+        if m_udp:
+            config["btun"]["udp_port"] = int(m_udp.group(1))
+
+        if "--ssh-internal=false" in exec_cmd:
+            config["ssh"]["internal"] = False
+        elif "--ssh-internal" in exec_cmd:
+            config["ssh"]["internal"] = True
+        m_si = re.search(r"--ssh-internal-port[= ]([0-9]+)", exec_cmd)
+        if m_si:
+            config["ssh"]["internal_port"] = int(m_si.group(1))
+
+        m_lim = re.search(r"--default-user-limit[= ]([0-9]+)", exec_cmd)
+        if m_lim:
+            config["limits"]["default_user_limit"] = int(m_lim.group(1))
+        m_exp = re.search(r"--expire-check-interval[= ]([^\s]+)", exec_cmd)
+        if m_exp:
+            config["limits"]["expire_check_interval"] = m_exp.group(1)
+
+conf_dir = "/etc/proxy/conf.d"
+if os.path.isdir(conf_dir):
+    for cfile in sorted(glob.glob(os.path.join(conf_dir, "proxy-*.conf"))):
+        try:
+            kv = {}
+            with open(cfile, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        kv[k.strip()] = v.strip()
+            p_val = kv.get("PORT")
+            if not p_val:
+                m_fn = re.search(r"proxy-([0-9]+)\.conf", os.path.basename(cfile))
+                if m_fn:
+                    p_val = m_fn.group(1)
+            if p_val:
+                is_ssl = kv.get("SSL_ENABLED", "false").lower() == "true"
+                entry = f"{p_val}:ssl" if is_ssl else str(p_val)
+                is_en = kv.get("ENABLED", "true").lower() != "false"
+                if is_en:
+                    if entry not in found_active:
+                        found_active.append(entry)
+                else:
+                    if entry not in found_disabled:
+                        found_disabled.append(entry)
+            if kv.get("HTTP_RESPONSE") and config["response"] == "VeltrixProxy":
+                config["response"] = kv["HTTP_RESPONSE"]
+            if kv.get("BUFFER_SIZE") and config["buffer_size"] == 32768:
+                try:
+                    config["buffer_size"] = int(kv["BUFFER_SIZE"])
+                except ValueError:
+                    pass
+        except Exception:
+            pass
+
+seen = set()
+cleaned_active = []
+for p in found_active:
+    p_str = str(p).strip()
+    p_num = p_str.split(":")[0]
+    if p_num not in seen:
+        seen.add(p_num)
+        cleaned_active.append(p_str)
+
+cleaned_disabled = []
+for p in found_disabled:
+    p_str = str(p).strip()
+    p_num = p_str.split(":")[0]
+    if p_num not in seen:
+        seen.add(p_num)
+        cleaned_disabled.append(p_str)
+
+config["ports"] = cleaned_active
+config["disabled_ports"] = cleaned_disabled
+
+if "limits" in config and isinstance(config["limits"], dict):
+    config["limits"].pop("kill_expired", None)
+if "kill_expired" in config:
+    config.pop("kill_expired", None)
+
+os.makedirs(os.path.dirname(json_path), exist_ok=True)
+temp_path = json_path + ".tmp"
+with open(temp_path, "w", encoding="utf-8") as f:
+    json.dump(config, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+if os.path.exists(json_path):
+    os.replace(temp_path, json_path)
+else:
+    os.rename(temp_path, json_path)
+' "$token" 2>/dev/null || true
+
+  log_success "Migração de configurações para '/etc/proxyvt/config.json' concluída!"
+}
+
 generate_standalone_unified_service() {
-  local token proxy_bin port_args=() f port
+  local token proxy_bin
   token="$PROXY_TOKEN"
   [[ -z "$token" ]] && token=$(load_saved_proxy_token || true)
-  [[ -z "$token" ]] && return 0
 
   proxy_bin="/usr/local/bin/proxy-server"
   [[ -x "$proxy_bin" ]] || proxy_bin="/usr/local/bin/proxy"
   [[ -x "$proxy_bin" ]] || return 0
 
-  for f in /etc/proxy/conf.d/proxy-*.conf; do
-    [[ -f "$f" ]] || continue
-    port=$(basename "$f" .conf | sed -n 's/^proxy-\([0-9]\+\)$/\1/p')
-    [[ -z "$port" ]] && continue
-
-    local enabled ssl
-    enabled=$(grep '^ENABLED=' "$f" 2>/dev/null | cut -d= -f2 || echo "true")
-    [[ "$enabled" == "false" ]] && continue
-    ssl=$(grep '^SSL_ENABLED=' "$f" 2>/dev/null | cut -d= -f2 || echo "false")
-
-    if [[ "$ssl" == "true" ]]; then
-      port_args+=("--port=$port:ssl")
-    else
-      port_args+=("--port=$port")
-    fi
-  done
-
-  [[ ${#port_args[@]} -eq 0 ]] && return 0
+  ensure_proxy_json_config "$token"
+  run_privileged mkdir -p "/var/log/proxy" "$PROXY_JSON_DIR" 2>/dev/null || true
 
   local gomemlimit
   gomemlimit=$(calculate_dynamic_gomemlimit 2>/dev/null || echo "620MiB")
@@ -1618,8 +2023,9 @@ After=network.target
 [Service]
 Environment="GOMEMLIMIT=${gomemlimit}"
 Environment="GOGC=100"
+ExecStartPre=-/bin/mkdir -p /var/log/proxy
 ExecStartPre=-/usr/local/bin/vt-iptables
-ExecStart=$proxy_bin --token=$token ${port_args[*]} --buffer-size=32768 --response=VTProxy --log-file=/var/log/proxy/proxy.log --log-level=info --ssh-port=22 --openvpn-port=1194 --v2ray-port=1080 --max-connections=0 --write-timeout=60 --idle-timeout=120 --cert-internal=true --btun-enable
+ExecStart=$proxy_bin --config /etc/proxyvt/config.json
 Restart=always
 RestartSec=3
 LimitNOFILE=65536
@@ -1644,22 +2050,20 @@ migrate_legacy_proxy_services() {
     [[ -n "$port" ]] && legacy_files+=("$service_file")
   done
 
-  [[ ${#legacy_files[@]} -eq 0 ]] && return 0
+  # Executa sempre a migracao inteligente para /etc/proxyvt/config.json
+  migrate_flags_to_json_config
 
-  log_info "Detectados ${#legacy_files[@]} serviço(s) proxy legados (separados por porta)."
-  log_info "Iniciando migração de serviços para 'vtproxy.service'..."
-
-  for service_file in "${legacy_files[@]}"; do
-    port=$(basename "$service_file" .service | sed -n 's/^proxy-\([0-9]\+\)$/\1/p')
-    [[ -z "$port" ]] && continue
-
-    extract_or_ensure_proxy_conf "$port" "$service_file"
-
-    log_info "Desativando e removendo serviço legado: proxy-$port.service"
-    run_privileged systemctl stop "proxy-$port.service" 2>/dev/null || true
-    run_privileged systemctl disable "proxy-$port.service" 2>/dev/null || true
-    run_privileged rm -f "$service_file"
-  done
+  if [[ ${#legacy_files[@]} -gt 0 ]]; then
+    log_info "Detectados ${#legacy_files[@]} serviço(s) proxy legados (separados por porta)."
+    log_info "Desativando e limpando units legadas..."
+    for service_file in "${legacy_files[@]}"; do
+      port=$(basename "$service_file" .service | sed -n 's/^proxy-\([0-9]\+\)$/\1/p')
+      [[ -z "$port" ]] && continue
+      run_privileged systemctl stop "proxy-$port.service" 2>/dev/null || true
+      run_privileged systemctl disable "proxy-$port.service" 2>/dev/null || true
+      run_privileged rm -f "$service_file"
+    done
+  fi
 
   run_privileged systemctl daemon-reload || true
 
@@ -1667,11 +2071,9 @@ migrate_legacy_proxy_services() {
     /usr/local/bin/vt --migrate >/dev/null 2>&1 || true
   fi
 
-  if [[ ! -f "/etc/systemd/system/vtproxy.service" ]]; then
-    generate_standalone_unified_service
-  fi
+  generate_standalone_unified_service
 
-  log_info "Migração concluída com sucesso! Serviço 'vtproxy.service' configurado."
+  log_info "Migração concluída com sucesso! Serviço 'vtproxy.service' configurado via JSON."
 }
 
 refresh_existing_services() {
@@ -1999,7 +2401,11 @@ install_vt_iptables_script() {
 # ==============================================================================
 set -u
 
-TUN_SUBNET="${BTUN_SUBNET:-10.77.0.0/16}"
+TUN_SUBNET="${BTUN_SUBNET:-}"
+if [[ -z "$TUN_SUBNET" && -f "/etc/proxyvt/config.json" ]]; then
+  TUN_SUBNET=$(grep -oE '"subnet"[[:space:]]*:[[:space:]]*"[^"]+"' /etc/proxyvt/config.json 2>/dev/null | head -n1 | cut -d'"' -f4 || true)
+fi
+TUN_SUBNET="${TUN_SUBNET:-10.77.0.0/16}"
 
 # Carregar modulos de rede e NAT do kernel se disponiveis
 for mod in ip_tables iptable_filter iptable_nat iptable_mangle nf_nat nf_conntrack xt_conntrack xt_state xt_MASQUERADE xt_tcp_flags xt_TCPMSS; do
@@ -2015,7 +2421,16 @@ detect_tun_interface() {
     return 0
   fi
 
-  # 2. Procura flag --btun-tun nos servicos systemd
+  # 2. Procura configuracao tun no /etc/proxyvt/config.json
+  if [[ -f "/etc/proxyvt/config.json" ]]; then
+    iface=$(grep -oE '"tun"[[:space:]]*:[[:space:]]*"[^"]+"' /etc/proxyvt/config.json 2>/dev/null | head -n1 | cut -d'"' -f4 || true)
+    if [[ -n "$iface" ]]; then
+      echo "$iface"
+      return 0
+    fi
+  fi
+
+  # 3. Procura flag --btun-tun nos servicos systemd legados
   for svc in /etc/systemd/system/vtproxy.service /etc/systemd/system/proxy-*.service; do
     [[ -f "$svc" ]] || continue
     iface=$(grep -oE '--btun-tun[= ][^ ]+' "$svc" 2>/dev/null | tr '=' ' ' | awk '{print $2}' | head -n1)
@@ -2025,14 +2440,14 @@ detect_tun_interface() {
     fi
   done
 
-  # 3. Procura interface com IP na faixa 10.77.
+  # 4. Procura interface com IP na faixa 10.77.
   iface=$(ip -4 addr show 2>/dev/null | grep -B2 '10\.77\.' | awk -F': ' '/^[0-9]+: / {print $2}' | head -n1)
   if [[ -n "$iface" ]]; then
     echo "$iface"
     return 0
   fi
 
-  # 4. Fallback padrao oficial
+  # 5. Fallback padrao oficial
   echo "btun0"
 }
 
@@ -2166,9 +2581,6 @@ ensure_proxy_service_iptables() {
 
   if ! grep -q 'vt-iptables' "$service_file"; then
     safe_sed_inplace "$service_file" -e '/\[Service\]/a ExecStartPre=-/usr/local/bin/vt-iptables' || true
-  fi
-  if ! grep -q -- '--btun-enable' "$service_file"; then
-    safe_sed_inplace "$service_file" -e 's|ExecStart=\(.*proxy.*\)|\1 --btun-enable|g' || true
   fi
 }
 
@@ -2311,7 +2723,7 @@ install_provided_tokens() {
   log_info "Configurando token proxy fornecido pelo instalador..."
 
   if [[ -n "$PROXY_TOKEN" ]]; then
-    run_privileged mkdir -p /etc/vtproxy /etc/proxy
+    run_privileged mkdir -p /etc/vtproxy /etc/proxy /etc/proxyvt
     printf '%s' "$PROXY_TOKEN" | run_privileged tee /etc/vtproxy/proxy.token >/dev/null
     printf '%s' "$PROXY_TOKEN" | run_privileged tee /etc/proxy/token >/dev/null
     chmod 600 /etc/vtproxy/proxy.token /etc/proxy/token 2>/dev/null || true
@@ -2321,7 +2733,9 @@ install_provided_tokens() {
       chmod 600 "$HOME/.proxy_token" 2>/dev/null || true
     fi
 
-    log_success "Token proxy salvo."
+    ensure_proxy_json_config "$PROXY_TOKEN"
+
+    log_success "Token proxy salvo e sincronizado com o config.json."
   fi
 
   if [[ -n "$INSTALL_IP" ]]; then

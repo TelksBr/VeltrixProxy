@@ -37,6 +37,9 @@ PROXY_CONFIG_DIR="$PROXY_DIR/conf.d"
 PROXY_LOG_DIR="/var/log/proxy"
 PROXY_SERVICE_PREFIX="proxy"
 readonly PROXY_UNIFIED_SERVICE_NAME="vtproxy"
+readonly PROXY_JSON_DIR="/etc/proxyvt"
+readonly PROXY_JSON_FILE="/etc/proxyvt/config.json"
+readonly PROXY_CONFIG_JSON="/etc/proxyvt/config.json"
 
 resolve_proxy_executable() {
     if [[ -x "/usr/local/bin/proxy-server" ]]; then
@@ -125,15 +128,15 @@ I18N_PT[lang_saved]="Idioma alterado para %s!"
 I18N_PT[proxy_menu_title]="%s — PROXY"
 I18N_PT[proxy_menu_ports]="Portas: %s"
 I18N_PT[proxy_opt_open]="Abrir / criar nova porta"
-I18N_PT[proxy_opt_start]="Iniciar porta configurada"
-I18N_PT[proxy_opt_stop]="Parar porta (mantém config)"
+I18N_PT[proxy_opt_start]="Ativar porta configurada"
+I18N_PT[proxy_opt_stop]="Pausar porta (mantém config)"
+I18N_PT[proxy_opt_edit]="Editar porta (SSL)"
+I18N_PT[proxy_opt_remove]="Remover porta"
 I18N_PT[proxy_opt_restart]="Reiniciar serviço proxy"
-I18N_PT[proxy_opt_edit]="Editar / Alternar porta (SSL, Pausar/Ativar)"
-I18N_PT[proxy_opt_adv]="Opções avançadas (buffer/flags)"
+I18N_PT[proxy_opt_adv]="Opções avançadas (config.json)"
 I18N_PT[proxy_opt_http]="Alterar resposta HTTP"
 I18N_PT[proxy_opt_details]="Detalhes do serviço proxy"
 I18N_PT[proxy_opt_logs]="Ver logs do VTProxy"
-I18N_PT[proxy_opt_remove]="Remover porta"
 I18N_PT[proxy_opt_back]="Voltar ao Menu Inicial"
 
 I18N_PT[udpgw_menu_title]="UDP GATEWAY (udpgw)"
@@ -227,20 +230,18 @@ I18N_EN[lang_opt_pt]="Português (PT)"
 I18N_EN[lang_opt_en]="English (EN)"
 I18N_EN[lang_opt_es]="Español (ES)"
 I18N_EN[lang_back]="Back"
-I18N_EN[lang_saved]="Language changed to %s!"
-
 I18N_EN[proxy_menu_title]="%s — PROXY"
 I18N_EN[proxy_menu_ports]="Ports: %s"
 I18N_EN[proxy_opt_open]="Open / create port"
-I18N_EN[proxy_opt_start]="Start configured port"
-I18N_EN[proxy_opt_stop]="Stop port (keep config)"
-I18N_EN[proxy_opt_restart]="Restart port"
-I18N_EN[proxy_opt_edit]="Edit port"
-I18N_EN[proxy_opt_adv]="Advanced options (buffer/flags)"
-I18N_EN[proxy_opt_http]="Change HTTP response"
-I18N_EN[proxy_opt_details]="Details / ExecStart"
-I18N_EN[proxy_opt_logs]="View VTProxy logs"
+I18N_EN[proxy_opt_start]="Activate configured port"
+I18N_EN[proxy_opt_stop]="Pause port (keep config)"
+I18N_EN[proxy_opt_edit]="Edit port (SSL)"
 I18N_EN[proxy_opt_remove]="Remove port"
+I18N_EN[proxy_opt_restart]="Restart proxy service"
+I18N_EN[proxy_opt_adv]="Advanced options (config.json)"
+I18N_EN[proxy_opt_http]="Change HTTP response"
+I18N_EN[proxy_opt_details]="Proxy service details"
+I18N_EN[proxy_opt_logs]="View VTProxy logs"
 I18N_EN[proxy_opt_back]="Back to Main Menu"
 
 I18N_EN[udpgw_menu_title]="UDP GATEWAY (udpgw)"
@@ -250,10 +251,10 @@ I18N_EN[udpgw_opt_start]="Start port"
 I18N_EN[udpgw_opt_stop]="Stop port"
 I18N_EN[udpgw_opt_restart]="Restart port"
 I18N_EN[udpgw_opt_status]="Status & ExecStart"
-I18N_EN[udpgw_opt_metrics]="Metrics dashboard"
-I18N_EN[udpgw_opt_logs]="View logs"
-I18N_EN[udpgw_opt_adv]="Advanced options (flags)"
-I18N_EN[udpgw_opt_install]="Install/update binary"
+I18N_EN[udpgw_opt_metrics]="Metrics panel"
+I18N_EN[udpgw_opt_logs]="View udpgw logs"
+I18N_EN[udpgw_opt_adv]="Advanced options"
+I18N_EN[udpgw_opt_install]="Install / update udpgw binary"
 I18N_EN[udpgw_opt_remove]="Remove port"
 I18N_EN[udpgw_opt_back]="Back to Main Menu"
 
@@ -338,16 +339,16 @@ I18N_ES[lang_saved]="¡Idioma cambiado a %s!"
 
 I18N_ES[proxy_menu_title]="%s — PROXY"
 I18N_ES[proxy_menu_ports]="Puertos: %s"
-I18N_ES[proxy_opt_open]="Abrir / crear puerto"
-I18N_ES[proxy_opt_start]="Iniciar puerto configurado"
-I18N_ES[proxy_opt_stop]="Detener puerto (mantiene config)"
-I18N_ES[proxy_opt_restart]="Reiniciar puerto"
-I18N_ES[proxy_opt_edit]="Editar puerto"
-I18N_ES[proxy_opt_adv]="Opciones avanzadas (buffer/flags)"
-I18N_ES[proxy_opt_http]="Cambiar respuesta HTTP"
-I18N_ES[proxy_opt_details]="Detalles / ExecStart"
-I18N_ES[proxy_opt_logs]="Ver registros de VTProxy"
+I18N_ES[proxy_opt_open]="Abrir / crear nuevo puerto"
+I18N_ES[proxy_opt_start]="Activar puerto configurado"
+I18N_ES[proxy_opt_stop]="Pausar puerto (mantiene config)"
+I18N_ES[proxy_opt_edit]="Editar puerto (SSL)"
 I18N_ES[proxy_opt_remove]="Eliminar puerto"
+I18N_ES[proxy_opt_restart]="Reiniciar servicio proxy"
+I18N_ES[proxy_opt_adv]="Opciones avanzadas (config.json)"
+I18N_ES[proxy_opt_http]="Cambiar respuesta HTTP"
+I18N_ES[proxy_opt_details]="Detalles del servicio proxy"
+I18N_ES[proxy_opt_logs]="Ver registros de VTProxy"
 I18N_ES[proxy_opt_back]="Volver al Menú Principal"
 
 I18N_ES[udpgw_menu_title]="UDP GATEWAY (udpgw)"
@@ -730,7 +731,17 @@ format_stat_color() {
 
 # Usuários SSH únicos com sessão sshd (filhos sshd:), excluindo root.
 get_ssh_online_users_count() {
-    local count
+    local count=""
+    # 1. Se o servico proxy unificado estiver ativo, consulta a CLI nativa de conexoes
+    if systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null && [[ -x "$PROXY_EXECUTABLE" ]]; then
+        count=$("$PROXY_EXECUTABLE" --onlines-total 2>/dev/null | tr -d '[:space:]' || true)
+        if [[ "$count" =~ ^[0-9]+$ ]]; then
+            echo "$count"
+            return 0
+        fi
+    fi
+
+    # 2. Fallback para contagem do OpenSSH externo legado
     count=$(
         pgrep -f 'sshd:' 2>/dev/null \
             | xargs -r ps -o user= 2>/dev/null \
@@ -896,10 +907,28 @@ pause() {
 }
 
 init_proxy_dirs() {
-    sudo mkdir -p "$PROXY_DIR" "$PROXY_CONFIG_DIR" "$PROXY_LOG_DIR"
+    sudo mkdir -p "$PROXY_DIR" "$PROXY_CONFIG_DIR" "$PROXY_LOG_DIR" "$PROXY_JSON_DIR" /var/log/proxy
 }
 
 load_proxy_token() {
+    local token=""
+    if [[ -f "$PROXY_JSON_FILE" ]] && command -v python3 >/dev/null 2>&1; then
+        token=$(python3 -c '
+import json
+try:
+    with open("/etc/proxyvt/config.json", "r", encoding="utf-8") as f:
+        d = json.load(f)
+    tok = str(d.get("token", "")).strip()
+    if tok: print(tok)
+except Exception:
+    pass
+' 2>/dev/null || true)
+        if [[ -n "$token" ]]; then
+            echo "$token"
+            return 0
+        fi
+    fi
+
     local file
     for file in "$PROXY_TOKEN_VTPROXY" "$PROXY_TOKEN_FILE" "$PROXY_TOKEN_HOME"; do
         if [[ -f "$file" ]]; then
@@ -912,12 +941,15 @@ load_proxy_token() {
 
 save_proxy_token() {
     local token="$1"
-    sudo mkdir -p "$(dirname "$PROXY_TOKEN_VTPROXY")" "$PROXY_DIR"
+    sudo mkdir -p "$(dirname "$PROXY_TOKEN_VTPROXY")" "$PROXY_DIR" "$PROXY_JSON_DIR"
     printf '%s' "$token" | sudo tee "$PROXY_TOKEN_VTPROXY" >/dev/null
     printf '%s' "$token" | sudo tee "$PROXY_TOKEN_FILE" >/dev/null
     printf '%s' "$token" >"$PROXY_TOKEN_HOME"
     sudo chmod 600 "$PROXY_TOKEN_VTPROXY" "$PROXY_TOKEN_FILE" 2>/dev/null || true
     chmod 600 "$PROXY_TOKEN_HOME" 2>/dev/null || true
+
+    ensure_proxy_json_config
+    json_set_field "token" "$token" "string"
 }
 
 validate_proxy_token() {
@@ -933,124 +965,758 @@ validate_proxy_token() {
     "$PROXY_EXECUTABLE" --token "$token" --validate >/dev/null 2>&1
 }
 
-list_configured_proxy_ports() {
-    local ports=()
-    local f port service_file
+ensure_proxy_json_config() {
+    sudo mkdir -p "$PROXY_JSON_DIR" "$PROXY_LOG_DIR" 2>/dev/null || true
 
-    ensure_proxy_dirs_quiet
+    if [[ ! -f "$PROXY_JSON_FILE" ]]; then
+        if [[ -x "$PROXY_EXECUTABLE" ]] && "$PROXY_EXECUTABLE" --dump-config >/dev/null 2>&1; then
+            "$PROXY_EXECUTABLE" --dump-config 2>/dev/null | sudo tee "$PROXY_JSON_FILE" >/dev/null || true
+        fi
+    fi
 
-    for service_file in /etc/systemd/system/${PROXY_SERVICE_PREFIX}-*.service; do
-        [[ -f "$service_file" ]] || continue
-        port=$(basename "$service_file" .service | sed -n "s/^${PROXY_SERVICE_PREFIX}-\\([0-9]\\+\\)$/\\1/p")
-        [[ -n "$port" ]] && ports+=("$port")
-    done
+    local current_token
+    current_token=$(load_proxy_token)
 
-    for f in "$PROXY_CONFIG_DIR"/proxy-*.conf; do
-        [[ -f "$f" ]] || continue
-        port=$(basename "$f" .conf | sed -n 's/^proxy-\([0-9]\+\)$/\1/p')
-        [[ -n "$port" ]] && ports+=("$port")
-    done
+    if [[ ! -s "$PROXY_JSON_FILE" ]] && command -v python3 >/dev/null 2>&1; then
+        sudo python3 -c '
+import json, os, sys
+path = "/etc/proxyvt/config.json"
+token = sys.argv[1] if len(sys.argv) > 1 else ""
+default_cfg = {
+  "token": token,
+  "ports": ["80", "443:ssl"],
+  "disabled_ports": [],
+  "log_level": "info",
+  "log_file": "",
+  "buffer_size": 32768,
+  "max_connections": 0,
+  "idle_timeout": 0,
+  "write_timeout": 0,
+  "cert": "",
+  "cert_internal": True,
+  "display_banner": True,
+  "response": "VeltrixProxy",
+  "ssh_only": False,
+  "ulimit": 65536,
+  "ssh": {
+    "internal": True,
+    "internal_port": 0,
+    "port": 22,
+    "auth": "shadow",
+    "auth_file": "",
+    "allow_root": True,
+    "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3"
+  },
+  "btun": {
+    "enable": True,
+    "tun": "btun0",
+    "subnet": "10.77.0.0/16",
+    "auth": "shadow",
+    "auth_file": "/etc/btun/users",
+    "udp_port": 0
+  },
+  "limits": {
+    "default_user_limit": 0,
+    "passwd_file": "/etc/passwd",
+    "expire_check_interval": "1m"
+  },
+  "connectors": {
+    "openvpn_port": 1194,
+    "v2ray_port": 1080
+  },
+  "xhttp": {
+    "path": "/ssh",
+    "grace": 120,
+    "idle": 120
+  }
+}
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(default_cfg, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+' "$current_token" 2>/dev/null || true
+    fi
 
-    if [[ ${#ports[@]} -eq 0 ]]; then
+    if [[ -f "$PROXY_JSON_FILE" ]] && command -v python3 >/dev/null 2>&1; then
+        sudo python3 -c '
+import json, sys
+p = "/etc/proxyvt/config.json"
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        d = json.load(f)
+    changed = False
+    if "limits" in d and isinstance(d["limits"], dict) and "kill_expired" in d["limits"]:
+        d["limits"].pop("kill_expired", None)
+        changed = True
+    if "kill_expired" in d:
+        d.pop("kill_expired", None)
+        changed = True
+    if sys.argv[1] and (not d.get("token") or d.get("token") != sys.argv[1]):
+        d["token"] = sys.argv[1]
+        changed = True
+    if changed:
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(d, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+except Exception:
+    pass
+' "$current_token" 2>/dev/null || true
+    fi
+}
+
+migrate_flags_to_json_if_needed() {
+    local token
+    token=$(load_proxy_token)
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        ensure_proxy_json_config
         return 0
     fi
 
-    printf '%s\n' "${ports[@]}" | sort -nu | paste -sd, - 2>/dev/null || true
+    sudo python3 -c '
+import json, os, re, glob, sys
+
+json_path = "/etc/proxyvt/config.json"
+default_token = sys.argv[1] if len(sys.argv) > 1 else ""
+
+config = {
+    "token": default_token or "",
+    "ports": [],
+    "disabled_ports": [],
+    "log_level": "info",
+    "log_file": "",
+    "buffer_size": 32768,
+    "max_connections": 0,
+    "idle_timeout": 0,
+    "write_timeout": 0,
+    "cert": "",
+    "cert_internal": True,
+    "display_banner": True,
+    "response": "VeltrixProxy",
+    "ssh_only": False,
+    "ulimit": 65536,
+    "ssh": {
+        "internal": True,
+        "internal_port": 0,
+        "port": 22,
+        "auth": "shadow",
+        "auth_file": "",
+        "allow_root": True,
+        "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3"
+    },
+    "btun": {
+        "enable": True,
+        "tun": "btun0",
+        "subnet": "10.77.0.0/16",
+        "auth": "shadow",
+        "auth_file": "/etc/btun/users",
+        "udp_port": 0
+    },
+    "limits": {
+        "default_user_limit": 0,
+        "passwd_file": "/etc/passwd",
+        "expire_check_interval": "1m"
+    },
+    "connectors": {
+        "openvpn_port": 1194,
+        "v2ray_port": 1080
+    },
+    "xhttp": {
+        "path": "/ssh",
+        "grace": 120,
+        "idle": 120
+    }
+}
+
+if os.path.exists(json_path):
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            existing = json.load(f)
+            for k, v in existing.items():
+                if isinstance(v, dict) and k in config and isinstance(config[k], dict):
+                    config[k].update(v)
+                else:
+                    config[k] = v
+    except Exception:
+        pass
+
+def normalize_port_list(ports_list):
+    res = []
+    for p in ports_list:
+        if isinstance(p, dict):
+            p_num = str(p.get("port", "")).strip()
+            if p.get("ssl"):
+                res.append(f"{p_num}:ssl")
+            else:
+                res.append(p_num)
+        else:
+            res.append(str(p).strip())
+    return res
+
+found_active = normalize_port_list(config.get("ports", []))
+found_disabled = normalize_port_list(config.get("disabled_ports", []))
+
+service_files = glob.glob("/etc/systemd/system/proxy-*.service")
+if os.path.isfile("/etc/systemd/system/vtproxy.service"):
+    service_files.append("/etc/systemd/system/vtproxy.service")
+
+for sf in service_files:
+    try:
+        with open(sf, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception:
+        continue
+
+    for line in content.splitlines():
+        line = line.strip()
+        if not line.startswith("ExecStart="):
+            continue
+        exec_cmd = line[len("ExecStart="):]
+
+        m_tok = re.search(r"--token[= ]([^\s]+)", exec_cmd)
+        if m_tok and not config.get("token"):
+            config["token"] = m_tok.group(1).strip()
+
+        for m_port in re.finditer(r"--port[= ]([^\s]+)", exec_cmd):
+            pval = m_port.group(1).strip()
+            if pval and pval not in found_active and pval not in found_disabled:
+                found_active.append(pval)
+
+        m_svc_port = re.search(r"proxy-([0-9]+)\.service", os.path.basename(sf))
+        if m_svc_port:
+            pnum = m_svc_port.group(1)
+            is_ssl = ":ssl" in exec_cmd or "--cert=" in exec_cmd
+            entry = f"{pnum}:ssl" if is_ssl else pnum
+            if entry not in found_active and entry not in found_disabled:
+                found_active.append(entry)
+
+        m_buf = re.search(r"--buffer-size[= ]([0-9]+)", exec_cmd)
+        if m_buf:
+            config["buffer_size"] = int(m_buf.group(1))
+
+        m_resp = re.search(r"--response[= ]([^\s]+)", exec_cmd)
+        if m_resp:
+            config["response"] = m_resp.group(1).strip()
+
+        m_idle = re.search(r"--idle-timeout[= ]([0-9]+)", exec_cmd)
+        if m_idle:
+            config["idle_timeout"] = int(m_idle.group(1))
+        m_write = re.search(r"--write-timeout[= ]([0-9]+)", exec_cmd)
+        if m_write:
+            config["write_timeout"] = int(m_write.group(1))
+
+        m_max = re.search(r"--max-connections[= ]([0-9]+)", exec_cmd)
+        if m_max:
+            config["max_connections"] = int(m_max.group(1))
+
+        m_ll = re.search(r"--log-level[= ]([a-zA-Z]+)", exec_cmd)
+        if m_ll:
+            config["log_level"] = m_ll.group(1).lower()
+
+        if "--cert-internal=false" in exec_cmd:
+            config["cert_internal"] = False
+        elif "--cert-internal" in exec_cmd:
+            config["cert_internal"] = True
+
+        m_cert = re.search(r"--cert[= ]([^\s]+)", exec_cmd)
+        if m_cert:
+            config["cert"] = m_cert.group(1)
+            if "--cert-internal" not in exec_cmd:
+                config["cert_internal"] = False
+
+        if "--ssh-only" in exec_cmd:
+            config["ssh_only"] = True
+        if "--display-banner=false" in exec_cmd:
+            config["display_banner"] = False
+
+        m_sp = re.search(r"--ssh-port[= ]([0-9]+)", exec_cmd)
+        if m_sp:
+            config["ssh"]["port"] = int(m_sp.group(1))
+        m_op = re.search(r"--openvpn-port[= ]([0-9]+)", exec_cmd)
+        if m_op:
+            config["connectors"]["openvpn_port"] = int(m_op.group(1))
+        m_vp = re.search(r"--v2ray-port[= ]([0-9]+)", exec_cmd)
+        if m_vp:
+            config["connectors"]["v2ray_port"] = int(m_vp.group(1))
+
+        if "--btun-enable=false" in exec_cmd:
+            config["btun"]["enable"] = False
+        elif "--btun-enable" in exec_cmd:
+            config["btun"]["enable"] = True
+        m_tun = re.search(r"--btun-tun[= ]([^\s]+)", exec_cmd)
+        if m_tun:
+            config["btun"]["tun"] = m_tun.group(1)
+        m_sub = re.search(r"--btun-subnet[= ]([^\s]+)", exec_cmd)
+        if m_sub:
+            config["btun"]["subnet"] = m_sub.group(1)
+
+conf_dir = "/etc/proxy/conf.d"
+if os.path.isdir(conf_dir):
+    for cfile in sorted(glob.glob(os.path.join(conf_dir, "proxy-*.conf"))):
+        try:
+            kv = {}
+            with open(cfile, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        kv[k.strip()] = v.strip()
+            p_val = kv.get("PORT")
+            if not p_val:
+                m_fn = re.search(r"proxy-([0-9]+)\.conf", os.path.basename(cfile))
+                if m_fn:
+                    p_val = m_fn.group(1)
+            if p_val:
+                is_ssl = kv.get("SSL_ENABLED", "false").lower() == "true"
+                entry = f"{p_val}:ssl" if is_ssl else str(p_val)
+                is_en = kv.get("ENABLED", "true").lower() != "false"
+                if is_en:
+                    if entry not in found_active:
+                        found_active.append(entry)
+                else:
+                    if entry not in found_disabled:
+                        found_disabled.append(entry)
+            if kv.get("HTTP_RESPONSE") and config["response"] == "VeltrixProxy":
+                config["response"] = kv["HTTP_RESPONSE"]
+            if kv.get("BUFFER_SIZE") and config["buffer_size"] == 32768:
+                try:
+                    config["buffer_size"] = int(kv["BUFFER_SIZE"])
+                except ValueError:
+                    pass
+        except Exception:
+            pass
+
+seen = set()
+cleaned_active = []
+for p in found_active:
+    p_str = str(p).strip()
+    p_num = p_str.split(":")[0]
+    if p_num not in seen:
+        seen.add(p_num)
+        cleaned_active.append(p_str)
+
+cleaned_disabled = []
+for p in found_disabled:
+    p_str = str(p).strip()
+    p_num = p_str.split(":")[0]
+    if p_num not in seen:
+        seen.add(p_num)
+        cleaned_disabled.append(p_str)
+
+config["ports"] = cleaned_active
+config["disabled_ports"] = cleaned_disabled
+
+if "limits" in config and isinstance(config["limits"], dict):
+    config["limits"].pop("kill_expired", None)
+if "kill_expired" in config:
+    config.pop("kill_expired", None)
+
+os.makedirs(os.path.dirname(json_path), exist_ok=True)
+temp_path = json_path + ".tmp"
+with open(temp_path, "w", encoding="utf-8") as f:
+    json.dump(config, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+if os.path.exists(json_path):
+    os.replace(temp_path, json_path)
+else:
+    os.rename(temp_path, json_path)
+' "$token" 2>/dev/null || true
+}
+
+json_get_field() {
+    local key_path="$1"
+    local default_val="${2:-}"
+    ensure_proxy_json_config
+    if command -v python3 >/dev/null 2>&1 && [[ -f "$PROXY_JSON_FILE" ]]; then
+        python3 -c '
+import json, sys
+p = "/etc/proxyvt/config.json"
+key_path = sys.argv[1]
+default = sys.argv[2]
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    cur = data
+    for k in key_path.split("."):
+        if isinstance(cur, dict) and k in cur:
+            cur = cur[k]
+        else:
+            print(default)
+            sys.exit(0)
+    if isinstance(cur, bool):
+        print("true" if cur else "false")
+    elif cur is None:
+        print(default)
+    else:
+        print(cur)
+except Exception:
+    print(default)
+' "$key_path" "$default_val" 2>/dev/null || echo "$default_val"
+    else
+        echo "$default_val"
+    fi
+}
+
+json_set_field() {
+    local key_path="$1"
+    local val="$2"
+    local val_type="${3:-string}"
+    ensure_proxy_json_config
+    if command -v python3 >/dev/null 2>&1 && [[ -f "$PROXY_JSON_FILE" ]]; then
+        sudo python3 -c '
+import json, sys
+p = "/etc/proxyvt/config.json"
+key_path = sys.argv[1]
+raw_val = sys.argv[2]
+vtype = sys.argv[3] if len(sys.argv) > 3 else "string"
+
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        data = json.load(f)
+except Exception:
+    data = {}
+
+if vtype == "int":
+    try:
+        val = int(raw_val)
+    except ValueError:
+        val = 0
+elif vtype == "bool":
+    val = raw_val.lower() in ("true", "1", "yes", "s")
+else:
+    val = str(raw_val)
+
+cur = data
+keys = key_path.split(".")
+for k in keys[:-1]:
+    if k not in cur or not isinstance(cur[k], dict):
+        cur[k] = {}
+    cur = cur[k]
+cur[keys[-1]] = val
+
+with open(p, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+' "$key_path" "$val" "$val_type" 2>/dev/null || true
+    fi
+}
+
+json_get_active_ports() {
+    ensure_proxy_json_config
+    if command -v python3 >/dev/null 2>&1 && [[ -f "$PROXY_JSON_FILE" ]]; then
+        python3 -c '
+import json
+try:
+    with open("/etc/proxyvt/config.json", "r", encoding="utf-8") as f:
+        data = json.load(f)
+    ports = data.get("ports", [])
+    res = []
+    for p in ports:
+        if isinstance(p, dict):
+            pnum = str(p.get("port", ""))
+            res.append(f"{pnum}:ssl" if p.get("ssl") else pnum)
+        else:
+            res.append(str(p).strip())
+    print(",".join(res))
+except Exception:
+    pass
+' 2>/dev/null || true
+    fi
+}
+
+json_get_disabled_ports() {
+    ensure_proxy_json_config
+    if command -v python3 >/dev/null 2>&1 && [[ -f "$PROXY_JSON_FILE" ]]; then
+        python3 -c '
+import json
+try:
+    with open("/etc/proxyvt/config.json", "r", encoding="utf-8") as f:
+        data = json.load(f)
+    disabled = data.get("disabled_ports", [])
+    res = []
+    for p in disabled:
+        if isinstance(p, dict):
+            pnum = str(p.get("port", ""))
+            res.append(f"{pnum}:ssl" if p.get("ssl") else pnum)
+        else:
+            res.append(str(p).strip())
+    print(",".join(res))
+except Exception:
+    pass
+' 2>/dev/null || true
+    fi
+}
+
+json_add_port() {
+    local port="$1"
+    local is_ssl="${2:-false}"
+    ensure_proxy_json_config
+    if command -v python3 >/dev/null 2>&1 && [[ -f "$PROXY_JSON_FILE" ]]; then
+        sudo python3 -c '
+import json, sys
+p = "/etc/proxyvt/config.json"
+port_num = str(sys.argv[1]).strip()
+is_ssl = sys.argv[2].lower() in ("true", "1", "yes", "s")
+entry = f"{port_num}:ssl" if is_ssl else port_num
+
+def pnum(val):
+    if isinstance(val, dict): return str(val.get("port", "")).strip()
+    return str(val).split(":")[0].strip()
+
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    ports = data.get("ports", [])
+    disabled = data.get("disabled_ports", [])
+
+    disabled = [x for x in disabled if pnum(x) != port_num]
+
+    new_ports = []
+    replaced = False
+    for x in ports:
+        if pnum(x) == port_num:
+            new_ports.append(entry)
+            replaced = True
+        else:
+            new_ports.append(x)
+    if not replaced:
+        new_ports.append(entry)
+
+    data["ports"] = new_ports
+    data["disabled_ports"] = disabled
+
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+except Exception:
+    pass
+' "$port" "$is_ssl" 2>/dev/null || true
+    fi
+}
+
+json_remove_port() {
+    local port="$1"
+    ensure_proxy_json_config
+    if command -v python3 >/dev/null 2>&1 && [[ -f "$PROXY_JSON_FILE" ]]; then
+        sudo python3 -c '
+import json, sys
+p = "/etc/proxyvt/config.json"
+port_num = str(sys.argv[1]).strip()
+
+def pnum(val):
+    if isinstance(val, dict): return str(val.get("port", "")).strip()
+    return str(val).split(":")[0].strip()
+
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    data["ports"] = [x for x in data.get("ports", []) if pnum(x) != port_num]
+    data["disabled_ports"] = [x for x in data.get("disabled_ports", []) if pnum(x) != port_num]
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+except Exception:
+    pass
+' "$port" 2>/dev/null || true
+    fi
+}
+
+json_toggle_port() {
+    local port="$1"
+    local enable_flag="$2"
+    ensure_proxy_json_config
+    if command -v python3 >/dev/null 2>&1 && [[ -f "$PROXY_JSON_FILE" ]]; then
+        sudo python3 -c '
+import json, sys
+p = "/etc/proxyvt/config.json"
+port_num = str(sys.argv[1]).strip()
+enable = sys.argv[2].lower() in ("true", "1", "yes", "s")
+
+def pnum(val):
+    if isinstance(val, dict): return str(val.get("port", "")).strip()
+    return str(val).split(":")[0].strip()
+
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    ports = list(data.get("ports", []))
+    disabled = list(data.get("disabled_ports", []))
+
+    found_item = None
+    for x in ports:
+        if pnum(x) == port_num:
+            found_item = x
+            break
+    if not found_item:
+        for x in disabled:
+            if pnum(x) == port_num:
+                found_item = x
+                break
+    if not found_item:
+        found_item = port_num
+
+    if enable:
+        disabled = [x for x in disabled if pnum(x) != port_num]
+        if not any(pnum(x) == port_num for x in ports):
+            ports.append(found_item)
+    else:
+        ports = [x for x in ports if pnum(x) != port_num]
+        if not any(pnum(x) == port_num for x in disabled):
+            disabled.append(found_item)
+
+    data["ports"] = ports
+    data["disabled_ports"] = disabled
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+except Exception:
+    pass
+' "$port" "$enable_flag" 2>/dev/null || true
+    fi
+}
+
+json_set_port_ssl() {
+    local port="$1"
+    local is_ssl="$2"
+    ensure_proxy_json_config
+    if command -v python3 >/dev/null 2>&1 && [[ -f "$PROXY_JSON_FILE" ]]; then
+        sudo python3 -c '
+import json, sys
+p = "/etc/proxyvt/config.json"
+port_num = str(sys.argv[1]).strip()
+is_ssl = sys.argv[2].lower() in ("true", "1", "yes", "s")
+entry = f"{port_num}:ssl" if is_ssl else port_num
+
+def pnum(val):
+    if isinstance(val, dict): return str(val.get("port", "")).strip()
+    return str(val).split(":")[0].strip()
+
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    ports = data.get("ports", [])
+    disabled = data.get("disabled_ports", [])
+
+    if any(pnum(x) == port_num for x in ports):
+        data["ports"] = [entry if pnum(x) == port_num else x for x in ports]
+    elif any(pnum(x) == port_num for x in disabled):
+        data["disabled_ports"] = [entry if pnum(x) == port_num else x for x in disabled]
+    else:
+        data.setdefault("ports", []).append(entry)
+
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+except Exception:
+    pass
+' "$port" "$is_ssl" 2>/dev/null || true
+    fi
+}
+
+is_proxy_port_ssl() {
+    local port="$1"
+    local p active disabled
+    active=$(json_get_active_ports)
+    disabled=$(json_get_disabled_ports)
+    for p in ${active//,/ } ${disabled//,/ }; do
+        if [[ "$p" == "${port}:ssl" ]]; then
+            echo "true"
+            return 0
+        fi
+    done
+    echo "false"
+}
+
+is_proxy_port_enabled() {
+    local port="$1"
+    local p active
+    active=$(json_get_active_ports)
+    for p in ${active//,/ }; do
+        local pnum="${p%%:*}"
+        if [[ "$pnum" == "$port" ]]; then
+            echo "true"
+            return 0
+        fi
+    done
+    echo "false"
+}
+
+is_proxy_service_configured() {
+    local port="$1"
+    local p all_ports
+    all_ports=$(list_configured_proxy_ports)
+    [[ -z "$all_ports" ]] && return 1
+    IFS=',' read -ra port_arr <<< "$all_ports"
+    for p in "${port_arr[@]}"; do
+        [[ "$p" == "$port" ]] && return 0
+    done
+    return 1
+}
+
+list_configured_proxy_ports() {
+    local active disabled all_ports=() p pnum
+    active=$(json_get_active_ports)
+    disabled=$(json_get_disabled_ports)
+
+    for p in ${active//,/ } ${disabled//,/ }; do
+        [[ -z "$p" ]] && continue
+        pnum="${p%%:*}"
+        [[ -n "$pnum" ]] && all_ports+=("$pnum")
+    done
+
+    # Fallback legado se JSON ainda nao tiver portas
+    if [[ ${#all_ports[@]} -eq 0 ]]; then
+        for f in "$PROXY_CONFIG_DIR"/proxy-*.conf; do
+            [[ -f "$f" ]] || continue
+            pnum=$(basename "$f" .conf | sed -n 's/^proxy-\([0-9]\+\)$/\1/p')
+            [[ -n "$pnum" ]] && all_ports+=("$pnum")
+        done
+    fi
+
+    if [[ ${#all_ports[@]} -eq 0 ]]; then
+        return 0
+    fi
+    printf '%s\n' "${all_ports[@]}" | sort -nu | paste -sd, - 2>/dev/null || true
 }
 
 get_global_proxy_setting() {
     local key="$1"
-    local default_val="$2"
-    local configured_ports port val
+    local default_val="${2:-}"
 
-    local exec_line flag_name match
-    exec_line=$(systemctl cat "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null | grep -E '^ExecStart=' | head -n1 | sed 's/^ExecStart=//' || true)
-    if [[ -n "$exec_line" ]]; then
-        case "$key" in
-            HTTP_RESPONSE) flag_name="--response" ;;
-            BUFFER_SIZE) flag_name="--buffer-size" ;;
-            MAX_CONNECTIONS) flag_name="--max-connections" ;;
-            WRITE_TIMEOUT) flag_name="--write-timeout" ;;
-            IDLE_TIMEOUT) flag_name="--idle-timeout" ;;
-            LOG_LEVEL) flag_name="--log-level" ;;
-            SSH_PORT) flag_name="--ssh-port" ;;
-            OPENVPN_PORT) flag_name="--openvpn-port" ;;
-            V2RAY_PORT) flag_name="--v2ray-port" ;;
-            SSH_ONLY) flag_name="--ssh-only" ;;
-            CERT_INTERNAL) flag_name="--cert-internal" ;;
-            DISPLAY_BANNER) flag_name="--display-banner" ;;
-            SSL_CERT_PATH) flag_name="--cert" ;;
-            *) flag_name="" ;;
-        esac
-
-        if [[ -n "$flag_name" ]]; then
-            if [[ "$exec_line" =~ ${flag_name}=([^[:space:]]+) ]]; then
-                echo "${BASH_REMATCH[1]}"
-                return 0
-            elif [[ "$key" == "SSH_ONLY" ]] && [[ "$exec_line" =~ (^|[[:space:]])--ssh-only([[:space:]]|$) ]]; then
-                echo "true"
-                return 0
-            fi
-        fi
-
-        if [[ "$key" == "SSL_ENABLED" && "$exec_line" == *":ssl"* ]]; then
-            echo "true"
-            return 0
-        fi
-    fi
-
-    configured_ports=$(list_configured_proxy_ports)
-    if [[ -n "$configured_ports" ]]; then
-        IFS=',' read -ra port_array <<< "$configured_ports"
-        for port in "${port_array[@]}"; do
-            [[ -z "$port" ]] && continue
-            val=$(get_proxy_conf_value "$port" "$key" "")
-            if [[ -n "$val" ]]; then
-                echo "$val"
-                return 0
-            fi
-        done
-    fi
-    echo "$default_val"
+    case "$key" in
+        HTTP_RESPONSE) json_get_field "response" "$default_val" ;;
+        BUFFER_SIZE) json_get_field "buffer_size" "$default_val" ;;
+        MAX_CONNECTIONS) json_get_field "max_connections" "$default_val" ;;
+        WRITE_TIMEOUT) json_get_field "write_timeout" "$default_val" ;;
+        IDLE_TIMEOUT) json_get_field "idle_timeout" "$default_val" ;;
+        LOG_LEVEL) json_get_field "log_level" "$default_val" ;;
+        SSH_PORT) json_get_field "ssh.port" "$default_val" ;;
+        OPENVPN_PORT) json_get_field "connectors.openvpn_port" "$default_val" ;;
+        V2RAY_PORT) json_get_field "connectors.v2ray_port" "$default_val" ;;
+        SSH_ONLY) json_get_field "ssh_only" "$default_val" ;;
+        CERT_INTERNAL) json_get_field "cert_internal" "$default_val" ;;
+        DISPLAY_BANNER) json_get_field "display_banner" "$default_val" ;;
+        SSL_CERT_PATH) json_get_field "cert" "$default_val" ;;
+        *) json_get_field "$key" "$default_val" ;;
+    esac
 }
 
-
 ensure_proxy_dirs_quiet() {
-    sudo mkdir -p "$PROXY_DIR" "$PROXY_CONFIG_DIR" "$PROXY_LOG_DIR" 2>/dev/null || true
+    sudo mkdir -p "$PROXY_DIR" "$PROXY_CONFIG_DIR" "$PROXY_LOG_DIR" "$PROXY_JSON_DIR" 2>/dev/null || true
 }
 
 list_active_proxies() {
-    local ports port active_list=""
-    ports=$(list_configured_proxy_ports)
-    [[ -z "$ports" ]] && return 0
-
-    if systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null; then
-        IFS=',' read -ra port_array <<< "$ports"
-        for port in "${port_array[@]}"; do
-            [[ -z "$port" ]] && continue
-            local enabled
-            enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
-            if [[ "$enabled" == "true" ]]; then
-                [[ -n "$active_list" ]] && active_list+=","
-                active_list+="$port"
-            fi
-        done
-        printf '%s' "$active_list"
+    if ! systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null; then
         return 0
     fi
-
-    # Fallback legado para transicao
-    IFS=',' read -ra port_array <<< "$ports"
-    for port in "${port_array[@]}"; do
-        [[ -z "$port" ]] && continue
-        local service_name
-        service_name=$(get_proxy_service_name "$port")
-        if systemctl is-active --quiet "$service_name" 2>/dev/null; then
-            [[ -n "$active_list" ]] && active_list+=","
-            active_list+="$port"
-        fi
+    local active p pnum res=()
+    active=$(json_get_active_ports)
+    for p in ${active//,/ }; do
+        [[ -z "$p" ]] && continue
+        pnum="${p%%:*}"
+        [[ -n "$pnum" ]] && res+=("$pnum")
     done
-    printf '%s' "$active_list"
+    printf '%s' "${res[*]}" | tr ' ' ','
 }
 
 format_proxy_port_flags() {
@@ -1058,9 +1724,9 @@ format_proxy_port_flags() {
     local flags=()
     local ssl cert_internal ssh_only
 
-    ssl=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
-    cert_internal=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
-    ssh_only=$(get_proxy_conf_value "$port" "SSH_ONLY" "false")
+    ssl=$(is_proxy_port_ssl "$port")
+    cert_internal=$(json_get_field "cert_internal" "true")
+    ssh_only=$(json_get_field "ssh_only" "false")
 
     [[ "$ssl" == "true" ]] && flags+=("ssl")
     if [[ "$ssl" == "true" && "$cert_internal" == "true" ]]; then
@@ -1079,35 +1745,49 @@ format_proxy_port_flags() {
 }
 
 format_proxy_ports_status() {
-    local configured active status_items=() port ssl enabled item
-    configured=$(list_configured_proxy_ports)
+    local active disabled status_items=() p pnum
 
-    if [[ -z "$configured" ]]; then
+    active=$(json_get_active_ports)
+    disabled=$(json_get_disabled_ports)
+
+    if [[ -z "$active" && -z "$disabled" ]]; then
+        local leg
+        leg=$(list_configured_proxy_ports)
+        if [[ -z "$leg" ]]; then
+            echo "nenhuma"
+            return 0
+        fi
+    fi
+
+    for p in ${active//,/ }; do
+        [[ -z "$p" ]] && continue
+        pnum="${p%%:*}"
+        if [[ "$p" == *":ssl"* ]]; then
+            status_items+=("${pnum} [SSL]")
+        else
+            status_items+=("${pnum}")
+        fi
+    done
+
+    for p in ${disabled//,/ }; do
+        [[ -z "$p" ]] && continue
+        pnum="${p%%:*}"
+        if [[ "$p" == *":ssl"* ]]; then
+            status_items+=("${pnum} [SSL] (OFF)")
+        else
+            status_items+=("${pnum} (OFF)")
+        fi
+    done
+
+    local count=${#status_items[@]}
+    if (( count == 0 )); then
         echo "nenhuma"
         return 0
     fi
 
-    IFS=',' read -ra port_array <<< "$configured"
-    for port in "${port_array[@]}"; do
-        [[ -z "$port" ]] && continue
-        ssl=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
-        enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
-
-        item="$port"
-        if [[ "$ssl" == "true" ]]; then
-            item="${port} [SSL]"
-        fi
-        if [[ "$enabled" == "false" ]]; then
-            item="${item} (OFF)"
-        fi
-        status_items+=("$item")
-    done
-
-    local count=${#status_items[@]}
     if (( count <= 4 )); then
         local IFS=,
         echo "${status_items[*]}" | sed 's/,/, /g'
-    else
         local first_four=("${status_items[@]:0:4}")
         local remaining=$(( count - 4 ))
         local IFS=,
@@ -1160,12 +1840,7 @@ prompt_for_proxy_token_if_missing() {
     fi
 }
 
-is_proxy_service_configured() {
-    local port="$1"
-    [[ -f "$(get_proxy_config_file "$port")" ]] && return 0
-    [[ -f "/etc/systemd/system/${PROXY_SERVICE_PREFIX}-${port}.service" ]] && return 0
-    systemctl cat "${PROXY_SERVICE_PREFIX}-${port}" &>/dev/null
-}
+
 
 get_proxy_config_file() {
     local port="$1"
@@ -1180,115 +1855,6 @@ get_proxy_log_file() {
 get_proxy_service_name() {
     local port="$1"
     echo "$PROXY_SERVICE_PREFIX-$port"
-}
-
-get_proxy_conf_value() {
-    local port="$1"
-    local key="$2"
-    local default="${3:-}"
-    local file val
-    file=$(get_proxy_config_file "$port")
-    if [[ -f "$file" ]]; then
-        val=$(grep -E "^${key}=" "$file" 2>/dev/null | head -n1 | cut -d= -f2-)
-        if [[ -n "$val" ]]; then
-            printf '%s' "$val"
-            return 0
-        fi
-    fi
-    printf '%s' "$default"
-}
-
-write_proxy_conf() {
-    local port="$1"
-    local ssl_enabled="$2"
-    local ssl_cert_path="$3"
-    local cert_internal="$4"
-    local ssh_only_flag="$5"
-    local http_response="$6"
-    local buffer_size="$7"
-    local domain_flag="$8" # legado (ignorado; --domain removido do binario)
-    local max_connections="$9"
-    local write_timeout="${10}"
-    local idle_timeout="${11}"
-    local log_level="${12}"
-    local ssh_port="${13}"
-    local openvpn_port="${14}"
-    local v2ray_port="${15}"
-    local display_banner="${16}"
-    local enabled="${17:-true}"
-    local file
-
-    ensure_proxy_dirs_quiet
-    file=$(get_proxy_config_file "$port")
-
-    sudo tee "$file" > /dev/null <<EOF
-PORT=$port
-ENABLED=$enabled
-SSL_ENABLED=$ssl_enabled
-SSL_CERT_PATH=$ssl_cert_path
-CERT_INTERNAL=$cert_internal
-SSH_ONLY=$ssh_only_flag
-HTTP_RESPONSE=$http_response
-BUFFER_SIZE=$buffer_size
-DOMAIN=false
-MAX_CONNECTIONS=$max_connections
-WRITE_TIMEOUT=$write_timeout
-IDLE_TIMEOUT=$idle_timeout
-LOG_LEVEL=$log_level
-SSH_PORT=$ssh_port
-OPENVPN_PORT=$openvpn_port
-V2RAY_PORT=$v2ray_port
-DISPLAY_BANNER=$display_banner
-EOF
-}
-
-set_proxy_conf_key() {
-    local port="$1"
-    local key="$2"
-    local value="$3"
-    local file temp_file
-    file=$(get_proxy_config_file "$port")
-    ensure_proxy_dirs_quiet
-    temp_file=$(mktemp)
-
-    if [[ -f "$file" ]]; then
-        grep -v "^${key}=" "$file" > "$temp_file" || true
-    fi
-    echo "${key}=${value}" >> "$temp_file"
-    sudo mv "$temp_file" "$file"
-    sudo chmod 644 "$file" 2>/dev/null || true
-}
-
-migrate_proxy_conf_from_unit_if_needed() {
-    local port="$1"
-    local file service_file exec_line
-    file=$(get_proxy_config_file "$port")
-    [[ -f "$file" ]] && return 0
-
-    service_file="/etc/systemd/system/$(get_proxy_service_name "$port").service"
-    [[ -f "$service_file" ]] || return 1
-
-    exec_line=$(grep -E '^ExecStart=' "$service_file" | head -n1 | sed 's/^ExecStart=//')
-
-    local ssl="false" cert="" cert_internal="true" ssh_only="false"
-    local response="$DEFAULT_HTTP_RESPONSE" buffer="$DEFAULT_BUFFER_SIZE"
-    local domain="false"
-
-    [[ "$exec_line" == *":ssl"* ]] && ssl="true"
-    if [[ "$exec_line" =~ --cert=([^ ]+) ]]; then
-        cert="${BASH_REMATCH[1]}"
-        cert_internal="false"
-    fi
-    [[ "$exec_line" == *"--ssh-only"* ]] && ssh_only="true"
-    if [[ "$exec_line" =~ --response=([^ ]+) ]]; then
-        response="${BASH_REMATCH[1]}"
-    fi
-    if [[ "$exec_line" =~ --buffer-size=([0-9]+) ]]; then
-        buffer="${BASH_REMATCH[1]}"
-    fi
-
-    write_proxy_conf "$port" "$ssl" "$cert" "$cert_internal" "$ssh_only" "$response" \
-        "$buffer" "$domain" "0" "0" "0" "info" "22" "1194" "1080" "true"
 }
 
 validate_port() {
@@ -1354,77 +1920,6 @@ prompt_with_default() {
     printf '%s' "$value"
 }
 
-build_proxy_command_from_conf() {
-    local port="$1"
-    local token="$2"
-
-    migrate_proxy_conf_from_unit_if_needed "$port" || true
-
-    local ssl_enabled ssl_cert_path cert_internal ssh_only_flag http_response
-    local buffer_size max_connections write_timeout idle_timeout
-    local log_level ssh_port openvpn_port v2ray_port display_banner
-
-    ssl_enabled=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
-    ssl_cert_path=$(get_proxy_conf_value "$port" "SSL_CERT_PATH" "")
-    cert_internal=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
-    ssh_only_flag=$(get_proxy_conf_value "$port" "SSH_ONLY" "false")
-    http_response=$(get_proxy_conf_value "$port" "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
-    buffer_size=$(get_proxy_conf_value "$port" "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
-    max_connections=$(get_proxy_conf_value "$port" "MAX_CONNECTIONS" "0")
-    write_timeout=$(get_proxy_conf_value "$port" "WRITE_TIMEOUT" "0")
-    idle_timeout=$(get_proxy_conf_value "$port" "IDLE_TIMEOUT" "0")
-    log_level=$(get_proxy_conf_value "$port" "LOG_LEVEL" "info")
-    ssh_port=$(get_proxy_conf_value "$port" "SSH_PORT" "22")
-    openvpn_port=$(get_proxy_conf_value "$port" "OPENVPN_PORT" "1194")
-    v2ray_port=$(get_proxy_conf_value "$port" "V2RAY_PORT" "1080")
-    display_banner=$(get_proxy_conf_value "$port" "DISPLAY_BANNER" "true")
-
-    local command="$PROXY_EXECUTABLE --token=$token --buffer-size=$buffer_size --response=$http_response --log-file=$(get_proxy_log_file "$port") --log-level=$log_level --ssh-port=$ssh_port --openvpn-port=$openvpn_port --v2ray-port=$v2ray_port --max-connections=$max_connections --write-timeout=$write_timeout --idle-timeout=$idle_timeout"
-
-    if [[ "$display_banner" != "true" ]]; then
-        command="$command --display-banner=false"
-    fi
-
-    if [[ "$ssl_enabled" == "true" ]]; then
-        command="$command --port=$port:ssl"
-        if [[ "$cert_internal" == "true" ]]; then
-            command="$command --cert-internal=true"
-        else
-            command="$command --cert-internal=false"
-            if [[ -n "$ssl_cert_path" ]]; then
-                command="$command --cert=$ssl_cert_path"
-            fi
-        fi
-    else
-        command="$command --port=$port"
-    fi
-
-    if [[ "$ssh_only_flag" == "true" ]]; then
-        command="$command --ssh-only"
-    fi
-
-    echo "$command"
-}
-
-# Compatível com chamadas antigas (quick setup / start).
-build_proxy_command() {
-    local port="$1"
-    local token="$2"
-    local ssl_enabled="$3"
-    local ssl_cert_path="$4"
-    local ssh_only_flag="$5"
-    local http_response="$6"
-    local cert_internal="true"
-
-    if [[ "$ssl_enabled" == "true" && -n "$ssl_cert_path" ]]; then
-        cert_internal="false"
-    fi
-
-    write_proxy_conf "$port" "$ssl_enabled" "$ssl_cert_path" "$cert_internal" "$ssh_only_flag" \
-        "$http_response" "$DEFAULT_BUFFER_SIZE" "false" "$DEFAULT_MAX_CONNECTIONS" "$DEFAULT_WRITE_TIMEOUT" "$DEFAULT_IDLE_TIMEOUT" "$DEFAULT_LOG_LEVEL" "$DEFAULT_SSH_PORT" "$DEFAULT_OPENVPN_PORT" "$DEFAULT_V2RAY_PORT" "true"
-    build_proxy_command_from_conf "$port" "$token"
-}
-
 calculate_dynamic_gomemlimit() {
     local total_ram_mb=0
     if [[ -f /proc/meminfo ]]; then
@@ -1458,105 +1953,14 @@ calculate_dynamic_gomemlimit() {
 }
 
 build_unified_proxy_command() {
-    local token="$1"
-    local configured_ports port
-    configured_ports=$(list_configured_proxy_ports)
-    [[ -z "$configured_ports" ]] && return 0
-
-    local port_args=()
-    local custom_cert_path=""
-    local has_ssl=false
-    local has_cert_internal=true
-    local any_ssh_only=false
-
-    # Defaults para flags compartilhadas
-    local buffer_size="$DEFAULT_BUFFER_SIZE"
-    local http_response="$DEFAULT_HTTP_RESPONSE"
-    local max_connections="$DEFAULT_MAX_CONNECTIONS"
-    local write_timeout="$DEFAULT_WRITE_TIMEOUT"
-    local idle_timeout="$DEFAULT_IDLE_TIMEOUT"
-    local log_level="info"
-    local ssh_port="22"
-    local openvpn_port="1194"
-    local v2ray_port="1080"
-    local display_banner="true"
-
-    IFS=',' read -ra port_array <<< "$configured_ports"
-    for port in "${port_array[@]}"; do
-        [[ -z "$port" ]] && continue
-        migrate_proxy_conf_from_unit_if_needed "$port" || true
-
-        local enabled
-        enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
-        [[ "$enabled" != "true" ]] && continue
-
-        local ssl_enabled ssl_cert_path cert_internal ssh_only_flag
-        ssl_enabled=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
-        ssl_cert_path=$(get_proxy_conf_value "$port" "SSL_CERT_PATH" "")
-        cert_internal=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
-        ssh_only_flag=$(get_proxy_conf_value "$port" "SSH_ONLY" "false")
-
-        # Pega as flags compartilhadas da primeira porta ativa encontrada
-        if [[ ${#port_args[@]} -eq 0 ]]; then
-            buffer_size=$(get_proxy_conf_value "$port" "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
-            http_response=$(get_proxy_conf_value "$port" "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
-            max_connections=$(get_proxy_conf_value "$port" "MAX_CONNECTIONS" "$DEFAULT_MAX_CONNECTIONS")
-            write_timeout=$(get_proxy_conf_value "$port" "WRITE_TIMEOUT" "$DEFAULT_WRITE_TIMEOUT")
-            idle_timeout=$(get_proxy_conf_value "$port" "IDLE_TIMEOUT" "$DEFAULT_IDLE_TIMEOUT")
-            log_level=$(get_proxy_conf_value "$port" "LOG_LEVEL" "info")
-            ssh_port=$(get_proxy_conf_value "$port" "SSH_PORT" "22")
-            openvpn_port=$(get_proxy_conf_value "$port" "OPENVPN_PORT" "1194")
-            v2ray_port=$(get_proxy_conf_value "$port" "V2RAY_PORT" "1080")
-            display_banner=$(get_proxy_conf_value "$port" "DISPLAY_BANNER" "true")
-        fi
-
-        if [[ "$ssl_enabled" == "true" ]]; then
-            has_ssl=true
-            port_args+=("--port=$port:ssl")
-            if [[ "$cert_internal" == "false" && -n "$ssl_cert_path" ]]; then
-                has_cert_internal=false
-                custom_cert_path="$ssl_cert_path"
-            fi
-        else
-            port_args+=("--port=$port")
-        fi
-
-        [[ "$ssh_only_flag" == "true" ]] && any_ssh_only=true
-    done
-
-    # Se nenhuma porta ativa estiver configurada, encerra
-    [[ ${#port_args[@]} -eq 0 ]] && return 0
-
-    local log_file="$PROXY_LOG_DIR/proxy.log"
-    ensure_proxy_dirs_quiet
-
-    local command="$PROXY_EXECUTABLE --token=$token ${port_args[*]} --buffer-size=$buffer_size --response=$http_response --log-file=$log_file --log-level=$log_level --ssh-port=$ssh_port --openvpn-port=$openvpn_port --v2ray-port=$v2ray_port --max-connections=$max_connections --write-timeout=$write_timeout --idle-timeout=$idle_timeout"
-
-    if [[ "$display_banner" != "true" ]]; then
-        command="$command --display-banner=false"
-    fi
-
-    if [[ "$has_ssl" == "true" ]]; then
-        if [[ "$has_cert_internal" == "false" && -n "$custom_cert_path" ]]; then
-            command="$command --cert=$custom_cert_path --cert-internal=false"
-        else
-            command="$command --cert-internal=true"
-        fi
-    fi
-
-    if [[ "$any_ssh_only" == "true" ]]; then
-        command="$command --ssh-only"
-    fi
-
-    command="$command --btun-enable"
-
-    echo "$command"
+    echo "${PROXY_EXECUTABLE} --config ${PROXY_CONFIG_JSON}"
 }
 
 write_unified_proxy_systemd_unit() {
-    local proxy_command="$1"
     local gomemlimit
     gomemlimit=$(calculate_dynamic_gomemlimit)
+
+    sudo mkdir -p /var/log/proxy "$PROXY_JSON_DIR" 2>/dev/null || true
 
     sudo tee "/etc/systemd/system/${PROXY_UNIFIED_SERVICE_NAME}.service" > /dev/null <<EOF
 [Unit]
@@ -1566,8 +1970,9 @@ After=network.target
 [Service]
 Environment="GOMEMLIMIT=${gomemlimit}"
 Environment="GOGC=100"
+ExecStartPre=-/bin/mkdir -p /var/log/proxy
 ExecStartPre=-/usr/local/bin/vt-iptables
-ExecStart=$proxy_command
+ExecStart=${PROXY_EXECUTABLE} --config ${PROXY_CONFIG_JSON}
 Restart=always
 RestartSec=3
 LimitNOFILE=65536
@@ -1579,18 +1984,21 @@ EOF
 
 apply_unified_proxy_service() {
     local do_start="${1:-true}"
-    local token proxy_command
+    local token active_ports
 
+    sudo mkdir -p /var/log/proxy "$PROXY_JSON_DIR" 2>/dev/null || true
+    ensure_proxy_json_config
     token=$(load_proxy_token)
     if [[ -z "$token" ]]; then
-        print_error "Token proxy nao configurado. Use Gerenciar Tokens no menu inicial."
+        print_error "Token proxy não configurado. Use Gerenciar Tokens no menu inicial."
         return 1
     fi
+    json_set_field "token" "$token" "string"
 
-    proxy_command=$(build_unified_proxy_command "$token")
-    if [[ -z "$proxy_command" ]]; then
+    active_ports=$(json_get_active_ports)
+    if [[ -z "$active_ports" ]]; then
         if systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null; then
-            print_info "Nenhuma porta ativa restante. Parando servico unificado..."
+            print_info "Nenhuma porta ativa restante. Parando serviço unificado..."
             sudo systemctl stop "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null || true
             sudo systemctl disable "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null || true
         fi
@@ -1600,7 +2008,7 @@ apply_unified_proxy_service() {
     install_vt_iptables_script || true
     sudo /usr/local/bin/vt-iptables >/dev/null 2>&1 || true
 
-    write_unified_proxy_systemd_unit "$proxy_command"
+    write_unified_proxy_systemd_unit
 
     sudo systemctl daemon-reload
     sudo systemctl enable "$PROXY_UNIFIED_SERVICE_NAME" > /dev/null 2>&1 || true
@@ -1629,17 +2037,33 @@ migrate_legacy_services_to_unified() {
         legacy_found=true
         port=$(basename "$service_file" .service | sed -n "s/^${PROXY_SERVICE_PREFIX}-\([0-9]\+\)$/\1/p")
         if [[ -n "$port" ]]; then
-            migrate_proxy_conf_from_unit_if_needed "$port" || true
-            set_proxy_conf_key "$port" "ENABLED" "true"
             sudo systemctl stop "${PROXY_SERVICE_PREFIX}-${port}" 2>/dev/null || true
             sudo systemctl disable "${PROXY_SERVICE_PREFIX}-${port}" 2>/dev/null || true
             sudo rm -f "$service_file"
         fi
     done
 
+    local vt_unit="/etc/systemd/system/${PROXY_UNIFIED_SERVICE_NAME}.service"
+    if [[ -f "$vt_unit" ]]; then
+        if grep -qE '^ExecStart=.*--token' "$vt_unit" 2>/dev/null || ! grep -q -- '--config' "$vt_unit" 2>/dev/null; then
+            legacy_found=true
+        fi
+    fi
+
+    if [[ ! -f "$PROXY_JSON_FILE" && -d "/etc/proxy/conf.d" ]]; then
+        if ls /etc/proxy/conf.d/proxy-*.conf >/dev/null 2>&1; then
+            legacy_found=true
+        fi
+    fi
+
     if [[ "$legacy_found" == "true" ]]; then
+        print_info "Migrando serviços e flags do proxy para JSON (/etc/proxyvt/config.json)..."
+        migrate_flags_to_json_if_needed
         sudo systemctl daemon-reload
         apply_unified_proxy_service "true" || true
+        print_success "Migração para JSON concluída com sucesso!"
+    else
+        ensure_proxy_json_config
     fi
 }
 
@@ -1647,336 +2071,635 @@ sync_all_proxy_tokens() {
     local token="$1"
     [[ -n "$token" ]] || return 0
 
+    ensure_proxy_json_config
+    json_set_field "token" "$token" "string"
     apply_unified_proxy_service "true"
     echo "1"
 }
 
 start_proxy_for_port() {
     local port="$1"
-    local ssl_enabled="$2"
-    local ssl_cert_path="$3"
-    local ssh_only_flag="$4"
-    local http_response="$5"
-    local skip_listen_check="${6:-false}"
-
-    if ! validate_port "$port"; then
-        return 1
-    fi
-
-    if [[ "$skip_listen_check" != "true" ]]; then
-        if ! check_port_available "$port"; then
-            return 1
-        fi
-    fi
-
-    local token
-    token=$(load_proxy_token)
-    if [[ -z "$token" ]]; then
-        print_error "Token proxy nao configurado. Use Gerenciar Tokens no menu inicial."
-        return 1
-    fi
-
-    local cert_internal="true"
-    if [[ "$ssl_enabled" == "true" && -n "$ssl_cert_path" ]]; then
-        cert_internal="false"
-    fi
-
-    write_proxy_conf "$port" "$ssl_enabled" "$ssl_cert_path" "$cert_internal" "$ssh_only_flag" \
-        "$http_response" "$DEFAULT_BUFFER_SIZE" "false" "$DEFAULT_MAX_CONNECTIONS" "$DEFAULT_WRITE_TIMEOUT" "$DEFAULT_IDLE_TIMEOUT" "$DEFAULT_LOG_LEVEL" "$DEFAULT_SSH_PORT" "$DEFAULT_OPENVPN_PORT" "$DEFAULT_V2RAY_PORT" "true" "true"
-
+    local ssl_enabled="${2:-false}"
+    ensure_proxy_json_config
+    json_add_port "$port" "$ssl_enabled"
     apply_unified_proxy_service "true"
-}
-
-prompt_proxy_advanced_options() {
-    # Edita globals ADV_* (já inicializados). Submenu interativo completo para todas as flags.
-    local choice
-    while true; do
-        echo
-        refresh_menu_layout
-        print_box_open
-        print_box_heading "OPÇÕES E FLAGS AVANÇADAS" "$CYAN"
-        print_box_divider
-        print_box_line "${WHITE}  1 • Buffer (--buffer-size): ${CYAN}${ADV_BUFFER_SIZE} bytes${RESET}"
-        print_box_line "${WHITE}  2 • Idle Timeout (--idle-timeout): ${CYAN}${ADV_IDLE_TIMEOUT}s${RESET}"
-        print_box_line "${WHITE}  3 • Write Timeout (--write-timeout): ${CYAN}${ADV_WRITE_TIMEOUT}s${RESET}"
-        print_box_line "${WHITE}  4 • Max Conexões (--max-connections): ${CYAN}${ADV_MAX_CONNECTIONS}${RESET}"
-        print_box_line "${WHITE}  5 • Resposta HTTP (--response): ${CYAN}${ADV_HTTP_RESPONSE}${RESET}"
-        print_box_line "${WHITE}  6 • Modo Somente SSH (--ssh-only): ${CYAN}${ADV_SSH_ONLY}${RESET}"
-        print_box_line "${WHITE}  7 • Banner no Terminal (--display-banner): ${CYAN}${ADV_DISPLAY_BANNER}${RESET}"
-        print_box_line "${WHITE}  8 • Nível de Log (--log-level): ${CYAN}${ADV_LOG_LEVEL}${RESET}"
-        print_box_line "${WHITE}  9 • Backends SSH/OVPN/V2Ray: ${CYAN}${ADV_SSH_PORT}/${ADV_OPENVPN_PORT}/${ADV_V2RAY_PORT}${RESET}"
-        print_box_line "${WHITE}  A • Certificado SSL (--cert-internal / --cert): ${CYAN}${ADV_CERT_INTERNAL}${RESET}"
-        print_box_divider
-        if [[ -n "${ADV_PORT:-}" ]]; then
-            print_box_line "${WHITE}  V • Ver comando ExecStart completo${RESET}"
-            print_box_line "${WHITE}  S • Salvar e aplicar na porta ${CYAN}${ADV_PORT}${RESET}"
-        fi
-        render_menu_option "0 • Concluir / Voltar" "red"
-        print_box_close
-        echo
-
-        read -rp "$(echo -e "${BLUE}Selecione a opção desejada [0-9/A/V/S]:${RESET} ")" choice
-        case "${choice,,}" in
-            1)
-                ADV_BUFFER_SIZE=$(prompt_with_default "Buffer size em bytes (--buffer-size)" "$ADV_BUFFER_SIZE")
-                if ! [[ "$ADV_BUFFER_SIZE" =~ ^[0-9]+$ ]] || [[ "$ADV_BUFFER_SIZE" -lt 1024 ]]; then
-                    print_warning "Valor inválido; usando $DEFAULT_BUFFER_SIZE"
-                    ADV_BUFFER_SIZE="$DEFAULT_BUFFER_SIZE"
-                fi
-                ;;
-            2)
-                ADV_IDLE_TIMEOUT=$(prompt_with_default "Tempo de inatividade em segundos (--idle-timeout)" "$ADV_IDLE_TIMEOUT")
-                if ! [[ "$ADV_IDLE_TIMEOUT" =~ ^[0-9]+$ ]]; then
-                    ADV_IDLE_TIMEOUT="$DEFAULT_IDLE_TIMEOUT"
-                fi
-                ;;
-            3)
-                ADV_WRITE_TIMEOUT=$(prompt_with_default "Tempo limite de escrita em segundos (--write-timeout)" "$ADV_WRITE_TIMEOUT")
-                if ! [[ "$ADV_WRITE_TIMEOUT" =~ ^[0-9]+$ ]]; then
-                    ADV_WRITE_TIMEOUT="$DEFAULT_WRITE_TIMEOUT"
-                fi
-                ;;
-            4)
-                ADV_MAX_CONNECTIONS=$(prompt_with_default "Limite máximo de conexões simultâneas (--max-connections, 0=ilimitado)" "$ADV_MAX_CONNECTIONS")
-                if ! [[ "$ADV_MAX_CONNECTIONS" =~ ^[0-9]+$ ]]; then
-                    ADV_MAX_CONNECTIONS="0"
-                fi
-                ;;
-            5)
-                ADV_HTTP_RESPONSE=$(prompt_with_default "Resposta HTTP (--response)" "$ADV_HTTP_RESPONSE")
-                ;;
-            6)
-                if confirm_action "Habilitar modo somente SSH (--ssh-only)? (atual: $ADV_SSH_ONLY)" "$([[ "$ADV_SSH_ONLY" == "true" ]] && echo s || echo n)"; then
-                    ADV_SSH_ONLY="true"
-                else
-                    ADV_SSH_ONLY="false"
-                fi
-                ;;
-            7)
-                if confirm_action "Exibir banner de status no terminal (--display-banner)? (atual: $ADV_DISPLAY_BANNER)" "$([[ "$ADV_DISPLAY_BANNER" == "true" ]] && echo s || echo n)"; then
-                    ADV_DISPLAY_BANNER="true"
-                else
-                    ADV_DISPLAY_BANNER="false"
-                fi
-                ;;
-            8)
-                ADV_LOG_LEVEL=$(prompt_with_default "Nível de log (debug|info|warn|error)" "$ADV_LOG_LEVEL")
-                ;;
-            9)
-                ADV_SSH_PORT=$(prompt_with_default "Porta backend SSH (--ssh-port)" "$ADV_SSH_PORT")
-                ADV_OPENVPN_PORT=$(prompt_with_default "Porta backend OpenVPN (--openvpn-port)" "$ADV_OPENVPN_PORT")
-                ADV_V2RAY_PORT=$(prompt_with_default "Porta backend V2Ray (--v2ray-port)" "$ADV_V2RAY_PORT")
-                ;;
-            a)
-                if confirm_action "Usar certificado interno autogerado (--cert-internal)? (atual: $ADV_CERT_INTERNAL)" "$([[ "$ADV_CERT_INTERNAL" == "true" ]] && echo s || echo n)"; then
-                    ADV_CERT_INTERNAL="true"
-                    ADV_SSL_CERT_PATH=""
-                else
-                    ADV_CERT_INTERNAL="false"
-                    ADV_SSL_CERT_PATH=$(prompt_with_default "Caminho do certificado externo (--cert)" "${ADV_SSL_CERT_PATH:-/etc/ssl/cert.pem}")
-                fi
-                ;;
-            v)
-                if [[ -z "${ADV_PORT:-}" ]]; then
-                    print_warning "ExecStart só está disponível após escolher uma porta configurada."
-                    pause
-                else
-                    show_proxy_execstart_line "$ADV_PORT"
-                    pause
-                fi
-                ;;
-            s)
-                if [[ -z "${ADV_PORT:-}" ]]; then
-                    print_warning "Sem porta selecionada — use '0' para concluir."
-                    pause
-                    continue
-                fi
-                apply_adv_globals_to_port "$ADV_PORT"
-                ADV_APPLIED=1
-                return 0
-                ;;
-            0)
-                return 0
-                ;;
-            *)
-                print_error "Opção inválida: $choice"
-                ;;
-        esac
-    done
-}
-
-init_adv_defaults() {
-    ADV_PORT=""
-    ADV_APPLIED=0
-    ADV_BUFFER_SIZE="${1:-$DEFAULT_BUFFER_SIZE}"
-    ADV_MAX_CONNECTIONS="${2:-$DEFAULT_MAX_CONNECTIONS}"
-    ADV_WRITE_TIMEOUT="${3:-$DEFAULT_WRITE_TIMEOUT}"
-    ADV_IDLE_TIMEOUT="${4:-$DEFAULT_IDLE_TIMEOUT}"
-    ADV_LOG_LEVEL="${5:-$DEFAULT_LOG_LEVEL}"
-    ADV_SSH_PORT="${6:-$DEFAULT_SSH_PORT}"
-    ADV_OPENVPN_PORT="${7:-$DEFAULT_OPENVPN_PORT}"
-    ADV_V2RAY_PORT="${8:-$DEFAULT_V2RAY_PORT}"
-    ADV_DOMAIN="false"
-    ADV_DISPLAY_BANNER="${10:-true}"
-    ADV_CERT_INTERNAL="${11:-true}"
-    ADV_SSL_CERT_PATH="${12:-}"
-    ADV_HTTP_RESPONSE="${13:-$DEFAULT_HTTP_RESPONSE}"
-    ADV_SSH_ONLY="${14:-false}"
-    ADV_SSL_ENABLED="${15:-false}"
-}
-
-load_adv_from_port() {
-    local port="$1"
-    migrate_proxy_conf_from_unit_if_needed "$port" || true
-    ADV_PORT="$port"
-    ADV_APPLIED=0
-    ADV_BUFFER_SIZE=$(get_proxy_conf_value "$port" "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
-    ADV_MAX_CONNECTIONS=$(get_proxy_conf_value "$port" "MAX_CONNECTIONS" "$DEFAULT_MAX_CONNECTIONS")
-    ADV_WRITE_TIMEOUT=$(get_proxy_conf_value "$port" "WRITE_TIMEOUT" "$DEFAULT_WRITE_TIMEOUT")
-    ADV_IDLE_TIMEOUT=$(get_proxy_conf_value "$port" "IDLE_TIMEOUT" "$DEFAULT_IDLE_TIMEOUT")
-    ADV_LOG_LEVEL=$(get_proxy_conf_value "$port" "LOG_LEVEL" "$DEFAULT_LOG_LEVEL")
-    ADV_SSH_PORT=$(get_proxy_conf_value "$port" "SSH_PORT" "$DEFAULT_SSH_PORT")
-    ADV_OPENVPN_PORT=$(get_proxy_conf_value "$port" "OPENVPN_PORT" "$DEFAULT_OPENVPN_PORT")
-    ADV_V2RAY_PORT=$(get_proxy_conf_value "$port" "V2RAY_PORT" "$DEFAULT_V2RAY_PORT")
-    ADV_HTTP_RESPONSE=$(get_proxy_conf_value "$port" "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
-    ADV_SSH_ONLY=$(get_proxy_conf_value "$port" "SSH_ONLY" "false")
-    ADV_SSL_ENABLED=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
-    ADV_DOMAIN="false"
-    ADV_DISPLAY_BANNER=$(get_proxy_conf_value "$port" "DISPLAY_BANNER" "true")
-    ADV_CERT_INTERNAL=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
-    ADV_SSL_CERT_PATH=$(get_proxy_conf_value "$port" "SSL_CERT_PATH" "")
 }
 
 show_proxy_execstart_line() {
     local port="${1:-}"
     echo
-    print_info "ExecStart do servico unificado (${PROXY_UNIFIED_SERVICE_NAME}):"
+    print_info "ExecStart do serviço unificado (${PROXY_UNIFIED_SERVICE_NAME}):"
     local exec_line
     exec_line=$(systemctl cat "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null | grep -E '^ExecStart=' | head -n1 | sed 's/^ExecStart=//')
     if [[ -n "$exec_line" ]]; then
         echo -e "${GRAY}$exec_line${RESET}"
     else
-        print_warning "Unit systemd unificada (${PROXY_UNIFIED_SERVICE_NAME}) ainda nao criada."
+        print_warning "Unit systemd unificada (${PROXY_UNIFIED_SERVICE_NAME}) ainda não criada."
     fi
 }
 
-apply_adv_globals_to_port() {
-    local port="$1"
+adv_submenu_performance() {
+    while true; do
+        print_header
+        local buf max_conn idle write_t ulim
+        buf=$(json_get_field "buffer_size" "32768")
+        max_conn=$(json_get_field "max_connections" "0")
+        idle=$(json_get_field "idle_timeout" "0")
+        write_t=$(json_get_field "write_timeout" "0")
+        ulim=$(json_get_field "ulimit" "65536")
 
-    # Se marcou cert externo, forca SSL (senao --cert-internal nao faz sentido sozinho).
-    if [[ "$ADV_CERT_INTERNAL" == "false" && -n "$ADV_SSL_CERT_PATH" ]]; then
-        ADV_SSL_ENABLED="true"
-    fi
+        print_box_open
+        print_box_heading "DESEMPENHO & TIMEOUTS" "$CYAN"
+        print_box_divider
+        print_box_line "${WHITE}  1 • Buffer Size (buffer_size): ${CYAN}${buf} bytes${RESET}"
+        print_box_line "${WHITE}  2 • Max Conexões (max_connections): ${CYAN}${max_conn}${WHITE} (0=ilimitado)${RESET}"
+        print_box_line "${WHITE}  3 • Idle Timeout (idle_timeout): ${CYAN}${idle}s${WHITE} (0=desativado)${RESET}"
+        print_box_line "${WHITE}  4 • Write Timeout (write_timeout): ${CYAN}${write_t}s${WHITE} (0=desativado)${RESET}"
+        print_box_line "${WHITE}  5 • Limite NOFILE (ulimit): ${CYAN}${ulim}${RESET}"
+        print_box_divider
+        render_menu_option "0 • Voltar" "red"
+        print_box_close
+        echo
 
-    write_proxy_conf "$port" "$ADV_SSL_ENABLED" "$ADV_SSL_CERT_PATH" "$ADV_CERT_INTERNAL" "$ADV_SSH_ONLY" \
-        "$ADV_HTTP_RESPONSE" "$ADV_BUFFER_SIZE" "false" "$ADV_MAX_CONNECTIONS" "$ADV_WRITE_TIMEOUT" \
-        "$ADV_IDLE_TIMEOUT" "$ADV_LOG_LEVEL" "$ADV_SSH_PORT" "$ADV_OPENVPN_PORT" "$ADV_V2RAY_PORT" "$ADV_DISPLAY_BANNER" "true"
+        local opt
+        read -rp "$(echo -e "${BLUE}Opção [0-5]:${RESET} ")" opt
+        case "$opt" in
+            1)
+                local val
+                val=$(prompt_with_default "Buffer size em bytes" "$buf")
+                if [[ "$val" =~ ^[0-9]+$ ]] && (( val >= 1024 )); then
+                    json_set_field "buffer_size" "$val" "int"
+                    print_success "Buffer size atualizado para $val."
+                else
+                    print_error "Valor inválido (mínimo 1024)."
+                fi
+                pause
+                ;;
+            2)
+                local val
+                val=$(prompt_with_default "Máximo de conexões simultâneas (0=ilimitado)" "$max_conn")
+                if [[ "$val" =~ ^[0-9]+$ ]]; then
+                    json_set_field "max_connections" "$val" "int"
+                    print_success "Max connections atualizado para $val."
+                else
+                    print_error "Valor inválido."
+                fi
+                pause
+                ;;
+            3)
+                local val
+                val=$(prompt_with_default "Timeout de inatividade em segundos (0=desativado)" "$idle")
+                if [[ "$val" =~ ^[0-9]+$ ]]; then
+                    json_set_field "idle_timeout" "$val" "int"
+                    print_success "Idle timeout atualizado para ${val}s."
+                else
+                    print_error "Valor inválido."
+                fi
+                pause
+                ;;
+            4)
+                local val
+                val=$(prompt_with_default "Timeout de escrita em segundos (0=desativado)" "$write_t")
+                if [[ "$val" =~ ^[0-9]+$ ]]; then
+                    json_set_field "write_timeout" "$val" "int"
+                    print_success "Write timeout atualizado para ${val}s."
+                else
+                    print_error "Valor inválido."
+                fi
+                pause
+                ;;
+            5)
+                local val
+                val=$(prompt_with_default "Limite de descritores NOFILE (ulimit)" "$ulim")
+                if [[ "$val" =~ ^[0-9]+$ ]] && (( val >= 1024 )); then
+                    json_set_field "ulimit" "$val" "int"
+                    print_success "Ulimit atualizado para $val."
+                else
+                    print_error "Valor inválido."
+                fi
+                pause
+                ;;
+            0) return 0 ;;
+            *) print_error "Opção inválida."; pause ;;
+        esac
+    done
+}
 
-    if apply_unified_proxy_service "true"; then
-        print_success "Opcoes avancadas aplicadas ao servico unificado."
-        show_proxy_execstart_line "$port"
-    else
-        print_error "Falha ao aplicar opcoes avancadas."
-    fi
+adv_submenu_http_logs() {
+    while true; do
+        print_header
+        local resp ssh_only banner log_lvl log_f
+        resp=$(json_get_field "response" "VeltrixProxy")
+        ssh_only=$(json_get_field "ssh_only" "false")
+        banner=$(json_get_field "display_banner" "true")
+        log_lvl=$(json_get_field "log_level" "info")
+        log_f=$(json_get_field "log_file" "")
+
+        print_box_open
+        print_box_heading "HTTP, BANNER & LOGS" "$CYAN"
+        print_box_divider
+        print_box_line "${WHITE}  1 • Resposta HTTP (response): ${CYAN}${resp}${RESET}"
+        print_box_line "${WHITE}  2 • Modo Somente SSH (ssh_only): ${CYAN}${ssh_only}${RESET}"
+        print_box_line "${WHITE}  3 • Exibir Banner (display_banner): ${CYAN}${banner}${RESET}"
+        print_box_line "${WHITE}  4 • Nível de Log (log_level): ${CYAN}${log_lvl}${RESET}"
+        print_box_line "${WHITE}  5 • Arquivo de Log (log_file): ${CYAN}${log_f:-nenhum}${RESET}"
+        print_box_divider
+        render_menu_option "0 • Voltar" "red"
+        print_box_close
+        echo
+
+        local opt
+        read -rp "$(echo -e "${BLUE}Opção [0-5]:${RESET} ")" opt
+        case "$opt" in
+            1)
+                local val
+                val=$(prompt_with_default "Nova resposta HTTP" "$resp")
+                val=$(echo "$val" | tr -d '[:space:]')
+                if [[ -n "$val" ]]; then
+                    json_set_field "response" "$val" "string"
+                    print_success "Resposta HTTP atualizada para '$val'."
+                fi
+                pause
+                ;;
+            2)
+                if confirm_action "Habilitar modo somente SSH (ssh_only)?" "$([[ "$ssh_only" == "true" ]] && echo s || echo n)"; then
+                    json_set_field "ssh_only" "true" "bool"
+                else
+                    json_set_field "ssh_only" "false" "bool"
+                fi
+                print_success "Configuração de ssh_only atualizada."
+                pause
+                ;;
+            3)
+                if confirm_action "Exibir banner informativo na inicialização?" "$([[ "$banner" == "true" ]] && echo s || echo n)"; then
+                    json_set_field "display_banner" "true" "bool"
+                else
+                    json_set_field "display_banner" "false" "bool"
+                fi
+                print_success "Configuração de display_banner atualizada."
+                pause
+                ;;
+            4)
+                echo -e "${BLUE}Escolha o nível de log:${RESET}"
+                echo -e "  1 - info (padrão)"
+                echo -e "  2 - debug (detalhado)"
+                echo -e "  3 - warn (apenas avisos)"
+                echo -e "  4 - error (apenas erros)"
+                read -rp "> " ll_opt
+                case "$ll_opt" in
+                    1) json_set_field "log_level" "info" "string" ;;
+                    2) json_set_field "log_level" "debug" "string" ;;
+                    3) json_set_field "log_level" "warn" "string" ;;
+                    4) json_set_field "log_level" "error" "string" ;;
+                    *) print_warning "Mantido nível atual." ;;
+                esac
+                print_success "Nível de log atualizado."
+                pause
+                ;;
+            5)
+                local val
+                val=$(prompt_with_default "Caminho do arquivo de log (vazio para desligar)" "$log_f")
+                json_set_field "log_file" "$val" "string"
+                print_success "Arquivo de log atualizado."
+                pause
+                ;;
+            0) return 0 ;;
+            *) print_error "Opção inválida."; pause ;;
+        esac
+    done
+}
+
+adv_submenu_ssl() {
+    while true; do
+        print_header
+        local cert_int cert_ext
+        cert_int=$(json_get_field "cert_internal" "true")
+        cert_ext=$(json_get_field "cert" "")
+
+        print_box_open
+        print_box_heading "CERTIFICADOS TLS / SSL" "$CYAN"
+        print_box_divider
+        print_box_line "${WHITE}  1 • Certificado Interno Cloudflare (cert_internal): ${CYAN}${cert_int}${RESET}"
+        print_box_line "${WHITE}  2 • Certificado Externo .crt/.pem (cert): ${CYAN}${cert_ext:-nenhum}${RESET}"
+        print_box_divider
+        render_menu_option "0 • Voltar" "red"
+        print_box_close
+        echo
+
+        local opt
+        read -rp "$(echo -e "${BLUE}Opção [0-2]:${RESET} ")" opt
+        case "$opt" in
+            1)
+                if confirm_action "Usar certificado TLS Cloudflare embutido?" "$([[ "$cert_int" == "true" ]] && echo s || echo n)"; then
+                    json_set_field "cert_internal" "true" "bool"
+                    json_set_field "cert" "" "string"
+                else
+                    json_set_field "cert_internal" "false" "bool"
+                fi
+                print_success "Configuração cert_internal atualizada."
+                pause
+                ;;
+            2)
+                local val
+                val=$(prompt_with_default "Caminho do certificado TLS externo (.crt / .pem)" "${cert_ext:-/etc/ssl/cert.pem}")
+                if [[ -n "$val" ]]; then
+                    json_set_field "cert" "$val" "string"
+                    json_set_field "cert_internal" "false" "bool"
+                    print_success "Certificado externo configurado para '$val'."
+                fi
+                pause
+                ;;
+            0) return 0 ;;
+            *) print_error "Opção inválida."; pause ;;
+        esac
+    done
+}
+
+adv_submenu_ssh() {
+    while true; do
+        print_header
+        local s_int s_port s_iport s_root s_banner s_auth
+        s_int=$(json_get_field "ssh.internal" "true")
+        s_port=$(json_get_field "ssh.port" "22")
+        s_iport=$(json_get_field "ssh.internal_port" "0")
+        s_root=$(json_get_field "ssh.allow_root" "true")
+        s_banner=$(json_get_field "ssh.banner" "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3")
+        s_auth=$(json_get_field "ssh.auth" "shadow")
+
+        print_box_open
+        print_box_heading "SERVIDOR SSH NATIVO (ZERO-FORK)" "$CYAN"
+        print_box_divider
+        print_box_line "${WHITE}  1 • SSH Nativo Go (ssh.internal): ${CYAN}${s_int}${WHITE} (Zero-Fork)${RESET}"
+        print_box_line "${WHITE}  2 • Porta OpenSSH Externo (ssh.port): ${CYAN}${s_port}${RESET}"
+        print_box_line "${WHITE}  3 • Porta TCP Direta SSH Interno (ssh.internal_port): ${CYAN}${s_iport}${WHITE} (0=apenas WS)${RESET}"
+        print_box_line "${WHITE}  4 • Permitir Root (ssh.allow_root): ${CYAN}${s_root}${RESET}"
+        print_box_line "${WHITE}  5 • Banner SSH (ssh.banner): ${CYAN}${s_banner:0:28}...${RESET}"
+        print_box_line "${WHITE}  6 • Mecanismo Autenticação (ssh.auth): ${CYAN}${s_auth}${RESET}"
+        print_box_divider
+        render_menu_option "0 • Voltar" "red"
+        print_box_close
+        echo
+
+        local opt
+        read -rp "$(echo -e "${BLUE}Opção [0-6]:${RESET} ")" opt
+        case "$opt" in
+            1)
+                if confirm_action "Ativar servidor SSH nativo em Go (Zero-Fork)?" "$([[ "$s_int" == "true" ]] && echo s || echo n)"; then
+                    json_set_field "ssh.internal" "true" "bool"
+                else
+                    json_set_field "ssh.internal" "false" "bool"
+                fi
+                print_success "Configuração ssh.internal atualizada."
+                pause
+                ;;
+            2)
+                local val
+                val=$(prompt_with_default "Porta do OpenSSH externo legado" "$s_port")
+                if [[ "$val" =~ ^[0-9]+$ ]]; then
+                    json_set_field "ssh.port" "$val" "int"
+                    print_success "ssh.port atualizada para $val."
+                fi
+                pause
+                ;;
+            3)
+                local val
+                val=$(prompt_with_default "Porta TCP direta para SSH interno (0=apenas via túnel)" "$s_iport")
+                if [[ "$val" =~ ^[0-9]+$ ]]; then
+                    json_set_field "ssh.internal_port" "$val" "int"
+                    print_success "ssh.internal_port atualizada para $val."
+                fi
+                pause
+                ;;
+            4)
+                if confirm_action "Permitir login de usuário root no SSH interno?" "$([[ "$s_root" == "true" ]] && echo s || echo n)"; then
+                    json_set_field "ssh.allow_root" "true" "bool"
+                else
+                    json_set_field "ssh.allow_root" "false" "bool"
+                fi
+                print_success "ssh.allow_root atualizado."
+                pause
+                ;;
+            5)
+                local val
+                val=$(prompt_with_default "Banner de versão SSH" "$s_banner")
+                if [[ -n "$val" ]]; then
+                    json_set_field "ssh.banner" "$val" "string"
+                    print_success "Banner SSH atualizado."
+                fi
+                pause
+                ;;
+            6)
+                echo -e "${BLUE}Escolha o método de autenticação SSH:${RESET}"
+                echo -e "  1 - shadow (lê /etc/shadow padrão Linux)"
+                echo -e "  2 - allow (permite qualquer senha)"
+                read -rp "> " a_opt
+                case "$a_opt" in
+                    1) json_set_field "ssh.auth" "shadow" "string" ;;
+                    2) json_set_field "ssh.auth" "allow" "string" ;;
+                esac
+                print_success "Mecanismo de autenticação SSH atualizado."
+                pause
+                ;;
+            0) return 0 ;;
+            *) print_error "Opção inválida."; pause ;;
+        esac
+    done
+}
+
+adv_submenu_btun() {
+    while true; do
+        print_header
+        local b_en b_tun b_sub b_udp
+        b_en=$(json_get_field "btun.enable" "true")
+        b_tun=$(json_get_field "btun.tun" "btun0")
+        b_sub=$(json_get_field "btun.subnet" "10.77.0.0/16")
+        b_udp=$(json_get_field "btun.udp_port" "0")
+
+        print_box_open
+        print_box_heading "SERVIDOR BTUN (DT-PROTO / UDP NATIVO)" "$CYAN"
+        print_box_divider
+        print_box_line "${WHITE}  1 • Habilitar BTUN (btun.enable): ${CYAN}${b_en}${RESET}"
+        print_box_line "${WHITE}  2 • Nome Interface TUN (btun.tun): ${CYAN}${b_tun}${RESET}"
+        print_box_line "${WHITE}  3 • Sub-rede IPv4 (btun.subnet): ${CYAN}${b_sub}${RESET}"
+        print_box_line "${WHITE}  4 • Porta UDP Direta (btun.udp_port): ${CYAN}${b_udp}${WHITE} (0=desativado)${RESET}"
+        print_box_divider
+        render_menu_option "0 • Voltar" "red"
+        print_box_close
+        echo
+
+        local opt
+        read -rp "$(echo -e "${BLUE}Opção [0-4]:${RESET} ")" opt
+        case "$opt" in
+            1)
+                if confirm_action "Habilitar servidor BTUN nativo via TUN?" "$([[ "$b_en" == "true" ]] && echo s || echo n)"; then
+                    json_set_field "btun.enable" "true" "bool"
+                else
+                    json_set_field "btun.enable" "false" "bool"
+                fi
+                print_success "btun.enable atualizado."
+                pause
+                ;;
+            2)
+                local val
+                val=$(prompt_with_default "Nome da interface TUN" "$b_tun")
+                if [[ -n "$val" ]]; then
+                    json_set_field "btun.tun" "$val" "string"
+                    print_success "btun.tun atualizado para '$val'."
+                fi
+                pause
+                ;;
+            3)
+                local val
+                val=$(prompt_with_default "Sub-rede IPv4 para clientes BTUN" "$b_sub")
+                if [[ -n "$val" ]]; then
+                    json_set_field "btun.subnet" "$val" "string"
+                    print_success "btun.subnet atualizado para '$val'."
+                fi
+                pause
+                ;;
+            4)
+                local val
+                val=$(prompt_with_default "Porta UDP direta (0=desativado)" "$b_udp")
+                if [[ "$val" =~ ^[0-9]+$ ]]; then
+                    json_set_field "btun.udp_port" "$val" "int"
+                    print_success "btun.udp_port atualizado para $val."
+                fi
+                pause
+                ;;
+            0) return 0 ;;
+            *) print_error "Opção inválida."; pause ;;
+        esac
+    done
+}
+
+adv_submenu_limits() {
+    while true; do
+        print_header
+        local d_lim exp_int pw_f
+        d_lim=$(json_get_field "limits.default_user_limit" "0")
+        exp_int=$(json_get_field "limits.expire_check_interval" "1m")
+        pw_f=$(json_get_field "limits.passwd_file" "/etc/passwd")
+
+        print_box_open
+        print_box_heading "LIMITES DE CONEXÕES & EXPIRAÇÃO" "$CYAN"
+        print_box_divider
+        print_box_line "${WHITE}  1 • Limite Padrão por Conta: ${CYAN}${d_lim}${WHITE} (0=ilimitado)${RESET}"
+        print_box_line "${WHITE}  2 • Varredura Automática de Expirados: ${CYAN}${exp_int}${WHITE} (0=desativado, ex: 1m, 5m)${RESET}"
+        print_box_line "${WHITE}  3 • Arquivo de Limites / Senhas: ${CYAN}${pw_f}${RESET}"
+        print_box_divider
+        render_menu_option "0 • Voltar" "red"
+        print_box_close
+        echo
+
+        local opt
+        read -rp "$(echo -e "${BLUE}Opção [0-3]:${RESET} ")" opt
+        case "$opt" in
+            1)
+                local val
+                val=$(prompt_with_default "Limite padrão de conexões simultâneas (0=ilimitado)" "$d_lim")
+                if [[ "$val" =~ ^[0-9]+$ ]]; then
+                    json_set_field "limits.default_user_limit" "$val" "int"
+                    print_success "default_user_limit atualizado para $val."
+                fi
+                pause
+                ;;
+            2)
+                local val
+                val=$(prompt_with_default "Intervalo de checagem e desconexão de expirados (ex: 1m, 5m, 0 para desativar)" "$exp_int")
+                if [[ -n "$val" ]]; then
+                    json_set_field "limits.expire_check_interval" "$val" "string"
+                    print_success "expire_check_interval atualizado para '$val'."
+                fi
+                pause
+                ;;
+            3)
+                local val
+                val=$(prompt_with_default "Caminho do arquivo passwd" "$pw_f")
+                if [[ -n "$val" ]]; then
+                    json_set_field "limits.passwd_file" "$val" "string"
+                    print_success "passwd_file atualizado para '$val'."
+                fi
+                pause
+                ;;
+            0) return 0 ;;
+            *) print_error "Opção inválida."; pause ;;
+        esac
+    done
+}
+
+adv_submenu_connectors() {
+    while true; do
+        print_header
+        local ovpn_p v2ray_p xp xg xi
+        ovpn_p=$(json_get_field "connectors.openvpn_port" "1194")
+        v2ray_p=$(json_get_field "connectors.v2ray_port" "1080")
+        xp=$(json_get_field "xhttp.path" "/ssh")
+        xg=$(json_get_field "xhttp.grace" "120")
+        xi=$(json_get_field "xhttp.idle" "120")
+
+        print_box_open
+        print_box_heading "CONECTORES BACKENDS & XHTTP" "$CYAN"
+        print_box_divider
+        print_box_line "${WHITE}  1 • Porta Local OpenVPN: ${CYAN}${ovpn_p}${RESET}"
+        print_box_line "${WHITE}  2 • Porta Local V2Ray/Xray: ${CYAN}${v2ray_p}${RESET}"
+        print_box_line "${WHITE}  3 • Prefixo de URL XHTTP (xhttp.path): ${CYAN}${xp}${RESET}"
+        print_box_line "${WHITE}  4 • Grace Period XHTTP (xhttp.grace): ${CYAN}${xg}s${RESET}"
+        print_box_line "${WHITE}  5 • Idle Timeout XHTTP (xhttp.idle): ${CYAN}${xi}s${RESET}"
+        print_box_divider
+        render_menu_option "0 • Voltar" "red"
+        print_box_close
+        echo
+
+        local opt
+        read -rp "$(echo -e "${BLUE}Opção [0-5]:${RESET} ")" opt
+        case "$opt" in
+            1)
+                local val
+                val=$(prompt_with_default "Porta local do OpenVPN" "$ovpn_p")
+                if [[ "$val" =~ ^[0-9]+$ ]]; then
+                    json_set_field "connectors.openvpn_port" "$val" "int"
+                    print_success "Porta OpenVPN atualizada para $val."
+                fi
+                pause
+                ;;
+            2)
+                local val
+                val=$(prompt_with_default "Porta local do V2Ray / Xray" "$v2ray_p")
+                if [[ "$val" =~ ^[0-9]+$ ]]; then
+                    json_set_field "connectors.v2ray_port" "$val" "int"
+                    print_success "Porta V2Ray atualizada para $val."
+                fi
+                pause
+                ;;
+            3)
+                local val
+                val=$(prompt_with_default "Prefixo de URL para SplitHTTP" "$xp")
+                if [[ -n "$val" ]]; then
+                    json_set_field "xhttp.path" "$val" "string"
+                    print_success "xhttp.path atualizado para '$val'."
+                fi
+                pause
+                ;;
+            4)
+                local val
+                val=$(prompt_with_default "Grace period em segundos" "$xg")
+                if [[ "$val" =~ ^[0-9]+$ ]]; then
+                    json_set_field "xhttp.grace" "$val" "int"
+                    print_success "xhttp.grace atualizado para ${val}s."
+                fi
+                pause
+                ;;
+            5)
+                local val
+                val=$(prompt_with_default "Idle timeout em segundos" "$xi")
+                if [[ "$val" =~ ^[0-9]+$ ]]; then
+                    json_set_field "xhttp.idle" "$val" "int"
+                    print_success "xhttp.idle atualizado para ${val}s."
+                fi
+                pause
+                ;;
+            0) return 0 ;;
+            *) print_error "Opção inválida."; pause ;;
+        esac
+    done
 }
 
 edit_proxy_advanced_service() {
-    print_header
+    while true; do
+        print_header
+        print_box_open
+        print_box_heading "OPÇÕES AVANÇADAS DO PROXY (JSON)" "$CYAN"
+        print_box_divider
+        print_box_line "${WHITE}  1 • Desempenho & Timeouts (Buffer, Conexões, Timeouts, Ulimit)${RESET}"
+        print_box_line "${WHITE}  2 • Resposta HTTP, Banner & Logs (Response, Banner, SSH-Only)${RESET}"
+        print_box_line "${WHITE}  3 • Certificados TLS / SSL (Certificado Interno / Externo)${RESET}"
+        print_box_line "${WHITE}  4 • Servidor SSH Nativo Embutido (Zero-Fork, Porta Direta, Banner)${RESET}"
+        print_box_line "${WHITE}  5 • Servidor BTUN / UDP DT-Proto (Interface, Subnet, Porta UDP)${RESET}"
+        print_box_line "${WHITE}  6 • Limites de Conexão e Expiração (Limite por Usuário, Expirados)${RESET}"
+        print_box_line "${WHITE}  7 • Conectores Backends (OpenVPN, V2Ray) & XHTTP${RESET}"
+        print_box_line "${WHITE}  V • Visualizar arquivo /etc/proxyvt/config.json${RESET}"
+        print_box_divider
+        render_menu_option "0 • Concluir / Voltar" "red"
+        print_box_close
+        echo
 
-    # Carrega as configuracoes globais do motor proxy
-    local buffer_size max_connections write_timeout idle_timeout log_level ssh_port openvpn_port v2ray_port http_response ssh_only_flag ssl_enabled display_banner cert_internal ssl_cert_path
-    buffer_size=$(get_global_proxy_setting "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
-    max_connections=$(get_global_proxy_setting "MAX_CONNECTIONS" "$DEFAULT_MAX_CONNECTIONS")
-    write_timeout=$(get_global_proxy_setting "WRITE_TIMEOUT" "$DEFAULT_WRITE_TIMEOUT")
-    idle_timeout=$(get_global_proxy_setting "IDLE_TIMEOUT" "$DEFAULT_IDLE_TIMEOUT")
-    log_level=$(get_global_proxy_setting "LOG_LEVEL" "info")
-    ssh_port=$(get_global_proxy_setting "SSH_PORT" "22")
-    openvpn_port=$(get_global_proxy_setting "OPENVPN_PORT" "1194")
-    v2ray_port=$(get_global_proxy_setting "V2RAY_PORT" "1080")
-    http_response=$(get_global_proxy_setting "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
-    ssh_only_flag=$(get_global_proxy_setting "SSH_ONLY" "false")
-    display_banner=$(get_global_proxy_setting "DISPLAY_BANNER" "true")
-    cert_internal=$(get_global_proxy_setting "CERT_INTERNAL" "true")
-    ssl_cert_path=$(get_global_proxy_setting "SSL_CERT_PATH" "")
-    ssl_enabled=$(get_global_proxy_setting "SSL_ENABLED" "false")
-
-    init_adv_defaults "$buffer_size" "$max_connections" "$write_timeout" "$idle_timeout" "$log_level" "$ssh_port" "$openvpn_port" "$v2ray_port" "false" "$display_banner" "$cert_internal" "$ssl_cert_path" "$http_response" "$ssh_only_flag" "$ssl_enabled"
-
-    prompt_proxy_advanced_options
-
-    # Aplica as novas opcoes globais a todas as portas configuradas
-    local configured_ports port
-    configured_ports=$(list_configured_proxy_ports)
-    if [[ -n "$configured_ports" ]]; then
-        IFS=',' read -ra port_array <<< "$configured_ports"
-        for port in "${port_array[@]}"; do
-            [[ -z "$port" ]] && continue
-            set_proxy_conf_key "$port" "BUFFER_SIZE" "$ADV_BUFFER_SIZE"
-            set_proxy_conf_key "$port" "MAX_CONNECTIONS" "$ADV_MAX_CONNECTIONS"
-            set_proxy_conf_key "$port" "WRITE_TIMEOUT" "$ADV_WRITE_TIMEOUT"
-            set_proxy_conf_key "$port" "IDLE_TIMEOUT" "$ADV_IDLE_TIMEOUT"
-            set_proxy_conf_key "$port" "LOG_LEVEL" "$ADV_LOG_LEVEL"
-            set_proxy_conf_key "$port" "SSH_PORT" "$ADV_SSH_PORT"
-            set_proxy_conf_key "$port" "OPENVPN_PORT" "$ADV_OPENVPN_PORT"
-            set_proxy_conf_key "$port" "V2RAY_PORT" "$ADV_V2RAY_PORT"
-            set_proxy_conf_key "$port" "HTTP_RESPONSE" "$ADV_HTTP_RESPONSE"
-            set_proxy_conf_key "$port" "SSH_ONLY" "$ADV_SSH_ONLY"
-            set_proxy_conf_key "$port" "DISPLAY_BANNER" "$ADV_DISPLAY_BANNER"
-        done
-    fi
-
-    if apply_unified_proxy_service "true"; then
-        print_success "Opcoes avancadas globais aplicadas ao servico unificado."
-        show_proxy_execstart_line
-    else
-        print_error "Falha ao aplicar opcoes avancadas."
-    fi
-    pause
+        local choice
+        read -rp "$(echo -e "${BLUE}Selecione a opção desejada [0-7/V]:${RESET} ")" choice
+        case "${choice,,}" in
+            1) adv_submenu_performance ;;
+            2) adv_submenu_http_logs ;;
+            3) adv_submenu_ssl ;;
+            4) adv_submenu_ssh ;;
+            5) adv_submenu_btun ;;
+            6) adv_submenu_limits ;;
+            7) adv_submenu_connectors ;;
+            v)
+                echo
+                print_info "Conteúdo de /etc/proxyvt/config.json:"
+                if [[ -f "$PROXY_JSON_FILE" ]]; then
+                    if command -v jq >/dev/null 2>&1; then
+                        jq . "$PROXY_JSON_FILE" 2>/dev/null || cat "$PROXY_JSON_FILE"
+                    else
+                        cat "$PROXY_JSON_FILE"
+                    fi
+                else
+                    print_warning "Arquivo ainda não criado."
+                fi
+                echo
+                pause
+                ;;
+            0)
+                if systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null; then
+                    if confirm_action "Deseja reiniciar o serviço proxy para aplicar eventuais alterações?" "s"; then
+                        apply_unified_proxy_service "true"
+                        print_success "Serviço proxy reiniciado com as novas configurações."
+                        pause
+                    fi
+                fi
+                return 0
+                ;;
+            *)
+                print_error "Opção inválida."
+                pause
+                ;;
+        esac
+    done
 }
 
 change_proxy_http_response() {
     print_header
 
     local current_response
-    current_response=$(get_global_proxy_setting "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
+    current_response=$(json_get_field "response" "$DEFAULT_HTTP_RESPONSE")
 
-    echo -e "${BLUE}Resposta HTTP atual do motor proxy: ${GREEN}$current_response${RESET}"
+    echo -e "${BLUE}Resposta HTTP atual do proxy: ${GREEN}$current_response${RESET}"
     local new_response
-    new_response=$(prompt_with_default "Nova resposta HTTP (--response)" "$current_response")
+    new_response=$(prompt_with_default "Nova resposta HTTP" "$current_response")
     new_response=$(echo "$new_response" | tr -d '[:space:]')
 
     if [[ -z "$new_response" ]]; then
-        print_error "Resposta nao pode ser vazia."
+        print_error "Resposta não pode ser vazia."
         pause
         return
     fi
 
-    local configured_ports port
-    configured_ports=$(list_configured_proxy_ports)
-    if [[ -n "$configured_ports" ]]; then
-        IFS=',' read -ra port_array <<< "$configured_ports"
-        for port in "${port_array[@]}"; do
-            [[ -z "$port" ]] && continue
-            set_proxy_conf_key "$port" "HTTP_RESPONSE" "$new_response"
-        done
-    fi
+    json_set_field "response" "$new_response" "string"
 
     if apply_unified_proxy_service "true"; then
         print_success "Resposta HTTP global do proxy atualizada para '$new_response'."
     else
-        print_error "Falha ao aplicar alteracao de resposta HTTP."
+        print_error "Falha ao aplicar alteração de resposta HTTP."
     fi
     pause
 }
 
-# Alias legado
 change_proxy_status() {
     change_proxy_http_response
 }
 
 start_proxy_service() {
     print_header
-    
+
     local port
     echo -e "${BLUE}Digite a porta para abrir:${RESET}"
     read -rp "> " port
@@ -1987,48 +2710,18 @@ start_proxy_service() {
         return
     fi
 
-    if is_proxy_service_configured "$port"; then
-        if ! confirm_action "Porta $port ja configurada. Sobrescrever?" "n"; then
-            pause
-            return
-        fi
-    fi
-    
     local ssl_enabled="false"
-    local ssl_cert_path=""
-    local cert_internal="true"
-    
-    if confirm_action "Deseja habilitar SSL nesta porta?" "n"; then
-        ssl_enabled="true"
-        if confirm_action "Usar certificado interno seguro Cloudflare (--cert-internal)?" "s"; then
-            cert_internal="true"
-        else
-            cert_internal="false"
-            echo -e "${BLUE}Caminho do certificado SSL:${RESET}"
-            read -rp "> " ssl_cert_path
-        fi
-    fi
-    
-    # Herda automaticamente as configuracoes globais do motor proxy
-    local http_response buffer_size ssh_only_flag max_connections write_timeout idle_timeout log_level ssh_port openvpn_port v2ray_port display_banner
-    http_response=$(get_global_proxy_setting "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
-    buffer_size=$(get_global_proxy_setting "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
-    ssh_only_flag=$(get_global_proxy_setting "SSH_ONLY" "false")
-    max_connections=$(get_global_proxy_setting "MAX_CONNECTIONS" "$DEFAULT_MAX_CONNECTIONS")
-    write_timeout=$(get_global_proxy_setting "WRITE_TIMEOUT" "$DEFAULT_WRITE_TIMEOUT")
-    idle_timeout=$(get_global_proxy_setting "IDLE_TIMEOUT" "$DEFAULT_IDLE_TIMEOUT")
-    log_level=$(get_global_proxy_setting "LOG_LEVEL" "info")
-    ssh_port=$(get_global_proxy_setting "SSH_PORT" "22")
-    openvpn_port=$(get_global_proxy_setting "OPENVPN_PORT" "1194")
-    v2ray_port=$(get_global_proxy_setting "V2RAY_PORT" "1080")
-    display_banner=$(get_global_proxy_setting "DISPLAY_BANNER" "true")
+    local default_ssl="n"
+    [[ "$port" == "443" || "$port" == "8443" ]] && default_ssl="s"
 
-    print_info "Iniciando porta $port no serviço unificado..."
+    if confirm_action "Deseja habilitar SSL nesta porta?" "$default_ssl"; then
+        ssl_enabled="true"
+    fi
 
     local token
     token=$(load_proxy_token)
     if [[ -z "$token" ]]; then
-        print_error "Token proxy nao configurado. Use Gerenciar Tokens no menu inicial."
+        print_error "Token proxy não configurado. Use Gerenciar Tokens no menu inicial."
         pause
         return
     fi
@@ -2038,17 +2731,17 @@ start_proxy_service() {
         return
     fi
 
-    write_proxy_conf "$port" "$ssl_enabled" "$ssl_cert_path" "$cert_internal" "$ssh_only_flag" \
-        "$http_response" "$buffer_size" "false" "$max_connections" "$write_timeout" \
-        "$idle_timeout" "$log_level" "$ssh_port" "$openvpn_port" "$v2ray_port" "$display_banner" "true"
+    print_info "Configurando porta $port no proxy (/etc/proxyvt/config.json)..."
+
+    ensure_proxy_json_config
+    json_add_port "$port" "$ssl_enabled"
 
     if apply_unified_proxy_service "true"; then
-        print_success "Proxy unificado iniciado com sucesso contendo a porta $port!"
-        show_proxy_execstart_line "$port"
+        print_success "Porta $port adicionada e ativada com sucesso no proxy!"
     else
         print_error "Falha ao iniciar proxy unificado na porta $port"
     fi
-    
+
     pause
 }
 
@@ -2058,18 +2751,18 @@ pause_proxy_service() {
     local configured_ports
     configured_ports=$(list_configured_proxy_ports)
     echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
-    echo -e "${BLUE}Digite a porta para PARAR (mantem configuracao):${RESET}"
+    echo -e "${BLUE}Digite a porta para PARAR (mantém configuração):${RESET}"
     read -rp "> " port
     port=$(echo "$port" | tr -d '[:space:]')
 
     if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
-        print_error "Porta invalida ou nao configurada."
+        print_error "Porta inválida ou não configurada."
         pause
         return
     fi
 
     print_info "Pausando porta $port (config preservada)..."
-    set_proxy_conf_key "$port" "ENABLED" "false"
+    json_toggle_port "$port" "false"
     apply_unified_proxy_service "true"
     print_success "Porta $port pausada. As demais portas continuam ativas."
     pause
@@ -2081,12 +2774,12 @@ remove_proxy_service() {
     local configured_ports
     configured_ports=$(list_configured_proxy_ports)
     echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
-    echo -e "${BLUE}Digite a porta para REMOVER (apaga conf):${RESET}"
+    echo -e "${BLUE}Digite a porta para REMOVER (apaga do config.json):${RESET}"
     read -rp "> " port
     port=$(echo "$port" | tr -d '[:space:]')
 
     if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
-        print_error "Porta invalida ou nao configurada."
+        print_error "Porta inválida ou não configurada."
         pause
         return
     fi
@@ -2096,14 +2789,13 @@ remove_proxy_service() {
         return
     fi
 
-    print_info "Removendo porta $port..."
-    sudo rm -f "$(get_proxy_config_file "$port")"
+    print_info "Removendo porta $port do JSON..."
+    json_remove_port "$port"
     apply_unified_proxy_service "true"
     print_success "Porta $port removida."
     pause
 }
 
-# Compat: "fechar" antigo = remover
 stop_proxy_service() {
     remove_proxy_service
 }
@@ -2114,39 +2806,39 @@ start_configured_proxy_service() {
     local configured_ports
     configured_ports=$(list_configured_proxy_ports)
     if [[ -z "$configured_ports" ]]; then
-        print_error "Nenhuma porta configurada. Use 'Abrir / criar porta'."
+        print_error "Nenhuma porta configurada. Use 'Abrir / criar nova porta'."
         pause
         return
     fi
 
-    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
-    echo -e "${BLUE}Digite a porta configurada para iniciar:${RESET}"
+    echo -e "${BLUE}Portas configuradas: ${GREEN}$(format_proxy_ports_status)${RESET}"
+    echo -e "${BLUE}Digite a porta configurada para ativar (padrão ativa: true):${RESET}"
     read -rp "> " port
     port=$(echo "$port" | tr -d '[:space:]')
 
     if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
-        print_error "Porta invalida ou nao configurada."
+        print_error "Porta inválida ou não configurada."
         pause
         return
     fi
 
-    local enabled
-    enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
-    if [[ "$enabled" == "true" ]] && systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null; then
-        print_warning "Porta $port ja esta ativa no serviço proxy."
+    if [[ "$(is_proxy_port_enabled "$port")" == "true" ]] && systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null; then
+        print_warning "Porta $port já está ativa no serviço proxy."
         pause
         return
     fi
 
-    if ! check_port_available "$port"; then
+    # Por padrão ativa (true / sim)
+    if ! confirm_action "Ativar porta $port no serviço proxy?" "s"; then
+        print_info "Operação cancelada."
         pause
         return
     fi
 
-    print_info "Ativando porta $port..."
-    set_proxy_conf_key "$port" "ENABLED" "true"
+    print_info "Ativando porta $port (enabled: true)..."
+    json_toggle_port "$port" "true"
     if apply_unified_proxy_service "true"; then
-        print_success "Porta $port ativada no serviço proxy."
+        print_success "Porta $port ativada com sucesso no serviço proxy!"
     else
         print_error "Falha ao ativar porta $port."
     fi
@@ -2164,71 +2856,34 @@ edit_proxy_service() {
         return
     fi
 
-    echo -e "${BLUE}Portas: ${GREEN}$(format_proxy_ports_status)${RESET}"
-    echo -e "${BLUE}Digite a porta para editar:${RESET}"
+    echo -e "${BLUE}Portas configuradas: ${GREEN}$(format_proxy_ports_status)${RESET}"
+    echo -e "${BLUE}Digite a porta para editar SSL:${RESET}"
     read -rp "> " port
     port=$(echo "$port" | tr -d '[:space:]')
 
     if ! validate_port "$port" || ! is_proxy_service_configured "$port"; then
-        print_error "Porta invalida ou nao configurada."
+        print_error "Porta inválida ou não configurada."
         pause
         return
     fi
 
-    local ssl_enabled ssl_cert_path cert_internal enabled
-    ssl_enabled=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
-    ssl_cert_path=$(get_proxy_conf_value "$port" "SSL_CERT_PATH" "")
-    cert_internal=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
-    enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
+    local is_ssl
+    is_ssl=$(is_proxy_port_ssl "$port")
 
-    echo -e "${BLUE}Configuracoes atuais da porta $port:${RESET}"
-    echo -e "  1 - Status da Porta: ${CYAN}$(if [[ "$enabled" == "true" ]]; then echo "Ativada"; else echo "Pausada"; fi)${RESET}"
-    echo -e "  2 - SSL Habilitado: ${CYAN}$ssl_enabled${RESET}"
-    echo -e "  3 - Certificado Interno Cloudflare: ${CYAN}$cert_internal${RESET}"
-    [[ -n "$ssl_cert_path" ]] && echo -e "  4 - Caminho do Certificado: ${CYAN}$ssl_cert_path${RESET}"
-    echo
-
-    echo -e "${BLUE}Escolha o que deseja alterar na porta $port:${RESET}"
-    echo -e "  1 - Alternar Status (Ativar / Pausar)"
-    echo -e "  2 - Alterar opcoes de SSL / Certificado"
-    echo -e "  0 - Voltar"
-    read -rp "> " edit_choice
-
-    case "$edit_choice" in
-        1)
-            if [[ "$enabled" == "true" ]]; then
-                print_info "Pausando porta $port..."
-                set_proxy_conf_key "$port" "ENABLED" "false"
-            else
-                print_info "Ativando porta $port..."
-                set_proxy_conf_key "$port" "ENABLED" "true"
-            fi
+    echo -e "${BLUE}Porta $port:${RESET} SSL atualmente $(if [[ "$is_ssl" == "true" ]]; then echo "${GREEN}HABILITADO${RESET}"; else echo "${GRAY}DESABILITADO${RESET}"; fi)"
+    if [[ "$is_ssl" == "true" ]]; then
+        if confirm_action "Deseja DESABILITAR SSL na porta $port?" "n"; then
+            json_set_port_ssl "$port" "false"
             apply_unified_proxy_service "true"
-            print_success "Status da porta $port atualizado com sucesso."
-            ;;
-        2)
-            if confirm_action "Habilitar SSL na porta $port?" "$ssl_enabled"; then
-                set_proxy_conf_key "$port" "SSL_ENABLED" "true"
-                if confirm_action "Usar certificado interno seguro Cloudflare (--cert-internal)?" "s"; then
-                    set_proxy_conf_key "$port" "CERT_INTERNAL" "true"
-                    set_proxy_conf_key "$port" "SSL_CERT_PATH" ""
-                else
-                    set_proxy_conf_key "$port" "CERT_INTERNAL" "false"
-                    echo -e "${BLUE}Caminho do certificado SSL:${RESET}"
-                    read -rp "> " ssl_cert_path
-                    set_proxy_conf_key "$port" "SSL_CERT_PATH" "$ssl_cert_path"
-                fi
-            else
-                set_proxy_conf_key "$port" "SSL_ENABLED" "false"
-                set_proxy_conf_key "$port" "CERT_INTERNAL" "true"
-                set_proxy_conf_key "$port" "SSL_CERT_PATH" ""
-            fi
+            print_success "SSL desabilitado na porta $port."
+        fi
+    else
+        if confirm_action "Deseja HABILITAR SSL na porta $port?" "s"; then
+            json_set_port_ssl "$port" "true"
             apply_unified_proxy_service "true"
-            print_success "Opcoes de SSL da porta $port atualizadas."
-            ;;
-        0) return 0 ;;
-        *) print_error "Opcao invalida." ;;
-    esac
+            print_success "SSL habilitado na porta $port."
+        fi
+    fi
     pause
 }
 
@@ -2262,7 +2917,7 @@ show_proxy_port_details() {
     fi
 
     print_box_divider
-    print_box_line "${WHITE}  --- PORTAS CONFIGURADAS ---${RESET}"
+    print_box_line "${WHITE}  --- PORTAS CONFIGURADAS (JSON) ---${RESET}"
 
     if [[ -z "$configured_ports" ]]; then
         print_box_line "${YELLOW}  Nenhuma porta configurada.${RESET}"
@@ -2270,53 +2925,52 @@ show_proxy_port_details() {
         IFS=',' read -ra port_array <<< "$configured_ports"
         for port in "${port_array[@]}"; do
             [[ -z "$port" ]] && continue
-            local enabled ssl cert_internal cert_path ssh_only status_str mode_str
-            enabled=$(get_proxy_conf_value "$port" "ENABLED" "true")
-            ssl=$(get_proxy_conf_value "$port" "SSL_ENABLED" "false")
-            cert_internal=$(get_proxy_conf_value "$port" "CERT_INTERNAL" "true")
-            cert_path=$(get_proxy_conf_value "$port" "SSL_CERT_PATH" "")
-            ssh_only=$(get_proxy_conf_value "$port" "SSH_ONLY" "false")
+            local is_ssl is_active status_str mode_str
+            is_ssl=$(is_proxy_port_ssl "$port")
+            is_active=$(is_proxy_port_enabled "$port")
 
-            if [[ "$enabled" == "true" ]]; then
+            if [[ "$is_active" == "true" ]]; then
                 status_str="${GREEN}Ativa${RESET}"
             else
                 status_str="${RED}Pausada${RESET}"
             fi
 
-            if [[ "$ssl" == "true" ]]; then
-                if [[ "$cert_internal" == "true" ]]; then
-                    mode_str="${CYAN}SSL (Cert Interno)${RESET}"
+            if [[ "$is_ssl" == "true" ]]; then
+                local cert_int
+                cert_int=$(json_get_field "cert_internal" "true")
+                if [[ "$cert_int" == "true" ]]; then
+                    mode_str="${CYAN}SSL (Cloudflare Interno)${RESET}"
                 else
-                    mode_str="${CYAN}SSL (Cert Ext: ${cert_path:-custom})${RESET}"
+                    local cert_p
+                    cert_p=$(json_get_field "cert" "externo")
+                    mode_str="${CYAN}SSL (${cert_p})${RESET}"
                 fi
             else
                 mode_str="${WHITE}HTTP${RESET}"
             fi
-
-            [[ "$ssh_only" == "true" ]] && mode_str="${mode_str} ${YELLOW}[SSH-only]${RESET}"
 
             print_box_line "${WHITE}  • Porta ${CYAN}${port}${WHITE}: ${mode_str} | Status: ${status_str}${RESET}"
         done
     fi
 
     print_box_divider
-    print_box_line "${WHITE}  --- PARÂMETROS DO PROXY ---${RESET}"
-    local buffer_val http_val max_conn write_t idle_t ssh_p ovpn_p v2ray_p
-    buffer_val=$(get_global_proxy_setting "BUFFER_SIZE" "$DEFAULT_BUFFER_SIZE")
-    http_val=$(get_global_proxy_setting "HTTP_RESPONSE" "$DEFAULT_HTTP_RESPONSE")
-    max_conn=$(get_global_proxy_setting "MAX_CONNECTIONS" "$DEFAULT_MAX_CONNECTIONS")
-    write_t=$(get_global_proxy_setting "WRITE_TIMEOUT" "$DEFAULT_WRITE_TIMEOUT")
-    idle_t=$(get_global_proxy_setting "IDLE_TIMEOUT" "$DEFAULT_IDLE_TIMEOUT")
-    ssh_p=$(get_global_proxy_setting "SSH_PORT" "$DEFAULT_SSH_PORT")
-    ovpn_p=$(get_global_proxy_setting "OPENVPN_PORT" "$DEFAULT_OPENVPN_PORT")
-    v2ray_p=$(get_global_proxy_setting "V2RAY_PORT" "$DEFAULT_V2RAY_PORT")
+    print_box_line "${WHITE}  --- PARÂMETROS DO CONFIG.JSON ---${RESET}"
+    local buffer_val http_val max_conn write_t idle_t ssh_int btun_en
+    buffer_val=$(json_get_field "buffer_size" "32768")
+    http_val=$(json_get_field "response" "VeltrixProxy")
+    max_conn=$(json_get_field "max_connections" "0")
+    write_t=$(json_get_field "write_timeout" "0")
+    idle_t=$(json_get_field "idle_timeout" "0")
+    ssh_int=$(json_get_field "ssh.internal" "true")
+    btun_en=$(json_get_field "btun.enable" "true")
 
     print_box_line "${WHITE}  Resposta HTTP: ${CYAN}${http_val}${RESET}"
     print_box_line "${WHITE}  Buffer size: ${CYAN}${buffer_val} bytes${RESET}"
     print_box_line "${WHITE}  Max conexões: ${CYAN}${max_conn}${RESET}"
     print_box_line "${WHITE}  Timeouts W/I: ${CYAN}${write_t}s / ${idle_t}s${RESET}"
-    print_box_line "${WHITE}  Backends (SSH/OVPN/V2Ray): ${CYAN}${ssh_p} / ${ovpn_p} / ${v2ray_p}${RESET}"
-    print_box_line "${WHITE}  Arquivo de log: ${CYAN}$PROXY_LOG_DIR/proxy.log${RESET}"
+    print_box_line "${WHITE}  SSH Nativo (Zero-Fork): ${CYAN}${ssh_int}${RESET}"
+    print_box_line "${WHITE}  BTUN Nativo: ${CYAN}${btun_en}${RESET}"
+    print_box_line "${WHITE}  Arquivo config: ${CYAN}${PROXY_JSON_FILE}${RESET}"
 
     print_box_divider
     local exec_line
@@ -2427,14 +3081,15 @@ connection_menu() {
         
         local menu_items=(
             "1 — $(t proxy_opt_open)"
-            "2 — $(t proxy_opt_edit)"
-            "3 — $(t proxy_opt_remove)"
-            "4 — $(t proxy_opt_restart)"
-            "5 — Parar / Iniciar serviço proxy"
-            "6 — $(t proxy_opt_adv)"
-            "7 — $(t proxy_opt_http)"
-            "8 — $(t proxy_opt_details)"
-            "9 — $(t proxy_opt_logs)"
+            "2 — $(t proxy_opt_start)"
+            "3 — $(t proxy_opt_stop)"
+            "4 — $(t proxy_opt_edit)"
+            "5 — $(t proxy_opt_remove)"
+            "6 — $(t proxy_opt_restart)"
+            "7 — $(t proxy_opt_adv)"
+            "8 — $(t proxy_opt_http)"
+            "9 — $(t proxy_opt_details)"
+            "L — $(t proxy_opt_logs)"
             "0 — $(t proxy_opt_back)"
         )
         
@@ -2450,18 +3105,19 @@ connection_menu() {
         echo
         
         local choice
-        read -rp "$(echo -e "${BLUE}$(t prompt_select_option "0-9"):${RESET} ")" choice
+        read -rp "$(echo -e "${BLUE}$(t prompt_select_option "0-9/L"):${RESET} ")" choice
         
-        case "$choice" in
+        case "${choice,,}" in
             1) start_proxy_service ;;
-            2) edit_proxy_service ;;
-            3) remove_proxy_service ;;
-            4) restart_proxy_service ;;
-            5) toggle_unified_proxy_service ;;
-            6) edit_proxy_advanced_service ;;
-            7) change_proxy_http_response ;;
-            8) show_proxy_port_details ;;
-            9) show_proxy_logs ;;
+            2) start_configured_proxy_service ;;
+            3) pause_proxy_service ;;
+            4) edit_proxy_service ;;
+            5) remove_proxy_service ;;
+            6) restart_proxy_service ;;
+            7) edit_proxy_advanced_service ;;
+            8) change_proxy_http_response ;;
+            9) show_proxy_port_details ;;
+            l|10) show_proxy_logs ;;
             0) return 0 ;;
             *) 
                 print_error "$(t invalid_option "$choice")"
@@ -2555,16 +3211,12 @@ run_quick_setup_first_time() {
     fi
     done
 
-        init_proxy_dirs
+    init_proxy_dirs
     print_info "Configurando proxy unificado automático: 80 (sem SSL) e 443 (com SSL)..."
 
-    write_proxy_conf "80" "false" "" "true" "false" "$DEFAULT_HTTP_RESPONSE" \
-        "$DEFAULT_BUFFER_SIZE" "false" "$DEFAULT_MAX_CONNECTIONS" "$DEFAULT_WRITE_TIMEOUT" \
-        "$DEFAULT_IDLE_TIMEOUT" "$DEFAULT_LOG_LEVEL" "$DEFAULT_SSH_PORT" "$DEFAULT_OPENVPN_PORT" "$DEFAULT_V2RAY_PORT" "true" "true"
-
-    write_proxy_conf "443" "true" "" "true" "false" "$DEFAULT_HTTP_RESPONSE" \
-        "$DEFAULT_BUFFER_SIZE" "false" "$DEFAULT_MAX_CONNECTIONS" "$DEFAULT_WRITE_TIMEOUT" \
-        "$DEFAULT_IDLE_TIMEOUT" "$DEFAULT_LOG_LEVEL" "$DEFAULT_SSH_PORT" "$DEFAULT_OPENVPN_PORT" "$DEFAULT_V2RAY_PORT" "true" "true"
+    ensure_proxy_json_config
+    json_add_port "80" "false"
+    json_add_port "443" "true"
 
     if apply_unified_proxy_service "true"; then
         print_success "Proxy unificado ativo nas portas 80 (sem SSL) e 443 (com SSL)."
@@ -3890,9 +4542,16 @@ show_ssh_online_users_details() {
     print_box_close
     echo
 
-    if [[ "$ssh_onlines" == "0" ]]; then
-        echo "$(t ssh_no_users)"
-    else
+    if systemctl is-active --quiet "$PROXY_UNIFIED_SERVICE_NAME" 2>/dev/null && [[ -x "$PROXY_EXECUTABLE" ]]; then
+        echo -e "${BLUE}=== Conexões ativas no motor ProxyVT ===${RESET}"
+        "$PROXY_EXECUTABLE" --onlines 2>/dev/null || echo "Nenhuma conexão reportada pelo proxy-server."
+        echo
+    fi
+
+    local sshd_count
+    sshd_count=$(pgrep -f 'sshd:' 2>/dev/null | grep -v '^root$' | wc -l || echo 0)
+    if (( sshd_count > 0 )); then
+        echo -e "${BLUE}=== Sessões OpenSSH externas (sistema Linux) ===${RESET}"
         pgrep -f 'sshd:' 2>/dev/null \
             | xargs -r ps -o user=,pid=,etime= 2>/dev/null \
             | grep -v '^root ' \
@@ -3901,6 +4560,11 @@ show_ssh_online_users_details() {
                 t ssh_user_row "$user" "$pid" "$etime"
                 echo
             done
+        echo
+    fi
+
+    if [[ "$ssh_onlines" == "0" && $sshd_count -eq 0 ]]; then
+        echo "$(t ssh_no_users)"
     fi
 
     echo
@@ -3918,14 +4582,48 @@ online_users_menu() {
         print_box_heading "$(t ssh_menu_title "$ssh_onlines")" "$CYAN"
         print_box_divider
         render_menu_option "1 • $(t ssh_opt_list)"
+        render_menu_option "2 • Desconectar usuário específico (--kill-user)"
+        render_menu_option "3 • Desconectar todos os usuários expirados (--kill-expired)"
         render_menu_option "0 • $(t ssh_opt_back)" "red"
         print_box_close
         echo
 
         local option
-        read -rp "$(echo -e "${BLUE}$(t prompt_select_option "0-1"):${RESET} ")" option
+        read -rp "$(echo -e "${BLUE}$(t prompt_select_option "0-3"):${RESET} ")" option
         case "$option" in
             1) show_ssh_online_users_details ;;
+            2)
+                echo
+                echo -e "${BLUE}Digite o nome do usuário para desconectar:${RESET}"
+                read -rp "> " target_user
+                target_user=$(echo "$target_user" | tr -d '[:space:]')
+                if [[ -n "$target_user" && -x "$PROXY_EXECUTABLE" ]]; then
+                    print_info "Derrubando conexões do usuário '$target_user'..."
+                    if "$PROXY_EXECUTABLE" --kill-user "$target_user" 2>/dev/null; then
+                        print_success "Comando de desconexão executado para '$target_user'."
+                    else
+                        pkill -u "$target_user" 2>/dev/null || true
+                        print_success "Processos do usuário '$target_user' finalizados via sistema."
+                    fi
+                else
+                    print_error "Usuário inválido ou binário proxy não encontrado."
+                fi
+                pause
+                ;;
+            3)
+                echo
+                if [[ -x "$PROXY_EXECUTABLE" ]]; then
+                    print_info "Derrubando conexões de todos os usuários expirados..."
+                    if "$PROXY_EXECUTABLE" --kill-expired 2>/dev/null; then
+                        print_success "Varredura e desconexão de usuários expirados concluída."
+                    else
+                        print_warning "Comando --kill-expired não suportado ou falhou."
+                    fi
+                else
+                    print_error "Binário proxy não encontrado."
+                fi
+                pause
+                ;;
             0) return 0 ;;
             *) 
                 print_error "$(t invalid_option "$option")"
@@ -4399,7 +5097,11 @@ install_vt_iptables_script() {
 # ==============================================================================
 set -u
 
-TUN_SUBNET="${BTUN_SUBNET:-10.77.0.0/16}"
+TUN_SUBNET="${BTUN_SUBNET:-}"
+if [[ -z "$TUN_SUBNET" && -f "/etc/proxyvt/config.json" ]]; then
+  TUN_SUBNET=$(grep -oE '"subnet"[[:space:]]*:[[:space:]]*"[^"]+"' /etc/proxyvt/config.json 2>/dev/null | head -n1 | cut -d'"' -f4 || true)
+fi
+TUN_SUBNET="${TUN_SUBNET:-10.77.0.0/16}"
 
 # Carregar modulos de rede e NAT do kernel se disponiveis
 for mod in ip_tables iptable_filter iptable_nat iptable_mangle nf_nat nf_conntrack xt_conntrack xt_state xt_MASQUERADE xt_tcp_flags xt_TCPMSS; do
@@ -4415,7 +5117,16 @@ detect_tun_interface() {
     return 0
   fi
 
-  # 2. Procura flag --btun-tun nos servicos systemd
+  # 2. Procura configuracao tun no /etc/proxyvt/config.json
+  if [[ -f "/etc/proxyvt/config.json" ]]; then
+    iface=$(grep -oE '"tun"[[:space:]]*:[[:space:]]*"[^"]+"' /etc/proxyvt/config.json 2>/dev/null | head -n1 | cut -d'"' -f4 || true)
+    if [[ -n "$iface" ]]; then
+      echo "$iface"
+      return 0
+    fi
+  fi
+
+  # 3. Procura flag --btun-tun nos servicos systemd legados
   for svc in /etc/systemd/system/vtproxy.service /etc/systemd/system/proxy-*.service; do
     [[ -f "$svc" ]] || continue
     iface=$(grep -oE '--btun-tun[= ][^ ]+' "$svc" 2>/dev/null | tr '=' ' ' | awk '{print $2}' | head -n1)
@@ -4425,14 +5136,14 @@ detect_tun_interface() {
     fi
   done
 
-  # 3. Procura interface com IP na faixa 10.77.
+  # 4. Procura interface com IP na faixa 10.77.
   iface=$(ip -4 addr show 2>/dev/null | grep -B2 '10\.77\.' | awk -F': ' '/^[0-9]+: / {print $2}' | head -n1)
   if [[ -n "$iface" ]]; then
     echo "$iface"
     return 0
   fi
 
-  # 4. Fallback padrao oficial
+  # 5. Fallback padrao oficial
   echo "btun0"
 }
 
