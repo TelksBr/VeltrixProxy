@@ -3,7 +3,8 @@
 readonly PROJECT_NAME="VTProxy"
 readonly MENU_BOX_MIN=34
 readonly MENU_BOX_MAX=56
-readonly MENU_REV="56"
+readonly MENU_REV="57"
+readonly DEFAULT_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 readonly PROXY_REPO="TelksBr/VeltrixProxy"
 readonly UDPGW_REPO="TelksBr/VeltrixUPGW"
 readonly INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
@@ -2605,18 +2606,38 @@ get_installed_udpgw_version_label() {
 }
 
 fetch_latest_udpgw_release_tag() {
-    local json tag
-    json=$(curl -fsSL \
+    local json tag redirect_loc
+
+    # 1. API oficial
+    json=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --connect-timeout 4 --max-time 8 \
         -H "Cache-Control: no-cache" \
         -H "Accept: application/vnd.github+json" \
         "https://api.github.com/repos/${UDPGW_REPO}/releases/latest" 2>/dev/null || true)
     tag=$(echo "$json" | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n1 | sed -E 's/.*"([^"]+)"$/\1/')
+    if [[ -n "$tag" ]]; then
+        echo "$tag"
+        return 0
+    fi
+
+    # 2. Fallback: redirect 302 da URL web (imune a rate limit)
+    redirect_loc=$(curl -sI -A "$DEFAULT_USER_AGENT" --connect-timeout 5 --max-time 10 \
+        "https://github.com/${UDPGW_REPO}/releases/latest" 2>/dev/null | grep -i '^location:' | tr -d '\r\n' || true)
+    tag=$(echo "$redirect_loc" | sed -E 's/.*\/tag\/([^\/\r\n]+).*/\1/' || true)
+    if [[ -n "$tag" ]]; then
+        echo "$tag"
+        return 0
+    fi
+
+    # 3. Fallback: feed Atom
+    tag=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --connect-timeout 5 --max-time 10 \
+        "https://github.com/${UDPGW_REPO}/releases.atom" 2>/dev/null \
+        | grep -oE '/releases/tag/[^"'\''<> ]+' | head -n1 | sed 's|/releases/tag/||' || true)
     [[ -n "$tag" ]] && echo "$tag"
 }
 
 download_udpgw_binary() {
     local tag="${1:-}"
-    local arch filename url tmp http_status sums_url expected actual
+    local arch filename url tmp http_status sums_url expected actual mirror_url mirrors
 
     if [[ -z "$tag" ]]; then
         tag=$(fetch_latest_udpgw_release_tag || true)
@@ -2635,7 +2656,35 @@ download_udpgw_binary() {
     tmp=$(mktemp)
     print_info "Baixando ${filename} (${tag})..."
     print_info "URL: ${url}"
-    http_status=$(curl -fsSL -w "%{http_code}" -o "$tmp" "$url" 2>/dev/null || true)
+
+    # Tentativa 1: Download direto com User-Agent
+    http_status=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --retry 2 --retry-delay 1 --connect-timeout 10 -w "%{http_code}" -o "$tmp" "$url" 2>/dev/null || true)
+
+    # Tentativa 2: Forçar IPv4 se falhou ou retornou 403
+    if [[ "$http_status" != "200" || ! -s "$tmp" ]]; then
+        rm -f "$tmp" 2>/dev/null || true
+        http_status=$(curl -4 -fsSL -A "$DEFAULT_USER_AGENT" --retry 2 --retry-delay 1 --connect-timeout 10 -w "%{http_code}" -o "$tmp" "$url" 2>/dev/null || true)
+    fi
+
+    # Tentativa 3: Mirrors de alta disponibilidade caso GitHub retorne 403 / bloqueio de IP
+    if [[ "$http_status" != "200" || ! -s "$tmp" ]]; then
+        print_warning "Download direto retornou HTTP ${http_status:-000} (possível bloqueio 403). Tentando mirror de alta disponibilidade..."
+        rm -f "$tmp" 2>/dev/null || true
+        mirrors=(
+            "https://ghfast.top/${url}"
+            "https://ghproxy.net/${url}"
+            "https://mirror.ghproxy.com/${url}"
+        )
+        for mirror_url in "${mirrors[@]}"; do
+            http_status=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --connect-timeout 12 --max-time 60 -w "%{http_code}" -o "$tmp" "$mirror_url" 2>/dev/null || true)
+            if [[ "$http_status" == "200" && -s "$tmp" ]]; then
+                print_success "Download do udpgw concluído via mirror de contingência."
+                break
+            fi
+            rm -f "$tmp" 2>/dev/null || true
+        done
+    fi
+
     if [[ "$http_status" != "200" || ! -s "$tmp" ]]; then
         rm -f "$tmp"
         print_error "Falha ao baixar ${filename} (HTTP ${http_status:-000})."
@@ -2644,7 +2693,12 @@ download_udpgw_binary() {
     fi
 
     sums_url="https://github.com/${UDPGW_REPO}/releases/download/${tag}/SHA256SUMS"
-    if http_status=$(curl -fsSL -w "%{http_code}" -o "${tmp}.sums" "$sums_url" 2>/dev/null || true) && [[ "$http_status" == "200" ]]; then
+    http_status=$(curl -fsSL -A "$DEFAULT_USER_AGENT" -w "%{http_code}" -o "${tmp}.sums" "$sums_url" 2>/dev/null || true)
+    if [[ "$http_status" != "200" || ! -s "${tmp}.sums" ]]; then
+        http_status=$(curl -fsSL -A "$DEFAULT_USER_AGENT" -w "%{http_code}" -o "${tmp}.sums" "https://ghfast.top/${sums_url}" 2>/dev/null || true)
+    fi
+
+    if [[ "$http_status" == "200" && -s "${tmp}.sums" ]]; then
         expected=$(grep -E "[[:space:]]${filename}$" "${tmp}.sums" | awk '{print $1}' | head -n1)
         if [[ -n "$expected" ]]; then
             actual=$(sha256sum "$tmp" 2>/dev/null | awk '{print $1}')
@@ -2654,8 +2708,8 @@ download_udpgw_binary() {
             if [[ -n "$actual" && "$actual" != "$expected" ]]; then
                 rm -f "$tmp" "${tmp}.sums"
                 print_error "Checksum SHA256 inválido para ${filename}."
-        return 1
-    fi
+                return 1
+            fi
             print_success "Integridade SHA256 verificada."
         fi
     fi
@@ -3971,28 +4025,60 @@ version_is_newer() {
 }
 
 fetch_remote_proxy_version() {
-    local json tag
-    json=$(curl -fsSL --connect-timeout 2 --max-time 3 \
+    local json tag redirect_loc
+    # 1. API oficial com User-Agent
+    json=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --connect-timeout 3 --max-time 5 \
         -H "Cache-Control: no-cache" \
         -H "Accept: application/vnd.github+json" \
         "https://api.github.com/repos/${PROXY_REPO}/releases/latest" 2>/dev/null || true)
     tag=$(echo "$json" | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n1 | sed -E 's/.*"([^"]+)"$/\1/' | tr -d 'v\r\n' || true)
+
+    # 2. Contingência para 403 / limite de taxa da API: redirect 302 da URL web
+    if [[ -z "$tag" ]]; then
+        redirect_loc=$(curl -sI -A "$DEFAULT_USER_AGENT" --connect-timeout 4 --max-time 6 "https://github.com/${PROXY_REPO}/releases/latest" 2>/dev/null | grep -i '^location:' | tr -d '\r\n' || true)
+        tag=$(echo "$redirect_loc" | sed -E 's/.*\/tag\/v?([^\/\r\n]+).*/\1/' || true)
+    fi
+
+    # 3. Contingência: feed Atom
+    if [[ -z "$tag" ]]; then
+        tag=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --connect-timeout 4 --max-time 6 "https://github.com/${PROXY_REPO}/releases.atom" 2>/dev/null \
+            | grep -oE '/releases/tag/[^"'\''<> ]+' | head -n1 | sed -E 's|/releases/tag/v?||' | tr -d '\r\n' || true)
+    fi
+
     echo "$tag"
 }
 
 fetch_remote_udpgw_version() {
-    local json tag
-    json=$(curl -fsSL --connect-timeout 2 --max-time 3 \
+    local json tag redirect_loc
+    # 1. API oficial com User-Agent
+    json=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --connect-timeout 3 --max-time 5 \
         -H "Cache-Control: no-cache" \
         -H "Accept: application/vnd.github+json" \
         "https://api.github.com/repos/${UDPGW_REPO}/releases/latest" 2>/dev/null || true)
     tag=$(echo "$json" | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n1 | sed -E 's/.*"([^"]+)"$/\1/' | tr -d 'v\r\n' || true)
+
+    # 2. Contingência para 403 / limite de taxa da API: redirect 302 da URL web
+    if [[ -z "$tag" ]]; then
+        redirect_loc=$(curl -sI -A "$DEFAULT_USER_AGENT" --connect-timeout 4 --max-time 6 "https://github.com/${UDPGW_REPO}/releases/latest" 2>/dev/null | grep -i '^location:' | tr -d '\r\n' || true)
+        tag=$(echo "$redirect_loc" | sed -E 's/.*\/tag\/v?([^\/\r\n]+).*/\1/' || true)
+    fi
+
+    # 3. Contingência: feed Atom
+    if [[ -z "$tag" ]]; then
+        tag=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --connect-timeout 4 --max-time 6 "https://github.com/${UDPGW_REPO}/releases.atom" 2>/dev/null \
+            | grep -oE '/releases/tag/[^"'\''<> ]+' | head -n1 | sed -E 's|/releases/tag/v?||' | tr -d '\r\n' || true)
+    fi
+
     echo "$tag"
 }
 
 fetch_remote_menu_revision() {
-    local rev
-    rev=$(curl -fsSL --connect-timeout 2 --max-time 3 "${INSTALL_URL}?$(date +%s)" 2>/dev/null | grep -E '^INSTALLER_REV=' | head -n1 | cut -d'"' -f2 | tr -d '\r\n' || true)
+    local content rev
+    content=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --connect-timeout 3 --max-time 5 "${INSTALL_URL}?$(date +%s)" 2>/dev/null || true)
+    rev=$(echo "$content" | grep -E '^(MENU_REV_EXPECTED|MENU_REV)=' | head -n1 | cut -d'"' -f2 | tr -d '\r\n' || true)
+    if [[ -z "$rev" ]]; then
+        rev=$(echo "$content" | grep -E '^INSTALLER_REV=' | head -n1 | cut -d'"' -f2 | tr -d '\r\n' || true)
+    fi
     echo "$rev"
 }
 
@@ -4315,6 +4401,11 @@ set -u
 
 TUN_SUBNET="${BTUN_SUBNET:-10.77.0.0/16}"
 
+# Carregar modulos de rede e NAT do kernel se disponiveis
+for mod in ip_tables iptable_filter iptable_nat iptable_mangle nf_nat nf_conntrack xt_conntrack xt_state xt_MASQUERADE xt_tcp_flags xt_TCPMSS; do
+  modprobe "$mod" 2>/dev/null || true
+done
+
 detect_tun_interface() {
   local iface=""
   # 1. Procura interface btun ativa
@@ -4327,7 +4418,7 @@ detect_tun_interface() {
   # 2. Procura flag --btun-tun nos servicos systemd
   for svc in /etc/systemd/system/vtproxy.service /etc/systemd/system/proxy-*.service; do
     [[ -f "$svc" ]] || continue
-    iface=$(grep -oE '--btun-tun=[^ ]+' "$svc" 2>/dev/null | cut -d= -f2 | head -n1)
+    iface=$(grep -oE '--btun-tun[= ][^ ]+' "$svc" 2>/dev/null | tr '=' ' ' | awk '{print $2}' | head -n1)
     if [[ -n "$iface" ]]; then
       echo "$iface"
       return 0
@@ -4347,28 +4438,28 @@ detect_tun_interface() {
 
 detect_wan_interface() {
   local iface=""
-  # 1. Rota padrao IPv4
-  iface=$(ip -4 route show default 2>/dev/null | awk '{print $5}' | head -n1)
+  # 1. Rota padrao IPv4 (captura dinamicamente o campo apos 'dev')
+  iface=$(ip -4 route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); exit}}')
   if [[ -n "$iface" ]]; then
     echo "$iface"
     return 0
   fi
 
   # 2. Sondagem de rota publica (8.8.8.8)
-  iface=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); break}}' | head -n1)
+  iface=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); exit}}')
   if [[ -n "$iface" ]]; then
     echo "$iface"
     return 0
   fi
 
   # 3. Rota padrao IPv6
-  iface=$(ip -6 route show default 2>/dev/null | awk '{print $5}' | head -n1)
+  iface=$(ip -6 route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); exit}}')
   if [[ -n "$iface" ]]; then
     echo "$iface"
     return 0
   fi
 
-  # 4. Primeira interface ativa que nao seja virtual/loopback/tun/docker
+  # 4. Primeira interface fisica ativa que nao seja loopback/virtual/tun
   iface=$(ip -o link show up 2>/dev/null | awk -F': ' '{print $2}' | grep -vE '^(lo|btun|tun|tap|docker|veth|br-|wg|virbr)' | head -n1)
   if [[ -n "$iface" ]]; then
     echo "$iface"
@@ -4382,11 +4473,12 @@ persist_rules() {
   if command -v netfilter-persistent >/dev/null 2>&1; then
     netfilter-persistent save >/dev/null 2>&1 || true
   fi
-  if [[ -d /etc/iptables ]]; then
+  mkdir -p /etc/iptables 2>/dev/null || true
+  if command -v iptables-save >/dev/null 2>&1; then
     iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
-  fi
-  if [[ -d /etc/sysconfig ]]; then
-    iptables-save > /etc/sysconfig/iptables 2>/dev/null || true
+    if [[ -d /etc/sysconfig ]]; then
+      iptables-save > /etc/sysconfig/iptables 2>/dev/null || true
+    fi
   fi
 }
 
@@ -4403,36 +4495,44 @@ if ! command -v iptables >/dev/null 2>&1; then
   exit 0
 fi
 
+# Deteccao do modulo de conexao: prefere conntrack moderno, fallback para state
+state_match="-m conntrack --ctstate RELATED,ESTABLISHED"
+if ! iptables -m conntrack --help >/dev/null 2>&1; then
+  state_match="-m state --state RELATED,ESTABLISHED"
+fi
+
+err_count=0
+
 # 2. NAT (MASQUERADE)
 if [[ -n "$WAN_IFACE" ]]; then
   iptables -t nat -C POSTROUTING -s "$TUN_SUBNET" -o "$WAN_IFACE" -j MASQUERADE 2>/dev/null || \
-    iptables -t nat -A POSTROUTING -s "$TUN_SUBNET" -o "$WAN_IFACE" -j MASQUERADE 2>/dev/null || true
+    iptables -t nat -A POSTROUTING -s "$TUN_SUBNET" -o "$WAN_IFACE" -j MASQUERADE 2>/dev/null || ((err_count++))
 fi
 
 iptables -t nat -C POSTROUTING -s "$TUN_SUBNET" ! -o "$TUN_IFACE" -j MASQUERADE 2>/dev/null || \
-  iptables -t nat -A POSTROUTING -s "$TUN_SUBNET" ! -o "$TUN_IFACE" -j MASQUERADE 2>/dev/null || true
+  iptables -t nat -A POSTROUTING -s "$TUN_SUBNET" ! -o "$TUN_IFACE" -j MASQUERADE 2>/dev/null || ((err_count++))
 
-# 3. FORWARD - Subnet
+# 3. FORWARD - Inserir no inicio para ter prioridade sobre regras DROP (ex: Docker, UFW)
 iptables -C FORWARD -s "$TUN_SUBNET" -j ACCEPT 2>/dev/null || \
-  iptables -A FORWARD -s "$TUN_SUBNET" -j ACCEPT 2>/dev/null || true
+  iptables -I FORWARD 1 -s "$TUN_SUBNET" -j ACCEPT 2>/dev/null || ((err_count++))
 
-iptables -C FORWARD -d "$TUN_SUBNET" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
-  iptables -A FORWARD -d "$TUN_SUBNET" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+iptables -C FORWARD -d "$TUN_SUBNET" $state_match -j ACCEPT 2>/dev/null || \
+  iptables -I FORWARD 2 -d "$TUN_SUBNET" $state_match -j ACCEPT 2>/dev/null || ((err_count++))
 
 # 4. FORWARD - Interface TUN
 if [[ -n "$TUN_IFACE" ]]; then
   iptables -C FORWARD -i "$TUN_IFACE" -j ACCEPT 2>/dev/null || \
-    iptables -A FORWARD -i "$TUN_IFACE" -j ACCEPT 2>/dev/null || true
+    iptables -A FORWARD -i "$TUN_IFACE" -j ACCEPT 2>/dev/null || ((err_count++))
 
   iptables -C FORWARD -o "$TUN_IFACE" -j ACCEPT 2>/dev/null || \
-    iptables -A FORWARD -o "$TUN_IFACE" -j ACCEPT 2>/dev/null || true
+    iptables -A FORWARD -o "$TUN_IFACE" -j ACCEPT 2>/dev/null || ((err_count++))
 
   if [[ -n "$WAN_IFACE" ]]; then
     iptables -C FORWARD -i "$TUN_IFACE" -o "$WAN_IFACE" -j ACCEPT 2>/dev/null || \
-      iptables -A FORWARD -i "$TUN_IFACE" -o "$WAN_IFACE" -j ACCEPT 2>/dev/null || true
+      iptables -A FORWARD -i "$TUN_IFACE" -o "$WAN_IFACE" -j ACCEPT 2>/dev/null || ((err_count++))
 
-    iptables -C FORWARD -i "$WAN_IFACE" -o "$TUN_IFACE" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
-      iptables -A FORWARD -i "$WAN_IFACE" -o "$TUN_IFACE" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+    iptables -C FORWARD -i "$WAN_IFACE" -o "$TUN_IFACE" $state_match -j ACCEPT 2>/dev/null || \
+      iptables -A FORWARD -i "$WAN_IFACE" -o "$TUN_IFACE" $state_match -j ACCEPT 2>/dev/null || ((err_count++))
   fi
 fi
 
@@ -4443,7 +4543,11 @@ iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-m
 # 6. Salvar persistencia das regras
 persist_rules
 
-echo "[VT-IPTABLES] Regras de iptables aplicadas com sucesso!"
+if (( err_count > 0 )); then
+  echo "[VT-IPTABLES] Aviso: $err_count regra(s) de iptables nao puderam ser aplicadas (verifique permissoes ou suporte no kernel)." >&2
+else
+  echo "[VT-IPTABLES] Regras de iptables aplicadas com sucesso!"
+fi
 exit 0
 EOF
     sudo chmod +x "$target" 2>/dev/null || true

@@ -18,9 +18,10 @@ BINARY_NAME="proxy-server"
 UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
-INSTALLER_REV="45"
-MENU_REV_EXPECTED="56"
+INSTALLER_REV="46"
+MENU_REV_EXPECTED="57"
 MENU_REV_FILE="/etc/vt-menu-revision"
+DEFAULT_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 VERSION_FILE="/etc/proxy-version"
 UDPGW_VERSION_FILE="/etc/udpgw-version"
 LEGACY_BINARY_NAME="proxy"
@@ -694,29 +695,66 @@ get_installed_udpgw_version() {
 fetch_release_tags() {
   local repo="$1"
   local -n out_array=$2
-  local releases_json line
+  local releases_json line atom_output latest_tag
 
   out_array=()
-  releases_json=$(curl -fsSL "https://api.github.com/repos/${repo}/releases?per_page=${MAX_VERSIONS}")
 
-  if [[ -z "$releases_json" || "$releases_json" != \[* ]]; then
-    log_error "Erro ao buscar releases em ${repo}."
-    echo "$releases_json"
-    exit 1
+  # Tentativa 1: API REST oficial do GitHub (com User-Agent moderno)
+  releases_json=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --connect-timeout 5 --max-time 10 \
+    "https://api.github.com/repos/${repo}/releases?per_page=${MAX_VERSIONS}" 2>/dev/null || true)
+
+  if [[ -n "$releases_json" && "$releases_json" == \[* ]]; then
+    while IFS= read -r line; do
+      line="${line//$'\r'/}"
+      [[ -n "$line" ]] && out_array+=("$line")
+    done < <(
+      echo "$releases_json" \
+        | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' \
+        | sed -E 's/.*"([^"]+)"$/\1/' \
+        | head -n "$MAX_VERSIONS"
+    )
   fi
 
-  while IFS= read -r line; do
-    line="${line//$'\r'/}"
-    [[ -n "$line" ]] && out_array+=("$line")
-  done < <(
-    echo "$releases_json" \
-      | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' \
-      | sed -E 's/.*"([^"]+)"$/\1/' \
-      | head -n "$MAX_VERSIONS"
-  )
-
+  # Tentativa 2 (Contingência para erro 403 / rate limit da API): Feed Atom oficial (sem limite de taxa)
   if [[ ${#out_array[@]} -eq 0 ]]; then
-    log_error "Nenhuma release encontrada em ${repo}."
+    log_warn "API do GitHub indisponível ou limite de taxa atingido (403) para ${repo}; usando feed Atom..."
+    atom_output=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --connect-timeout 6 --max-time 12 \
+      "https://github.com/${repo}/releases.atom" 2>/dev/null || true)
+
+    if [[ -n "$atom_output" ]]; then
+      while IFS= read -r line; do
+        line="${line//$'\r'/}"
+        [[ -n "$line" ]] && out_array+=("$line")
+      done < <(
+        echo "$atom_output" \
+          | grep -oE '/releases/tag/[^"'\''<> ]+' \
+          | sed 's|/releases/tag/||' \
+          | sort -u -V -r \
+          | head -n "$MAX_VERSIONS"
+      )
+    fi
+  fi
+
+  # Tentativa 3: Redirecionamento da release latest (/releases/latest -> 302 -> /tag/vX.Y.Z)
+  if [[ ${#out_array[@]} -eq 0 ]]; then
+    latest_tag=$(fetch_latest_release_tag "$repo" || true)
+    if [[ -n "$latest_tag" ]]; then
+      out_array+=("$latest_tag")
+    fi
+  fi
+
+  # Se ainda vazio, só emite erro se não houver versão solicitada manualmente
+  if [[ ${#out_array[@]} -eq 0 ]]; then
+    if [[ "$repo" == "$REPO" && -n "$VERSION" && "$VERSION" != "latest" ]]; then
+      out_array+=("$VERSION")
+      log_warn "Não foi possível listar releases de ${repo}, mas prosseguindo com versão solicitada: ${VERSION}"
+      return 0
+    elif [[ "$repo" == "$UDPGW_REPO" && -n "$UDPGW_VERSION" && "$UDPGW_VERSION" != "latest" ]]; then
+      out_array+=("$UDPGW_VERSION")
+      log_warn "Não foi possível listar releases de ${repo}, mas prosseguindo com versão solicitada: ${UDPGW_VERSION}"
+      return 0
+    fi
+    log_error "Nenhuma release encontrada em ${repo} (verifique conectividade ou limite de taxa do GitHub)."
     exit 1
   fi
 }
@@ -754,9 +792,11 @@ resolve_version_in_list() {
       fi
       log_warn "API releases/latest indisponível para ${repo}; usando lista recente."
     fi
-    resolved="${available[0]}"
-    log_success "Versão ${label} selecionada (mais recente da lista): ${resolved}"
-    return 0
+    if [[ ${#available[@]} -gt 0 ]]; then
+      resolved="${available[0]}"
+      log_success "Versão ${label} selecionada (mais recente da lista): ${resolved}"
+      return 0
+    fi
   fi
 
   normalized=$(normalize_version_tag "$requested" || true)
@@ -769,6 +809,13 @@ resolve_version_in_list() {
       return 0
     fi
   done
+
+  # Se o usuário solicitou explicitamente uma versão, aceita mesmo que não esteja no array disponível
+  if [[ -n "$normalized" && "$requested" != "latest" ]]; then
+    resolved="$normalized"
+    log_info "Usando versão solicitada ${label}: ${resolved}"
+    return 0
+  fi
 
   log_error "Versão ${label} ${requested} não encontrada nas últimas ${MAX_VERSIONS} releases."
   exit 1
@@ -840,19 +887,74 @@ confirm_installation() {
 download_file() {
   local url="$1"
   local output="$2"
-  local http_status
+  local http_status=""
+  local mirror_url=""
+  local mirrors=()
 
-  # Evita cache CDN do raw.githubusercontent.com (max-age=300).
+  # Tentativa 1: Download direto padrão (com User-Agent moderno)
   http_status=$(
     curl -fsSL \
+      -A "$DEFAULT_USER_AGENT" \
+      --retry 2 \
+      --retry-delay 1 \
+      --connect-timeout 10 \
       -H "Cache-Control: no-cache" \
       -H "Pragma: no-cache" \
       -w "%{http_code}" \
       -o "$output" \
-      "$url" || true
+      "$url" 2>/dev/null || true
   )
+
+  # Tentativa 2: Forçar IPv4 se deu erro ou 403 (resolve bloqueio em blocos IPv6 da VPS na CDN)
+  if [[ "$http_status" != "200" || ! -s "$output" ]]; then
+    rm -f "$output" 2>/dev/null || true
+    http_status=$(
+      curl -4 -fsSL \
+        -A "$DEFAULT_USER_AGENT" \
+        --retry 2 \
+        --retry-delay 1 \
+        --connect-timeout 10 \
+        -H "Cache-Control: no-cache" \
+        -H "Pragma: no-cache" \
+        -w "%{http_code}" \
+        -o "$output" \
+        "$url" 2>/dev/null || true
+    )
+  fi
+
+  # Tentativa 3: Se ainda deu 403 ou falhou, recorrer a mirrors de alta disponibilidade
+  if [[ ("$http_status" != "200" || ! -s "$output") && "$url" == https://github.com/* ]]; then
+    log_warn "Download direto do GitHub retornou HTTP ${http_status:-000} (possível bloqueio 403 de IP/WAF)."
+    log_info "Ativando mirror de alta disponibilidade..."
+    rm -f "$output" 2>/dev/null || true
+
+    mirrors=(
+      "https://ghfast.top/${url}"
+      "https://ghproxy.net/${url}"
+      "https://mirror.ghproxy.com/${url}"
+    )
+
+    for mirror_url in "${mirrors[@]}"; do
+      http_status=$(
+        curl -fsSL \
+          -A "$DEFAULT_USER_AGENT" \
+          --connect-timeout 12 \
+          --max-time 60 \
+          -w "%{http_code}" \
+          -o "$output" \
+          "$mirror_url" 2>/dev/null || true
+      )
+      if [[ "$http_status" == "200" && -s "$output" ]]; then
+        log_success "Download concluído com sucesso via mirror de contingência."
+        break
+      fi
+      rm -f "$output" 2>/dev/null || true
+    done
+  fi
+
   if [[ "$http_status" != "200" ]]; then
-    log_error "Falha ao baixar: $url (HTTP $http_status)"
+    log_error "Falha ao baixar: $url (HTTP ${http_status:-falha de conexão})"
+    log_info "Dica: Se sua VPS estiver enfrentando bloqueio 403 pelo Cloudflare/GitHub, aguarde alguns minutos ou utilize proxy."
     exit 1
   fi
   if [[ ! -s "$output" ]]; then
@@ -883,26 +985,47 @@ extract_json_string_field() {
 
 fetch_latest_release_tag() {
   local repo="$1"
-  local json tag
+  local json tag redirect_loc atom_tag
 
-  json=$(curl -fsSL \
+  # 1. API oficial (com User-Agent)
+  json=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --connect-timeout 4 --max-time 8 \
     -H "Cache-Control: no-cache" \
     -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/${repo}/releases/latest" || true)
+    "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null || true)
 
   tag=$(extract_json_string_field "$json" "tag_name")
-  if [[ -z "$tag" ]]; then
-    return 1
+  if [[ -n "$tag" ]]; then
+    echo "$tag"
+    return 0
   fi
-  echo "$tag"
+
+  # 2. Redirecionamento HTTP 302 web (imune a limite de taxa da API)
+  redirect_loc=$(curl -sI -A "$DEFAULT_USER_AGENT" --connect-timeout 5 --max-time 10 \
+    "https://github.com/${repo}/releases/latest" 2>/dev/null | grep -i '^location:' | tr -d '\r\n' || true)
+  tag=$(echo "$redirect_loc" | sed -E 's/.*\/tag\/([^\/]+).*/\1/' || true)
+  if [[ -n "$tag" ]]; then
+    echo "$tag"
+    return 0
+  fi
+
+  # 3. Feed Atom
+  atom_tag=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --connect-timeout 5 --max-time 10 \
+    "https://github.com/${repo}/releases.atom" 2>/dev/null \
+    | grep -oE '/releases/tag/[^"'\''<> ]+' | head -n1 | sed 's|/releases/tag/||' || true)
+  if [[ -n "$atom_tag" ]]; then
+    echo "$atom_tag"
+    return 0
+  fi
+
+  return 1
 }
 
 resolve_repo_main_sha() {
   local json sha
-  json=$(curl -fsSL \
+  json=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --connect-timeout 5 --max-time 10 \
     -H "Cache-Control: no-cache" \
     -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/${REPO}/commits/main" || true)
+    "https://api.github.com/repos/${REPO}/commits/main" 2>/dev/null || true)
   sha=$(extract_json_string_field "$json" "sha")
   if [[ -z "$sha" || ${#sha} -lt 7 ]]; then
     return 1
@@ -915,8 +1038,13 @@ verify_checksum() {
   local sha_file="${filename}.sha256"
   local http_status
 
-  http_status=$(curl -fsSL -w "%{http_code}" -o "$sha_file" "${DOWNLOAD_URL}.sha256" 2>/dev/null || true)
-  if [[ "$http_status" != "200" ]]; then
+  http_status=$(curl -fsSL -A "$DEFAULT_USER_AGENT" -w "%{http_code}" -o "$sha_file" "${DOWNLOAD_URL}.sha256" 2>/dev/null || true)
+  if [[ "$http_status" != "200" || ! -s "$sha_file" ]]; then
+    rm -f "$sha_file" 2>/dev/null || true
+    http_status=$(curl -fsSL -A "$DEFAULT_USER_AGENT" -w "%{http_code}" -o "$sha_file" "https://ghfast.top/${DOWNLOAD_URL}.sha256" 2>/dev/null || true)
+  fi
+
+  if [[ "$http_status" != "200" || ! -s "$sha_file" ]]; then
     log_warn "Arquivo SHA256 não encontrado. Pulando verificação..."
     return 0
   fi
@@ -947,8 +1075,13 @@ verify_udpgw_checksum() {
   tag=$(normalize_udpgw_release_tag "$tag" || echo "$tag")
   sums_url="https://github.com/${UDPGW_REPO}/releases/download/${tag}/${sums_file}"
 
-  http_status=$(curl -fsSL -w "%{http_code}" -o "$sums_file" "$sums_url" 2>/dev/null || true)
-  if [[ "$http_status" != "200" ]]; then
+  http_status=$(curl -fsSL -A "$DEFAULT_USER_AGENT" -w "%{http_code}" -o "$sums_file" "$sums_url" 2>/dev/null || true)
+  if [[ "$http_status" != "200" || ! -s "$sums_file" ]]; then
+    rm -f "$sums_file" 2>/dev/null || true
+    http_status=$(curl -fsSL -A "$DEFAULT_USER_AGENT" -w "%{http_code}" -o "$sums_file" "https://ghfast.top/${sums_url}" 2>/dev/null || true)
+  fi
+
+  if [[ "$http_status" != "200" || ! -s "$sums_file" ]]; then
     log_warn "SHA256SUMS não encontrado em ${tag}. Pulando verificação..."
     return 0
   fi
@@ -1868,6 +2001,11 @@ set -u
 
 TUN_SUBNET="${BTUN_SUBNET:-10.77.0.0/16}"
 
+# Carregar modulos de rede e NAT do kernel se disponiveis
+for mod in ip_tables iptable_filter iptable_nat iptable_mangle nf_nat nf_conntrack xt_conntrack xt_state xt_MASQUERADE xt_tcp_flags xt_TCPMSS; do
+  modprobe "$mod" 2>/dev/null || true
+done
+
 detect_tun_interface() {
   local iface=""
   # 1. Procura interface btun ativa
@@ -1880,7 +2018,7 @@ detect_tun_interface() {
   # 2. Procura flag --btun-tun nos servicos systemd
   for svc in /etc/systemd/system/vtproxy.service /etc/systemd/system/proxy-*.service; do
     [[ -f "$svc" ]] || continue
-    iface=$(grep -oE '--btun-tun=[^ ]+' "$svc" 2>/dev/null | cut -d= -f2 | head -n1)
+    iface=$(grep -oE '--btun-tun[= ][^ ]+' "$svc" 2>/dev/null | tr '=' ' ' | awk '{print $2}' | head -n1)
     if [[ -n "$iface" ]]; then
       echo "$iface"
       return 0
@@ -1900,28 +2038,28 @@ detect_tun_interface() {
 
 detect_wan_interface() {
   local iface=""
-  # 1. Rota padrao IPv4
-  iface=$(ip -4 route show default 2>/dev/null | awk '{print $5}' | head -n1)
+  # 1. Rota padrao IPv4 (captura dinamicamente o campo apos 'dev')
+  iface=$(ip -4 route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); exit}}')
   if [[ -n "$iface" ]]; then
     echo "$iface"
     return 0
   fi
 
   # 2. Sondagem de rota publica (8.8.8.8)
-  iface=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); break}}' | head -n1)
+  iface=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); exit}}')
   if [[ -n "$iface" ]]; then
     echo "$iface"
     return 0
   fi
 
   # 3. Rota padrao IPv6
-  iface=$(ip -6 route show default 2>/dev/null | awk '{print $5}' | head -n1)
+  iface=$(ip -6 route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); exit}}')
   if [[ -n "$iface" ]]; then
     echo "$iface"
     return 0
   fi
 
-  # 4. Primeira interface ativa que nao seja virtual/loopback/tun/docker
+  # 4. Primeira interface fisica ativa que nao seja loopback/virtual/tun
   iface=$(ip -o link show up 2>/dev/null | awk -F': ' '{print $2}' | grep -vE '^(lo|btun|tun|tap|docker|veth|br-|wg|virbr)' | head -n1)
   if [[ -n "$iface" ]]; then
     echo "$iface"
@@ -1935,11 +2073,12 @@ persist_rules() {
   if command -v netfilter-persistent >/dev/null 2>&1; then
     netfilter-persistent save >/dev/null 2>&1 || true
   fi
-  if [[ -d /etc/iptables ]]; then
+  mkdir -p /etc/iptables 2>/dev/null || true
+  if command -v iptables-save >/dev/null 2>&1; then
     iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
-  fi
-  if [[ -d /etc/sysconfig ]]; then
-    iptables-save > /etc/sysconfig/iptables 2>/dev/null || true
+    if [[ -d /etc/sysconfig ]]; then
+      iptables-save > /etc/sysconfig/iptables 2>/dev/null || true
+    fi
   fi
 }
 
@@ -1956,36 +2095,44 @@ if ! command -v iptables >/dev/null 2>&1; then
   exit 0
 fi
 
+# Deteccao do modulo de conexao: prefere conntrack moderno, fallback para state
+state_match="-m conntrack --ctstate RELATED,ESTABLISHED"
+if ! iptables -m conntrack --help >/dev/null 2>&1; then
+  state_match="-m state --state RELATED,ESTABLISHED"
+fi
+
+err_count=0
+
 # 2. NAT (MASQUERADE)
 if [[ -n "$WAN_IFACE" ]]; then
   iptables -t nat -C POSTROUTING -s "$TUN_SUBNET" -o "$WAN_IFACE" -j MASQUERADE 2>/dev/null || \
-    iptables -t nat -A POSTROUTING -s "$TUN_SUBNET" -o "$WAN_IFACE" -j MASQUERADE 2>/dev/null || true
+    iptables -t nat -A POSTROUTING -s "$TUN_SUBNET" -o "$WAN_IFACE" -j MASQUERADE 2>/dev/null || ((err_count++))
 fi
 
 iptables -t nat -C POSTROUTING -s "$TUN_SUBNET" ! -o "$TUN_IFACE" -j MASQUERADE 2>/dev/null || \
-  iptables -t nat -A POSTROUTING -s "$TUN_SUBNET" ! -o "$TUN_IFACE" -j MASQUERADE 2>/dev/null || true
+  iptables -t nat -A POSTROUTING -s "$TUN_SUBNET" ! -o "$TUN_IFACE" -j MASQUERADE 2>/dev/null || ((err_count++))
 
-# 3. FORWARD - Subnet
+# 3. FORWARD - Inserir no inicio para ter prioridade sobre regras DROP (ex: Docker, UFW)
 iptables -C FORWARD -s "$TUN_SUBNET" -j ACCEPT 2>/dev/null || \
-  iptables -A FORWARD -s "$TUN_SUBNET" -j ACCEPT 2>/dev/null || true
+  iptables -I FORWARD 1 -s "$TUN_SUBNET" -j ACCEPT 2>/dev/null || ((err_count++))
 
-iptables -C FORWARD -d "$TUN_SUBNET" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
-  iptables -A FORWARD -d "$TUN_SUBNET" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+iptables -C FORWARD -d "$TUN_SUBNET" $state_match -j ACCEPT 2>/dev/null || \
+  iptables -I FORWARD 2 -d "$TUN_SUBNET" $state_match -j ACCEPT 2>/dev/null || ((err_count++))
 
 # 4. FORWARD - Interface TUN
 if [[ -n "$TUN_IFACE" ]]; then
   iptables -C FORWARD -i "$TUN_IFACE" -j ACCEPT 2>/dev/null || \
-    iptables -A FORWARD -i "$TUN_IFACE" -j ACCEPT 2>/dev/null || true
+    iptables -A FORWARD -i "$TUN_IFACE" -j ACCEPT 2>/dev/null || ((err_count++))
 
   iptables -C FORWARD -o "$TUN_IFACE" -j ACCEPT 2>/dev/null || \
-    iptables -A FORWARD -o "$TUN_IFACE" -j ACCEPT 2>/dev/null || true
+    iptables -A FORWARD -o "$TUN_IFACE" -j ACCEPT 2>/dev/null || ((err_count++))
 
   if [[ -n "$WAN_IFACE" ]]; then
     iptables -C FORWARD -i "$TUN_IFACE" -o "$WAN_IFACE" -j ACCEPT 2>/dev/null || \
-      iptables -A FORWARD -i "$TUN_IFACE" -o "$WAN_IFACE" -j ACCEPT 2>/dev/null || true
+      iptables -A FORWARD -i "$TUN_IFACE" -o "$WAN_IFACE" -j ACCEPT 2>/dev/null || ((err_count++))
 
-    iptables -C FORWARD -i "$WAN_IFACE" -o "$TUN_IFACE" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
-      iptables -A FORWARD -i "$WAN_IFACE" -o "$TUN_IFACE" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+    iptables -C FORWARD -i "$WAN_IFACE" -o "$TUN_IFACE" $state_match -j ACCEPT 2>/dev/null || \
+      iptables -A FORWARD -i "$WAN_IFACE" -o "$TUN_IFACE" $state_match -j ACCEPT 2>/dev/null || ((err_count++))
   fi
 fi
 
@@ -1996,7 +2143,11 @@ iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-m
 # 6. Salvar persistencia das regras
 persist_rules
 
-echo "[VT-IPTABLES] Regras de iptables aplicadas com sucesso!"
+if (( err_count > 0 )); then
+  echo "[VT-IPTABLES] Aviso: $err_count regra(s) de iptables nao puderam ser aplicadas (verifique permissoes ou suporte no kernel)." >&2
+else
+  echo "[VT-IPTABLES] Regras de iptables aplicadas com sucesso!"
+fi
 exit 0
 EOF
   run_privileged chmod +x "$target" 2>/dev/null || true
