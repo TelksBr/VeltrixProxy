@@ -12,6 +12,7 @@ import (
 
 	"github.com/TelksBr/VeltrixProxy/internal/proxy"
 	"github.com/TelksBr/VeltrixProxy/internal/system"
+	"github.com/TelksBr/VeltrixProxy/internal/udpgw"
 	"github.com/TelksBr/VeltrixProxy/internal/ui/theme"
 )
 
@@ -221,6 +222,24 @@ func PrintDashboardHeader(width int) {
 		proxyStatusBadge = theme.BadgeOnline
 	}
 
+	isUDPGWActive := udpgw.IsActive()
+	udpgwPorts := udpgw.ListConfiguredPorts()
+	udpgwStatusBadge := theme.BadgeOffline
+	if isUDPGWActive {
+		udpgwStatusBadge = theme.BadgeOnline
+	}
+
+	var portsLabel string
+	if len(udpgwPorts) == 0 {
+		portsLabel = "-"
+	} else if len(udpgwPorts) == 1 {
+		portsLabel = strconv.Itoa(udpgwPorts[0])
+	} else if len(udpgwPorts) == 2 {
+		portsLabel = fmt.Sprintf("%d, %d", udpgwPorts[0], udpgwPorts[1])
+	} else {
+		portsLabel = fmt.Sprintf("%d (+%d)", udpgwPorts[0], len(udpgwPorts)-1)
+	}
+
 	contentWidth := width - 4
 	if contentWidth < 4 {
 		contentWidth = 4
@@ -239,6 +258,19 @@ func PrintDashboardHeader(width int) {
 		proxyCol := fmt.Sprintf("%sProxy VT:%s %s", theme.Gray, theme.Reset, proxyStatusBadge)
 		onlineCol := fmt.Sprintf("%sOnline:%s %s%d con%s", theme.Gray, theme.Reset, theme.Cyan, onlines, theme.Reset)
 		PrintBoxLine(formatTwoCols(proxyCol, onlineCol, contentWidth), width)
+
+		avail := contentWidth - 3
+		leftCol := avail / 2
+		udpgwCol := fmt.Sprintf("%sBadVPN / UDPGW:%s %s", theme.Gray, theme.Reset, udpgwStatusBadge)
+		if leftCol < 25 {
+			udpgwCol = fmt.Sprintf("%sBadVPN:%s %s", theme.Gray, theme.Reset, udpgwStatusBadge)
+		}
+		portTitle := "Portas UDP:"
+		if len(udpgwPorts) <= 1 {
+			portTitle = "Porta UDP:"
+		}
+		udpgwPortCol := fmt.Sprintf("%s%s%s %s%s%s", theme.Gray, portTitle, theme.Reset, theme.Cyan, portsLabel, theme.Reset)
+		PrintBoxLine(formatTwoCols(udpgwCol, udpgwPortCol, contentWidth), width)
 	} else {
 		// Layout compacto para telas estreitas (< 54 colunas, ex: mobile / split pane)
 		PrintBoxLine(fmt.Sprintf("%sIP:%s %s%s%s", theme.Gray, theme.Reset, theme.White, ip, theme.Reset), width)
@@ -247,8 +279,11 @@ func PrintDashboardHeader(width int) {
 			theme.Gray, theme.Reset, cpuColor, cpuUsage, theme.Reset,
 			theme.DarkGray, theme.Reset, ramColor, ram.UsedMB, ram.Percent, theme.Reset,
 		), width)
-		PrintBoxLine(fmt.Sprintf("%sStatus:%s %s %s(%d con)%s",
+		PrintBoxLine(fmt.Sprintf("%sProxy VT:%s %s %s(%d con)%s",
 			theme.Gray, theme.Reset, proxyStatusBadge, theme.Cyan, onlines, theme.Reset,
+		), width)
+		PrintBoxLine(fmt.Sprintf("%sBadVPN / UDPGW:%s %s %s(%s)%s",
+			theme.Gray, theme.Reset, udpgwStatusBadge, theme.Cyan, portsLabel, theme.Reset,
 		), width)
 	}
 
