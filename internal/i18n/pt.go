@@ -9,6 +9,7 @@ var dictPT = map[string]string{
 	"menu_opt_connected_users":   "Usuários Conectados (Online)",
 	"menu_opt_update":            "Atualizar Sistema & Binários",
 	"menu_opt_change_language":   "Mudar Idioma (Change Language)",
+	"menu_opt_uninstall":         "Desinstalar / Remover VTProxy",
 	"menu_opt_exit":              "Sair do Menu",
 
 	// Menu Proxy
@@ -93,4 +94,18 @@ var dictPT = map[string]string{
 	"update_running":             "Baixando e aplicando atualização oficial...",
 	"update_success":             "Atualização concluída com sucesso!",
 	"update_canceled":            "Atualização cancelada.",
+
+	// Desinstalação
+	"uninstall_title":            "DESINSTALAÇÃO COMPLETA DO VTPROXY",
+	"uninstall_warning":          "ATENÇÃO: Ação irreversível! Todos os dados e serviços serão removidos.",
+	"uninstall_item_services":    "Parar e remover serviços systemd (vtproxy, udpgw*)",
+	"uninstall_item_configs":     "Remover /etc/proxyvt, /etc/vtproxy, /etc/proxy, /etc/udpgw e logs",
+	"uninstall_item_kernel":      "Restaurar otimizações de kernel, sysctl e limites",
+	"uninstall_item_ssh":         "Restaurar configurações e drop-ins de SSH",
+	"uninstall_item_binaries":    "Remover binários (/usr/local/bin/proxy-server, udpgw, vt)",
+	"uninstall_cancel":           "Cancelar e voltar ao menu",
+	"uninstall_confirm_prompt":   "Para confirmar, digite exatamente 'REMOVER':",
+	"uninstall_aborted":          "Desinstalação cancelada pelo usuário.",
+	"uninstall_running":          "Executando desinstalação completa do VTProxy...",
+	"uninstall_success":          "VTProxy e todos os componentes foram desinstalados com sucesso!",
 }

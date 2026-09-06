@@ -130,6 +130,7 @@ Modos:
   --install       Mesmo que o padrão
   --update        Atualiza proxy (latest) e udpgw (latest)
   --reinstall     Reinstala binários e menu vt (interativo ou com --latest)
+  --uninstall     Remove e desinstala completamente o VTProxy e serviços
 
 Opções:
   --latest, -L    Usa a versão mais recente do proxy e udpgw (também atualiza o menu)
@@ -146,6 +147,7 @@ Opções:
 Exemplos:
   $0
   $0 --update --yes
+  $0 --uninstall --yes
   $0 --reinstall --latest --yes
   $0 --version v2.1.0 --yes
   $0 -- --proxy-token 'VT-XXXX' --ip '1.2.3.4' --yes
@@ -154,6 +156,10 @@ EOF
 
 cleanup() {
   [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]] && rm -rf "$TMP_DIR"
+
+  if [[ "$MODE" == "uninstall" ]]; then
+    return 0
+  fi
 
   if [[ "$SERVICES_WERE_STOPPED" == true && "$INSTALL_COMPLETED" != true ]]; then
     log_warn "Instalação interrompida — tentando restaurar serviços parados..."
@@ -170,6 +176,7 @@ parse_args() {
     --install) MODE="install" ;;
     --update) MODE="update" ;;
     --reinstall) MODE="reinstall" ;;
+    --uninstall | --remove) MODE="uninstall" ;;
     --latest | -L)
       VERSION="latest"
       UDPGW_VERSION="latest"
@@ -2821,8 +2828,109 @@ print_finish_message() {
   echo
 }
 
+run_uninstall() {
+  if [[ "$ASSUME_YES" != true ]]; then
+    echo -e "${RED}⚠️  ATENÇÃO: Ação irreversível!${NC}"
+    echo -e "Esta opção removerá completamente o VTProxy, BadVPN/UDPGW, configurações, serviços e dados do sistema."
+    echo
+    read -r -p "Digite 'REMOVER' para confirmar a desinstalação completa: " confirm
+    local upper_confirm
+    upper_confirm=$(echo "$confirm" | tr '[:lower:]' '[:upper:]')
+    if [[ "$upper_confirm" != "REMOVER" ]]; then
+      log_info "Desinstalação cancelada pelo usuário."
+      exit 0
+    fi
+  fi
+
+  echo
+  log_info "Iniciando remoção completa do VTProxy e componentes..."
+
+  # 1. Parar e desabilitar serviços systemd
+  log_info "1/7 Parando e desabilitando serviços..."
+  if has_systemd; then
+    run_privileged systemctl stop vtproxy proxy-* udpgw* 2>/dev/null || true
+    run_privileged systemctl disable vtproxy proxy-* udpgw* 2>/dev/null || true
+
+    run_privileged rm -f /etc/systemd/system/vtproxy.service \
+                         /etc/systemd/system/proxy-*.service \
+                         /etc/systemd/system/udpgw.service \
+                         /etc/systemd/system/udpgw-*.service \
+                         /etc/systemd/system/ssh.service.d/99-limits.conf \
+                         /etc/systemd/system/sshd.service.d/99-limits.conf 2>/dev/null || true
+    run_privileged rmdir /etc/systemd/system/ssh.service.d /etc/systemd/system/sshd.service.d 2>/dev/null || true
+    run_privileged systemctl daemon-reload 2>/dev/null || true
+    run_privileged systemctl reset-failed 2>/dev/null || true
+  fi
+
+  # 2. Restaurar Kernel, Sysctl e Limits
+  log_info "2/7 Restaurando otimizações de kernel, sysctl e limites..."
+  run_privileged rm -f /etc/sysctl.d/99-proxy.conf \
+                       /etc/sysctl.d/99-vtproxy.conf \
+                       /etc/sysctl.d/99-veltrix-proxy.conf \
+                       /etc/sysctl.d/zz-custom-network.conf \
+                       /etc/security/limits.d/99-proxy.conf \
+                       /etc/security/limits.d/99-veltrix-proxy.conf \
+                       /etc/profile.d/99-proxy-limits.sh 2>/dev/null || true
+  if command -v sysctl >/dev/null 2>&1; then
+    run_privileged sysctl --system 2>/dev/null || true
+  fi
+
+  # 3. Restaurar SSH Drop-ins
+  log_info "3/7 Restaurando configurações do OpenSSH..."
+  run_privileged rm -f /etc/ssh/sshd_config.d/99-vtproxy.conf \
+                       /etc/ssh/sshd_config.d/99-veltrix-proxy.conf 2>/dev/null || true
+  if command -v systemctl >/dev/null 2>&1; then
+    run_privileged systemctl restart ssh sshd 2>/dev/null || true
+  fi
+
+  # 4. Remover regras e scripts de iptables
+  log_info "4/7 Removendo scripts do iptables..."
+  run_privileged rm -f /usr/local/bin/vt-iptables
+  if command -v iptables >/dev/null 2>&1; then
+    run_privileged iptables -D INPUT -i tun+ -j ACCEPT 2>/dev/null || true
+    run_privileged iptables -D FORWARD -i tun+ -j ACCEPT 2>/dev/null || true
+    run_privileged iptables -D FORWARD -o tun+ -j ACCEPT 2>/dev/null || true
+  fi
+
+  # 5. Remover diretórios de configuração e logs
+  log_info "5/7 Removendo dados, tokens, configurações e logs..."
+  run_privileged rm -rf /etc/proxyvt \
+                        /etc/vtproxy \
+                        /etc/proxy \
+                        /etc/udpgw \
+                        /etc/btun \
+                        /var/log/proxy 2>/dev/null || true
+
+  # 6. Remover arquivos de versão e cache
+  log_info "6/7 Removendo arquivos de versão e cache..."
+  run_privileged rm -f /etc/vt-menu-revision \
+                       /etc/proxy-version \
+                       /etc/udpgw-version \
+                       /etc/proxyvt-version \
+                       /tmp/.vt_update_check.json \
+                       /root/.proxy_token \
+                       "${HOME:-/root}/.proxy_token" 2>/dev/null || true
+
+  # 7. Remover binários
+  log_info "7/7 Removendo binários do sistema..."
+  run_privileged rm -f /usr/local/bin/proxy-server \
+                       /usr/local/bin/udpgw \
+                       /usr/local/bin/vt.sh \
+                       /usr/local/bin/vt 2>/dev/null || true
+
+  echo
+  log_success "VTProxy e todos os componentes foram desinstalados com sucesso!"
+}
+
 main() {
   parse_args "$@"
+
+  if [[ "$MODE" == "uninstall" ]]; then
+    ensure_sudo
+    run_uninstall
+    exit 0
+  fi
+
   print_header
 
   # Step 0: Root & Sudo

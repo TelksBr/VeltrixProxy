@@ -32,6 +32,7 @@ func ShowMainMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s%s", theme.White, i18n.T("menu_opt_update"), updateBadge, theme.Reset), w)
 
 		components.PrintBoxLine(fmt.Sprintf("%s6 • %s%s", theme.White, i18n.T("menu_opt_change_language"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.Red, i18n.T("menu_opt_uninstall"), theme.Reset), w)
 
 		components.PrintBoxDivider(w)
 		exitLine := fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("menu_opt_exit"), theme.Reset)
@@ -56,7 +57,7 @@ func ShowMainMenu(cfgMgr *config.Manager) {
 			}
 		}()
 
-		choice := components.ReadOption(i18n.T("prompt_select_option") + " [0-6]")
+		choice := components.ReadOption(i18n.T("prompt_select_option") + " [0-7]")
 		close(stopLiveUpdater)
 		wg.Wait()
 		switch choice {
@@ -72,6 +73,8 @@ func ShowMainMenu(cfgMgr *config.Manager) {
 			ShowUpdateMenu()
 		case "6":
 			ShowLanguageMenu()
+		case "7":
+			ShowUninstallMenu()
 		case "0":
 			components.ClearScreen()
 			fmt.Printf("%sObrigado por usar o Veltrix Proxy!%s\n", theme.Cyan, theme.Reset)
