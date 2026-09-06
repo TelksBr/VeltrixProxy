@@ -112,6 +112,19 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 			if system.IsServiceActive(system.ProxyServiceName) {
 				components.PrintInfo("O serviço do proxy já está em execução (ONLINE).")
 			} else {
+				conflicts := system.CheckConfiguredPortsConflict(cfg.Ports, cfg.SSH.InternalPort, cfg.DNSTT.Enable, cfg.DNSTT.UDP)
+				if len(conflicts) > 0 {
+					components.PrintWarning("Atenção: Conflito de portas detectado antes da inicialização:")
+					for _, c := range conflicts {
+						fmt.Printf("  • %s\n", c)
+					}
+					fmt.Println()
+					if !components.Confirm("Deseja tentar iniciar o serviço proxy mesmo com portas ocupadas?", false) {
+						components.Pause()
+						break
+					}
+				}
+
 				if err := system.StartService(system.ProxyServiceName); err == nil {
 					components.PrintSuccess("Serviço proxy iniciado com sucesso (ONLINE).")
 				} else {
@@ -133,6 +146,20 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 			components.Pause()
 
 		case "5":
+			if !system.IsServiceActive(system.ProxyServiceName) {
+				conflicts := system.CheckConfiguredPortsConflict(cfg.Ports, cfg.SSH.InternalPort, cfg.DNSTT.Enable, cfg.DNSTT.UDP)
+				if len(conflicts) > 0 {
+					components.PrintWarning("Atenção: Conflito de portas detectado antes da inicialização:")
+					for _, c := range conflicts {
+						fmt.Printf("  • %s\n", c)
+					}
+					fmt.Println()
+					if !components.Confirm("Deseja tentar reiniciar o serviço proxy mesmo com portas ocupadas?", false) {
+						components.Pause()
+						break
+					}
+				}
+			}
 			if err := system.RestartService(system.ProxyServiceName); err == nil {
 				components.PrintSuccess("Serviço proxy reiniciado com sucesso!")
 			} else {

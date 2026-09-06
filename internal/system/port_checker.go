@@ -3,6 +3,7 @@ package system
 import (
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
@@ -166,7 +167,110 @@ func EnsurePortNotBusy(proto string, port int) error {
 	return nil
 }
 
+// CheckConfiguredPortsConflict verifica se alguma das portas configuradas está ocupada.
+// Retorna uma lista com a descrição de cada conflito detectado.
+func CheckConfiguredPortsConflict(ports []string, internalPort int, dnsttEnabled bool, dnsttUDP string) []string {
+	var conflicts []string
+
+	// 1. Portas TCP do Proxy
+	for _, p := range ports {
+		clean := strings.TrimSpace(p)
+		if clean == "" {
+			continue
+		}
+		if idx := strings.Index(clean, ":"); idx >= 0 {
+			clean = clean[:idx]
+		}
+		var portNum int
+		if _, err := fmt.Sscanf(clean, "%d", &portNum); err == nil && portNum > 0 {
+			avail, procInfo := CheckTCPPortAvailable(portNum)
+			if !avail {
+				conflicts = append(conflicts, fmt.Sprintf("Porta TCP %d (%s) em uso por '%s'", portNum, p, procInfo))
+			}
+		}
+	}
+
+	// 2. Porta TCP do SSH Interno
+	if internalPort > 0 {
+		avail, procInfo := CheckTCPPortAvailable(internalPort)
+		if !avail {
+			conflicts = append(conflicts, fmt.Sprintf("Porta TCP SSH Interno %d em uso por '%s'", internalPort, procInfo))
+		}
+	}
+
+	// 3. Porta UDP do DNSTT (se ativado)
+	if dnsttEnabled && strings.TrimSpace(dnsttUDP) != "" {
+		udpPort := 53
+		udpClean := strings.TrimSpace(dnsttUDP)
+		if idx := strings.LastIndex(udpClean, ":"); idx >= 0 {
+			_, _ = fmt.Sscanf(udpClean[idx+1:], "%d", &udpPort)
+		} else {
+			_, _ = fmt.Sscanf(udpClean, "%d", &udpPort)
+		}
+		if udpPort > 0 {
+			avail, procInfo := CheckUDPPortAvailable(udpPort)
+			if !avail {
+				conflicts = append(conflicts, fmt.Sprintf("Porta UDP %d (DNSTT) em uso por '%s'", udpPort, procInfo))
+			}
+		}
+	}
+
+	return conflicts
+}
+
+// ReleasePort53FromSystemdResolved libera a porta 53 UDP no Ubuntu/Debian desativando
+// o DNSStubListener do systemd-resolved, ajustando /etc/resolv.conf e abrindo o firewall.
+func ReleasePort53FromSystemdResolved() error {
+	if runtime.GOOS == "windows" {
+		return fmt.Errorf("a liberação do systemd-resolved só é aplicável em sistemas Linux")
+	}
+
+	resolvedConfPath := "/etc/systemd/resolved.conf"
+	data, err := os.ReadFile(resolvedConfPath)
+	if err == nil {
+		content := string(data)
+		if strings.Contains(content, "#DNSStubListener=yes") {
+			content = strings.ReplaceAll(content, "#DNSStubListener=yes", "DNSStubListener=no")
+		} else if strings.Contains(content, "DNSStubListener=yes") {
+			content = strings.ReplaceAll(content, "DNSStubListener=yes", "DNSStubListener=no")
+		} else if !strings.Contains(content, "DNSStubListener=no") {
+			if strings.Contains(content, "[Resolve]") {
+				content = strings.Replace(content, "[Resolve]", "[Resolve]\nDNSStubListener=no", 1)
+			} else {
+				content += "\n[Resolve]\nDNSStubListener=no\n"
+			}
+		}
+		_ = os.WriteFile(resolvedConfPath, []byte(content), 0644)
+	}
+
+	// 2. Reinicia o resolvedor
+	_ = exec.Command("systemctl", "restart", "systemd-resolved").Run()
+
+	// 3. Aponta o resolv.conf real do systemd para o resolv.conf do sistema
+	if _, err := os.Stat("/run/systemd/resolve/resolv.conf"); err == nil {
+		_ = exec.Command("ln", "-sf", "/run/systemd/resolve/resolv.conf", "/etc/resolv.conf").Run()
+	}
+
+	// 4. Libera a porta 53 UDP no firewall (UFW e iptables)
+	if _, err := exec.LookPath("ufw"); err == nil {
+		_ = exec.Command("ufw", "allow", "53/udp").Run()
+	}
+	_ = exec.Command("iptables", "-I", "INPUT", "-p", "udp", "--dport", "53", "-j", "ACCEPT").Run()
+
+	// Aguarda liberação do socket
+	time.Sleep(300 * time.Millisecond)
+
+	// Valida se a porta 53 UDP foi realmente liberada
+	avail, procInfo := CheckUDPPortAvailable(53)
+	if !avail {
+		return fmt.Errorf("a porta 53 ainda está em uso por '%s'. Verifique outros serviços de DNS locais como dnsmasq ou named", procInfo)
+	}
+
+	return nil
+}
+
 // SleepShort espera brevemente para liberação de portas em testes ou restarts
 func SleepShort(ms int) {
 	time.Sleep(time.Duration(ms) * time.Millisecond)
 }
+

@@ -310,6 +310,15 @@ func showSSHSubmenu(cfgMgr *config.Manager) {
 		case "3":
 			resp := components.Prompt("Porta TCP direta para SSH interno (0=apenas via túnel)", strconv.Itoa(cfg.SSH.InternalPort))
 			if val, err := strconv.Atoi(resp); err == nil && val >= 0 {
+				if val > 0 && val != cfg.SSH.InternalPort {
+					avail, procInfo := system.CheckTCPPortAvailable(val)
+					if !avail {
+						components.PrintWarning(fmt.Sprintf("Atenção: A porta TCP %d já está em uso por '%s'.", val, procInfo))
+						if !components.Confirm("Deseja configurar esta porta mesmo assim?", false) {
+							break
+						}
+					}
+				}
 				cfg.SSH.InternalPort = val
 				_ = cfgMgr.Save(cfg)
 				components.PrintSuccess("Porta TCP direta atualizada.")
@@ -368,6 +377,15 @@ func showBTUNSubmenu(cfgMgr *config.Manager) {
 		case "4":
 			resp := components.Prompt("Porta UDP direta (0=desativado)", strconv.Itoa(cfg.BTUN.UDPPort))
 			if val, err := strconv.Atoi(resp); err == nil && val >= 0 {
+				if val > 0 && val != cfg.BTUN.UDPPort {
+					avail, procInfo := system.CheckUDPPortAvailable(val)
+					if !avail {
+						components.PrintWarning(fmt.Sprintf("Atenção: A porta UDP %d já está em uso por '%s'.", val, procInfo))
+						if !components.Confirm("Deseja configurar esta porta mesmo assim?", false) {
+							break
+						}
+					}
+				}
 				cfg.BTUN.UDPPort = val
 				_ = cfgMgr.Save(cfg)
 				components.PrintSuccess("btun.udp_port atualizado.")

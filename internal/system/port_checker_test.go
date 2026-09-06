@@ -1,6 +1,7 @@
 package system
 
 import (
+	"fmt"
 	"net"
 	"testing"
 )
@@ -89,3 +90,29 @@ func TestRegexSS(t *testing.T) {
 		t.Fatalf("captura incorreta: %s, %s", matches[1], matches[2])
 	}
 }
+
+func TestCheckConfiguredPortsConflict(t *testing.T) {
+	// Listener TCP ativo
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatalf("falha ao criar listener: %v", err)
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	ports := []string{fmt.Sprintf("%d:ssl", port)}
+
+	conflicts := CheckConfiguredPortsConflict(ports, 0, false, "")
+	if len(conflicts) != 1 {
+		t.Fatalf("esperado 1 conflito para porta %d, obtido %d (%v)", port, len(conflicts), conflicts)
+	}
+
+	// Porta interna conflitando
+	conflictsInternal := CheckConfiguredPortsConflict([]string{}, port, false, "")
+	if len(conflictsInternal) != 1 {
+		t.Fatalf("esperado 1 conflito para internalPort %d", port)
+	}
+
+	_ = ln.Close()
+}
+

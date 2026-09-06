@@ -70,6 +70,7 @@ var dictEN = map[string]string{
 	"dnstt_opt_fallback":        "Configure UDP Fallback (fallback)",
 	"dnstt_opt_upstream":        "Configure TCP Upstream (upstream)",
 	"dnstt_opt_mtu":             "Configure DNS MTU (mtu)",
+	"dnstt_opt_free_port53":      "Free Port 53 (systemd-resolved & Firewall)",
 
 	// Limiter
 	"limits_menu_title":          "CONNECTION LIMITS & EXPIRATION (LIMITER)",

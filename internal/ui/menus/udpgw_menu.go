@@ -173,20 +173,29 @@ func handleStartPort(ports []int) {
 		return
 	}
 
-	if isAll {
-		for _, p := range ports {
-			if err := udpgw.StartPort(p); err != nil {
-				components.PrintError(fmt.Sprintf("Porta %d: falha ao iniciar: %v", p, err))
-			} else {
-				components.PrintSuccess(fmt.Sprintf("Porta %d: iniciada com sucesso.", p))
+	startPortChecked := func(p int) {
+		if !udpgw.IsPortActive(p) {
+			avail, procInfo := system.CheckTCPPortAvailable(p)
+			if !avail {
+				components.PrintWarning(fmt.Sprintf("Atenção: A porta TCP %d já está em uso por '%s'.", p, procInfo))
+				if !components.Confirm(fmt.Sprintf("Deseja tentar iniciar a porta UDPGW %d mesmo assim?", p), false) {
+					return
+				}
 			}
 		}
-	} else {
-		if err := udpgw.StartPort(port); err != nil {
-			components.PrintError(fmt.Sprintf("Falha ao iniciar porta %d: %v", port, err))
+		if err := udpgw.StartPort(p); err != nil {
+			components.PrintError(fmt.Sprintf("Porta %d: falha ao iniciar: %v", p, err))
 		} else {
-			components.PrintSuccess(fmt.Sprintf("Porta %d iniciada com sucesso.", port))
+			components.PrintSuccess(fmt.Sprintf("Porta %d: iniciada com sucesso.", p))
 		}
+	}
+
+	if isAll {
+		for _, p := range ports {
+			startPortChecked(p)
+		}
+	} else {
+		startPortChecked(port)
 	}
 	components.Pause()
 }

@@ -94,12 +94,13 @@ func ShowDNSTTMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s", theme.White, i18n.T("dnstt_opt_fallback"), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s6 • %s%s", theme.White, i18n.T("dnstt_opt_upstream"), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("dnstt_opt_mtu"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s8 • %s%s", theme.White, i18n.T("dnstt_opt_free_port53"), theme.Reset), w)
 
 		components.PrintBoxDivider(w)
 		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("adv_opt_finish"), theme.Reset), w)
 		components.PrintBoxFooter(w)
 
-		choice := strings.TrimSpace(components.ReadOption("Selecione a opção [0-7]"))
+		choice := strings.TrimSpace(components.ReadOption("Selecione a opção [0-8]"))
 		switch choice {
 		case "1":
 			handleToggleDNSTT(cfgMgr, cfg, currentPubkey)
@@ -115,6 +116,8 @@ func ShowDNSTTMenu(cfgMgr *config.Manager) {
 			handleEditUpstream(cfgMgr, cfg)
 		case "7":
 			handleEditMTU(cfgMgr, cfg)
+		case "8":
+			handleFreePort53()
 		case "0", "":
 			return
 		default:
@@ -159,10 +162,22 @@ func handleToggleDNSTT(cfgMgr *config.Manager, cfg *config.Config, pubkey string
 			if !avail {
 				components.PrintWarning(fmt.Sprintf("Aviso: A porta UDP %d já está em uso por '%s'.", udpPort, procInfo))
 				if udpPort == 53 {
-					components.PrintInfo("Dica: Em sistemas com systemd-resolved, desative o listener local em /etc/systemd/resolved.conf (DNSStubListener=no) para liberar a porta 53.")
-				}
-				if !components.Confirm("Deseja ativar o DNSTT mesmo assim?", true) {
-					return
+					if components.Confirm("A porta 53 está ocupada. Deseja liberar a porta 53 automaticamente desativando o DNSStubListener do systemd-resolved e liberando no firewall?", true) {
+						if errFree := system.ReleasePort53FromSystemdResolved(); errFree == nil {
+							components.PrintSuccess("Porta 53 UDP liberada com sucesso do systemd-resolved!")
+						} else {
+							components.PrintError(fmt.Sprintf("Falha ao liberar porta 53: %v", errFree))
+							if !components.Confirm("Deseja ativar o DNSTT mesmo assim?", false) {
+								return
+							}
+						}
+					} else if !components.Confirm("Deseja ativar o DNSTT mesmo assim?", false) {
+						return
+					}
+				} else {
+					if !components.Confirm("Deseja ativar o DNSTT mesmo assim?", false) {
+						return
+					}
 				}
 			}
 		}
@@ -225,7 +240,20 @@ func handleEditUDP(cfgMgr *config.Manager, cfg *config.Config) {
 			avail, procInfo := system.CheckUDPPortAvailable(port)
 			if !avail {
 				components.PrintWarning(fmt.Sprintf("Aviso: A porta UDP %d já está em uso por '%s'.", port, procInfo))
-				if !components.Confirm("Deseja aplicar mesmo assim?", false) {
+				if port == 53 {
+					if components.Confirm("Deseja tentar liberar a porta 53 desativando o DNSStubListener do systemd-resolved agora?", true) {
+						if errFree := system.ReleasePort53FromSystemdResolved(); errFree == nil {
+							components.PrintSuccess("Porta 53 UDP liberada com sucesso!")
+						} else {
+							components.PrintError(fmt.Sprintf("Falha ao liberar porta 53: %v", errFree))
+							if !components.Confirm("Deseja aplicar esta porta mesmo assim?", false) {
+								return
+							}
+						}
+					} else if !components.Confirm("Deseja aplicar mesmo assim?", false) {
+						return
+					}
+				} else if !components.Confirm("Deseja aplicar mesmo assim?", false) {
 					return
 				}
 			}
@@ -241,6 +269,38 @@ func handleEditUDP(cfgMgr *config.Manager, cfg *config.Config) {
 		}
 		components.Pause()
 	}
+}
+
+func handleFreePort53() {
+	components.ClearScreen()
+	fmt.Printf("\n%s=== LIBERAR PORTA 53 UDP (SYSTEMD-RESOLVED & FIREWALL) ===%s\n\n", theme.Cyan, theme.Reset)
+	fmt.Printf("%sAção que será executada no sistema:%s\n", theme.Yellow, theme.Reset)
+	fmt.Println("1. Configurar 'DNSStubListener=no' em /etc/systemd/resolved.conf")
+	fmt.Println("2. Reiniciar o serviço systemd-resolved")
+	fmt.Println("3. Atualizar link simbólico de /etc/resolv.conf para o resolvedor upstream")
+	fmt.Println("4. Liberar a porta 53/udp no firewall (UFW e iptables)")
+	fmt.Println()
+
+	avail, proc := system.CheckUDPPortAvailable(53)
+	if avail {
+		components.PrintSuccess("A porta UDP 53 já está livre no sistema.")
+		if !components.Confirm("Deseja aplicar as configurações de firewall mesmo assim?", true) {
+			return
+		}
+	} else {
+		fmt.Printf("Status atual: %sPorta 53 em uso por '%s'%s\n\n", theme.Yellow, proc, theme.Reset)
+		if !components.Confirm("Deseja prosseguir com a liberação automática?", true) {
+			return
+		}
+	}
+
+	components.PrintInfo("Aplicando configurações no systemd-resolved e firewall...")
+	if err := system.ReleasePort53FromSystemdResolved(); err != nil {
+		components.PrintError(fmt.Sprintf("Erro ao liberar porta 53: %v", err))
+	} else {
+		components.PrintSuccess("Porta 53 UDP liberada com sucesso! O DNSTT agora pode escutar na porta :53.")
+	}
+	components.Pause()
 }
 
 func handleManageKeys(cfgMgr *config.Manager, cfg *config.Config) {
