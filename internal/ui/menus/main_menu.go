@@ -21,23 +21,22 @@ func ShowMainMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(fmt.Sprintf("%s1 • %s%s", theme.White, i18n.T("menu_opt_proxy"), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s2 • %s%s", theme.White, i18n.T("menu_opt_udpgw"), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s3 • %s%s", theme.White, i18n.T("menu_opt_tokens"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • %s%s", theme.White, i18n.T("menu_opt_optimization"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s", theme.White, i18n.T("menu_opt_connected_users"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • %s%s", theme.White, i18n.T("menu_opt_connected_users"), theme.Reset), w)
 
 		updateBadge := ""
 		if system.HasPendingUpdates() {
 			updateBadge = " " + theme.Yellow + "[" + i18n.T("update_badge_available") + "]"
 		}
-		components.PrintBoxLine(fmt.Sprintf("%s6 • %s%s%s", theme.White, i18n.T("menu_opt_update"), updateBadge, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s%s", theme.White, i18n.T("menu_opt_update"), updateBadge, theme.Reset), w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("menu_opt_change_language"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s6 • %s%s", theme.White, i18n.T("menu_opt_change_language"), theme.Reset), w)
 
 		components.PrintBoxDivider(w)
 		exitLine := fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("menu_opt_exit"), theme.Reset)
 		components.PrintBoxLine(exitLine, w)
 		components.PrintBoxFooter(w)
 
-		choice := components.ReadOption(i18n.T("prompt_select_option") + " [0-7]")
+		choice := components.ReadOption(i18n.T("prompt_select_option") + " [0-6]")
 		switch choice {
 		case "1":
 			ShowProxyMenu(cfgMgr)
@@ -46,12 +45,10 @@ func ShowMainMenu(cfgMgr *config.Manager) {
 		case "3":
 			ShowTokensMenu(cfgMgr)
 		case "4":
-			ShowOptimizeMenu()
-		case "5":
 			ShowOnlinesMenu()
-		case "6":
+		case "5":
 			ShowUpdateMenu()
-		case "7":
+		case "6":
 			ShowLanguageMenu()
 		case "0":
 			components.ClearScreen()
