@@ -58,7 +58,7 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
     "443:ssl"
   ],
   "log_level": "info",
-  "log_file": "",
+  "log_file": "/var/log/proxy/proxy.log",
   "buffer_size": 32768,
   "max_connections": 0,
   "idle_timeout": 0,
@@ -120,7 +120,7 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 | `token` | `string` | `""` | **Obrigatório.** Token de acesso validado na API de licenciamento. |
 | `ports` | `array` | `["80", "443:ssl"]` | Portas de escuta do proxy. Aceita formatos flexíveis (ver seção 5). |
 | `log_level` | `string` | `"info"` | Nível de log: `"debug"`, `"info"`, `"warn"`, `"error"`. |
-| `log_file` | `string` | `""` | Caminho do arquivo para salvar o banner de inicialização (opcional). |
+| `log_file` | `string` | `"/var/log/proxy/proxy.log"` | Caminho do arquivo de logs do proxy (`/var/log/proxy/proxy.log`). |
 | `buffer_size` | `int` | `32768` | Tamanho do buffer de cópia I/O em bytes (32 KB). |
 | `max_connections` | `int` | `0` | Máximo de conexões simultâneas por porta (`0` = ilimitado). |
 | `idle_timeout` | `int` | `0` | Timeout sem tráfego em segundos para derrubar túneis (`0` = desligado). |

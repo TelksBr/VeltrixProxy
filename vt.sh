@@ -1028,7 +1028,7 @@ default_cfg = {
   "ports": ["80", "443:ssl"],
   "disabled_ports": [],
   "log_level": "info",
-  "log_file": "",
+  "log_file": "/var/log/proxy/proxy.log",
   "buffer_size": 32768,
   "max_connections": 0,
   "idle_timeout": 0,
@@ -1093,6 +1093,9 @@ try:
     if "kill_expired" in d:
         d.pop("kill_expired", None)
         changed = True
+    if not d.get("log_file"):
+        d["log_file"] = "/var/log/proxy/proxy.log"
+        changed = True
     if sys.argv[1] and (not d.get("token") or d.get("token") != sys.argv[1]):
         d["token"] = sys.argv[1]
         changed = True
@@ -1108,10 +1111,12 @@ except Exception:
 
 migrate_flags_to_json_if_needed() {
     local token
-    token=$(load_proxy_token)
+    token=$(load_proxy_token_all 2>/dev/null || true)
+    [[ -z "$token" ]] && token=$(get_proxy_token 2>/dev/null || true)
+
+    sudo mkdir -p "$PROXY_JSON_DIR" "$PROXY_LOG_DIR" 2>/dev/null || true
 
     if ! command -v python3 >/dev/null 2>&1; then
-        ensure_proxy_json_config
         return 0
     fi
 
@@ -1126,7 +1131,7 @@ config = {
     "ports": [],
     "disabled_ports": [],
     "log_level": "info",
-    "log_file": "",
+    "log_file": "/var/log/proxy/proxy.log",
     "buffer_size": 32768,
     "max_connections": 0,
     "idle_timeout": 0,
@@ -1182,6 +1187,9 @@ if os.path.exists(json_path):
                     config[k] = v
     except Exception:
         pass
+
+if not config.get("log_file"):
+    config["log_file"] = "/var/log/proxy/proxy.log"
 
 def normalize_port_list(ports_list):
     res = []

@@ -150,7 +150,7 @@ func NewDefaultConfig(token string) *Config {
 		Ports:          PortList{"80", "443:ssl"},
 		DisabledPorts:  PortList{},
 		LogLevel:       "info",
-		LogFile:        "",
+		LogFile:        "/var/log/proxy/proxy.log",
 		BufferSize:     32768,
 		MaxConnections: 0,
 		IdleTimeout:    0,

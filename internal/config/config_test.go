@@ -17,6 +17,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.XHTTP.Grace != 15 || cfg.XHTTP.Idle != 60 {
 		t.Fatalf("esperado xhttp grace=15 e idle=60, obtido %d e %d", cfg.XHTTP.Grace, cfg.XHTTP.Idle)
 	}
+	if cfg.LogFile != "/var/log/proxy/proxy.log" {
+		t.Fatalf("esperado log_file /var/log/proxy/proxy.log, obtido %s", cfg.LogFile)
+	}
 }
 
 func TestManagerLoadSave(t *testing.T) {

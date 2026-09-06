@@ -1603,13 +1603,15 @@ EOF
 
 PROXY_JSON_DIR="/etc/proxyvt"
 PROXY_JSON_FILE="/etc/proxyvt/config.json"
+PROXY_LOG_DIR="/var/log/proxy"
+PROXY_LOG_FILE="/var/log/proxy/proxy.log"
 
 ensure_proxy_json_config() {
   local token="${1:-}"
   [[ -z "$token" ]] && token="$PROXY_TOKEN"
   [[ -z "$token" ]] && token=$(load_saved_proxy_token || true)
 
-  run_privileged mkdir -p "$PROXY_JSON_DIR" "/var/log/proxy" 2>/dev/null || true
+  run_privileged mkdir -p "$PROXY_JSON_DIR" "$PROXY_LOG_DIR" 2>/dev/null || true
 
   if [[ ! -f "$PROXY_JSON_FILE" ]]; then
     if [[ -x "/usr/local/bin/proxy-server" ]] && /usr/local/bin/proxy-server --dump-config >/dev/null 2>&1; then
@@ -1627,7 +1629,7 @@ default_cfg = {
   "ports": ["80", "443:ssl"],
   "disabled_ports": [],
   "log_level": "info",
-  "log_file": "",
+  "log_file": "/var/log/proxy/proxy.log",
   "buffer_size": 32768,
   "max_connections": 0,
   "idle_timeout": 0,
@@ -1689,7 +1691,7 @@ with open(path, "w", encoding="utf-8") as f:
   ],
   "disabled_ports": [],
   "log_level": "info",
-  "log_file": "",
+  "log_file": "/var/log/proxy/proxy.log",
   "buffer_size": 32768,
   "max_connections": 0,
   "idle_timeout": 0,
@@ -1750,6 +1752,9 @@ try:
     if "kill_expired" in d:
         d.pop("kill_expired", None)
         changed = True
+    if not d.get("log_file"):
+        d["log_file"] = "/var/log/proxy/proxy.log"
+        changed = True
     if sys.argv[1] and (not d.get("token") or d.get("token") != sys.argv[1]):
         d["token"] = sys.argv[1]
         changed = True
@@ -1761,6 +1766,14 @@ except Exception:
     pass
 ' "$token" 2>/dev/null || true
   fi
+
+  # Garante diretório de logs e preenche log_file se estiver vazio ("")
+  run_privileged mkdir -p "$PROXY_LOG_DIR" 2>/dev/null || true
+  if [[ -f "$PROXY_JSON_FILE" ]]; then
+    if grep -qE '"log_file"[[:space:]]*:[[:space:]]*""' "$PROXY_JSON_FILE" 2>/dev/null; then
+      safe_sed_inplace "$PROXY_JSON_FILE" 's|"log_file"[[:space:]]*:[[:space:]]*""|"log_file": "/var/log/proxy/proxy.log"|g' || true
+    fi
+  fi
 }
 
 migrate_flags_to_json_config() {
@@ -1769,7 +1782,7 @@ migrate_flags_to_json_config() {
 
   log_info "Verificando migração de configurações do proxy para JSON (/etc/proxyvt/config.json)..."
 
-  run_privileged mkdir -p "$PROXY_JSON_DIR" 2>/dev/null || true
+  run_privileged mkdir -p "$PROXY_JSON_DIR" "$PROXY_LOG_DIR" 2>/dev/null || true
 
   if ! command -v python3 >/dev/null 2>&1; then
     log_info "Python 3 não detectado; utilizando gerador nativo de config.json."
@@ -1788,7 +1801,7 @@ config = {
     "ports": [],
     "disabled_ports": [],
     "log_level": "info",
-    "log_file": "",
+    "log_file": "/var/log/proxy/proxy.log",
     "buffer_size": 32768,
     "max_connections": 0,
     "idle_timeout": 0,
@@ -2049,7 +2062,10 @@ if "limits" in config and isinstance(config["limits"], dict):
     config["limits"].pop("kill_expired", None)
 if "kill_expired" in config:
     config.pop("kill_expired", None)
+if not config.get("log_file"):
+    config["log_file"] = "/var/log/proxy/proxy.log"
 
+os.makedirs("/var/log/proxy", exist_ok=True)
 os.makedirs(os.path.dirname(json_path), exist_ok=True)
 temp_path = json_path + ".tmp"
 with open(temp_path, "w", encoding="utf-8") as f:
@@ -2060,6 +2076,13 @@ if os.path.exists(json_path):
 else:
     os.rename(temp_path, json_path)
 ' "$token" 2>/dev/null || true
+
+  run_privileged mkdir -p "$PROXY_LOG_DIR" 2>/dev/null || true
+  if [[ -f "$PROXY_JSON_FILE" ]]; then
+    if grep -qE '"log_file"[[:space:]]*:[[:space:]]*""' "$PROXY_JSON_FILE" 2>/dev/null; then
+      safe_sed_inplace "$PROXY_JSON_FILE" 's|"log_file"[[:space:]]*:[[:space:]]*""|"log_file": "/var/log/proxy/proxy.log"|g' || true
+    fi
+  fi
 
   log_success "Migração de configurações para '/etc/proxyvt/config.json' concluída!"
 }

@@ -64,7 +64,19 @@ func (m *Manager) Load() (*Config, error) {
 		return nil, fmt.Errorf("erro ao decodificar JSON de %s: %w", m.path, err)
 	}
 
+	needsSave := false
+	if cfg.LogFile == "" {
+		cfg.LogFile = "/var/log/proxy/proxy.log"
+		needsSave = true
+	}
+
 	m.cfg = cfg
+	if needsSave {
+		_ = m.saveLocked()
+	} else if m.cfg.LogFile != "" {
+		_ = os.MkdirAll(filepath.Dir(m.cfg.LogFile), 0755)
+	}
+
 	return m.cfg, nil
 }
 
@@ -96,6 +108,11 @@ func (m *Manager) saveLocked() error {
 	dir := filepath.Dir(m.path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("falha ao criar diretório %s: %w", dir, err)
+	}
+
+	if m.cfg.LogFile != "" {
+		logDir := filepath.Dir(m.cfg.LogFile)
+		_ = os.MkdirAll(logDir, 0755)
 	}
 
 	data, err := json.MarshalIndent(m.cfg, "", "  ")
