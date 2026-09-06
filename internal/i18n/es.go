@@ -24,7 +24,7 @@ var dictES = map[string]string{
 	"proxy_opt_details":          "Detalles y estado de los puertos",
 	"proxy_opt_logs":             "Ver registros (logs) del servicio",
 	"proxy_opt_journal_logs":     "Registros en tiempo real del servicio (Journalctl)",
-	"proxy_opt_file_logs":        "Métricas y registros del archivo (log_file)",
+	"proxy_opt_file_logs":        "Métricas del proxy en tiempo real (En Vivo)",
 	"proxy_opt_back":             "Volver al menú principal",
 
 	// Submenú UDPGW

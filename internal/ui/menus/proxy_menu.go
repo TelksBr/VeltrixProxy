@@ -2,8 +2,11 @@ package menus
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 
 	"github.com/TelksBr/VeltrixProxy/internal/config"
 	"github.com/TelksBr/VeltrixProxy/internal/i18n"
@@ -143,7 +146,7 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 			handleRealtimeJournalLogs()
 
 		case "l":
-			showProxyLogFileMenu(cfgMgr)
+			showLiveProxyMetricsBanner(cfgMgr)
 
 		case "0":
 			return
@@ -254,105 +257,146 @@ func handleRealtimeJournalLogs() {
 	}
 }
 
-func showProxyLogFileMenu(cfgMgr *config.Manager) {
-	for {
-		cfg, _ := cfgMgr.Get()
-		logPath := cfg.LogFile
-		if logPath == "" {
-			logPath = "/var/log/proxy/proxy.log"
-		}
+// showLiveProxyMetricsBanner exibe diretamente o banner do log_file com atualização dinâmica em tempo real
+func showLiveProxyMetricsBanner(cfgMgr *config.Manager) {
+	cfg, _ := cfgMgr.Get()
+	logPath := cfg.LogFile
+	if logPath == "" {
+		logPath = "/var/log/proxy/proxy.log"
+	}
 
-		w := components.GetBoxWidth()
-		components.ClearScreen()
-		components.PrintBoxHeader("MÉTRICAS & REGISTROS (LOG_FILE)", theme.Cyan, w)
+	fd := int(os.Stdin.Fd())
+	isTTY := term.IsTerminal(fd)
 
-		exists, sizeBytes, _ := system.GetLogFileInfo(logPath)
-		statusStr := theme.Green + "Ativo" + theme.Reset
-		sizeStr := system.FormatBytes(sizeBytes)
-		if !exists {
-			statusStr = theme.Yellow + "Não criado ainda" + theme.Reset
-			sizeStr = "0 B"
-		}
-
-		components.PrintBoxLine(fmt.Sprintf("%s• Arquivo: %s%s%s", theme.White, theme.Cyan, logPath, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s• Tamanho: %s%s │ Status: %s", theme.White, theme.Cyan, sizeStr, statusStr), w)
-		components.PrintBoxDivider(w)
-
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Visualizar últimas 60 linhas de métricas%s", theme.White, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Acompanhar métricas em tempo real (tail -f)%s", theme.White, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • Limpar / zerar arquivo de log%s", theme.White, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • Alterar caminho do arquivo (log_file)%s", theme.White, theme.Reset), w)
-		components.PrintBoxDivider(w)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
-		components.PrintBoxFooter(w)
-
-		choice := components.ReadOption(i18n.T("prompt_select_option") + " [0-4]")
-		switch choice {
-		case "1":
-			components.ClearScreen()
-			if !exists {
-				components.PrintWarning(fmt.Sprintf("O arquivo '%s' ainda não foi gerado pelo proxy.", logPath))
-				components.PrintInfo("Ele será criado automaticamente assim que o serviço registrar conexões e métricas.")
-			} else {
-				content, err := system.ReadFileTail(logPath, 60)
-				if err != nil {
-					components.PrintError(fmt.Sprintf("Erro ao ler arquivo: %v", err))
-				} else if strings.TrimSpace(content) == "" {
-					components.PrintInfo(fmt.Sprintf("O arquivo '%s' está vazio no momento.", logPath))
-				} else {
-					fmt.Printf("%s--- ÚLTIMAS LINHAS DE %s ---%s\n\n", theme.Cyan, logPath, theme.Reset)
-					fmt.Println(content)
-				}
-			}
-			components.Pause()
-
-		case "2":
-			components.ClearScreen()
-			if !exists {
-				components.PrintWarning(fmt.Sprintf("O arquivo '%s' ainda não existe para acompanhamento.", logPath))
-				components.Pause()
-			} else {
-				fmt.Printf("%s--- ACOMPANHAMENTO AO VIVO (%s) ---%s\n", theme.Cyan, logPath, theme.Reset)
-				fmt.Printf("%sPressione [Ctrl+C] a qualquer momento para pausar e retornar ao menu.%s\n\n", theme.Yellow, theme.Reset)
-				if err := system.StreamFileTail(logPath, 50); err != nil {
-					components.PrintError(fmt.Sprintf("Erro ao acompanhar arquivo: %v", err))
-					components.Pause()
-				} else {
-					fmt.Printf("\n%sℹ Acompanhamento finalizado.%s\n", theme.Cyan, theme.Reset)
-					time.Sleep(1 * time.Second)
-				}
-			}
-
-		case "3":
-			if !exists {
-				components.PrintInfo("O arquivo de log não existe no momento.")
-			} else {
-				if components.Confirm("Deseja realmente limpar/zerar o arquivo de log?", false) {
-					if err := system.ClearLogFile(logPath); err == nil {
-						components.PrintSuccess("Arquivo de log limpo com sucesso!")
-					} else {
-						components.PrintError(fmt.Sprintf("Erro ao limpar arquivo: %v", err))
-					}
-				}
-			}
-			components.Pause()
-
-		case "4":
-			newPath := components.Prompt("Novo caminho para log_file", logPath)
-			if newPath != "" && newPath != logPath {
-				cfg.LogFile = newPath
-				if err := cfgMgr.Save(cfg); err == nil {
-					_ = system.RestartService(system.ProxyServiceName)
-					components.PrintSuccess(fmt.Sprintf("Caminho do log_file atualizado para '%s' e proxy reiniciado.", newPath))
-				} else {
-					components.PrintError(fmt.Sprintf("Erro ao salvar configuração: %v", err))
-				}
-				components.Pause()
-			}
-
-		case "0", "":
-			return
+	var oldState *term.State
+	if isTTY {
+		var err error
+		oldState, err = term.MakeRaw(fd)
+		if err == nil {
+			defer func() {
+				_ = term.Restore(fd, oldState)
+				fmt.Print("\033[?25h") // Garante restauração da visibilidade do cursor
+			}()
 		}
 	}
+
+	exitChan := make(chan struct{})
+
+	// Goroutine que escuta qualquer tecla de saída imediata
+	go func() {
+		var b [1]byte
+		for {
+			n, err := os.Stdin.Read(b[:])
+			if err != nil || n == 0 {
+				break
+			}
+			ch := b[0]
+			// Enter (\r, \n), Q/q, Ctrl+C (3), Esc (27), Espaço
+			if ch == '\r' || ch == '\n' || ch == 'q' || ch == 'Q' || ch == 3 || ch == 27 || ch == ' ' {
+				break
+			}
+		}
+		close(exitChan)
+	}()
+
+	components.ClearScreen()
+	renderLiveBannerFrame(logPath, isTTY)
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-exitChan:
+			components.ClearScreen()
+			return
+		case <-ticker.C:
+			renderLiveBannerFrame(logPath, isTTY)
+		}
+	}
+}
+
+func renderLiveBannerFrame(logPath string, isTTY bool) {
+	w := components.GetBoxWidth()
+	isProxyActive := system.IsServiceActive(system.ProxyServiceName)
+
+	statusBadge := theme.BadgeOnline + " " + theme.Green + "ONLINE (AO VIVO)" + theme.Reset
+	if !isProxyActive {
+		statusBadge = theme.BadgeOffline + " " + theme.Red + "SERVIÇO PARADO" + theme.Reset
+	}
+
+	var buf strings.Builder
+	buf.WriteString("\033[H\033[?25l") // Cursor Home e oculta o cursor durante render
+
+	buf.WriteString(components.FormatBoxHeader("VELTRIX PROXY • MÉTRICAS EM TEMPO REAL", theme.Cyan, w))
+	buf.WriteString("\n")
+
+	infoLine := fmt.Sprintf("Arquivo: %s%s%s │ Status: %s", theme.Cyan, logPath, theme.Reset, statusBadge)
+	buf.WriteString(components.FormatBoxLine(infoLine, w))
+	buf.WriteString("\n")
+
+	exitLine := fmt.Sprintf("Pressione %s[Enter]%s ou %s[Q]%s para retornar ao menu", theme.Yellow, theme.Reset, theme.Yellow, theme.Reset)
+	buf.WriteString(components.FormatBoxLine(exitLine, w))
+	buf.WriteString("\n")
+
+	buf.WriteString(components.FormatBoxFooter(w))
+	buf.WriteString("\n\n")
+
+	banner := getLatestProxyBanner(logPath)
+	if banner == "" {
+		if !isProxyActive {
+			buf.WriteString(fmt.Sprintf("%sℹ O serviço do proxy está OFFLINE. Inicie o proxy para ativar as métricas ao vivo.%s\n", theme.Yellow, theme.Reset))
+		} else {
+			buf.WriteString(fmt.Sprintf("%sℹ Aguardando o proxy registrar as primeiras métricas em '%s'...%s\n", theme.Cyan, logPath, theme.Reset))
+		}
+	} else {
+		buf.WriteString(banner)
+		buf.WriteString("\n")
+	}
+
+	// Limpa quaisquer linhas remanescentes abaixo do conteúdo renderizado
+	buf.WriteString("\033[J")
+
+	out := buf.String()
+	if isTTY {
+		// Em modo Raw do terminal, quebras de linha precisam ser CRLF (\r\n) para evitar efeito escada
+		out = strings.ReplaceAll(out, "\r\n", "\n")
+		out = strings.ReplaceAll(out, "\n", "\r\n")
+	}
+
+	_, _ = os.Stdout.WriteString(out)
+	_ = os.Stdout.Sync()
+}
+
+func getLatestProxyBanner(logPath string) string {
+	data, err := os.ReadFile(logPath)
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+
+	raw := string(data)
+	lines := strings.Split(raw, "\n")
+
+	// Se o arquivo contiver múltiplos banners acumulados (modo append)
+	if len(lines) > 25 {
+		lastBannerIdx := -1
+		for i := len(lines) - 1; i >= 0; i-- {
+			line := lines[i]
+			if strings.Contains(line, "v2.") || strings.Contains(line, "\\ \\ /") || strings.Contains(line, "RAM:") {
+				lastBannerIdx = i
+				if lastBannerIdx > 0 && strings.TrimSpace(lines[lastBannerIdx-1]) != "" {
+					lastBannerIdx--
+				}
+				break
+			}
+		}
+		if lastBannerIdx >= 0 {
+			lines = lines[lastBannerIdx:]
+		} else {
+			lines = lines[len(lines)-18:]
+		}
+	}
+
+	return strings.TrimRight(strings.Join(lines, "\n"), "\r\n ")
 }
 

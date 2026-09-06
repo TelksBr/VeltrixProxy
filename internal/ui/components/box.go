@@ -85,8 +85,8 @@ func GetBoxWidth() int {
 	return DefaultBoxWidth
 }
 
-// PrintBoxHeader desenha o topo da caixa com o título centralizado
-func PrintBoxHeader(title string, color string, width int) {
+// FormatBoxHeader formata o topo da caixa com o título centralizado e a divisória
+func FormatBoxHeader(title string, color string, width int) string {
 	if width <= 0 {
 		width = GetBoxWidth()
 	}
@@ -96,7 +96,6 @@ func PrintBoxHeader(title string, color string, width int) {
 
 	borderCol := theme.DarkGray
 	topBorder := strings.Repeat("─", width-2)
-	fmt.Printf("%s┌%s┐%s\n", borderCol, topBorder, theme.Reset)
 
 	contentWidth := width - 2
 	titleLen := theme.VisibleLen(title)
@@ -114,24 +113,37 @@ func PrintBoxHeader(title string, color string, width int) {
 		rightPad = 0
 	}
 
-	fmt.Printf("%s│%s%s%s%s%s%s│%s\n",
+	line1 := fmt.Sprintf("%s┌%s┐%s", borderCol, topBorder, theme.Reset)
+	line2 := fmt.Sprintf("%s│%s%s%s%s%s%s│%s",
 		borderCol,
 		strings.Repeat(" ", leftPad),
 		theme.Bold+color, title, theme.Reset,
 		strings.Repeat(" ", rightPad),
 		borderCol, theme.Reset,
 	)
-	PrintBoxDivider(width)
+	line3 := FormatBoxDivider(width)
+
+	return line1 + "\n" + line2 + "\n" + line3
 }
 
-// PrintBoxDivider desenha a linha divisória intermediária ├──────┤
-func PrintBoxDivider(width int) {
+// PrintBoxHeader desenha o topo da caixa com o título centralizado
+func PrintBoxHeader(title string, color string, width int) {
+	fmt.Println(FormatBoxHeader(title, color, width))
+}
+
+// FormatBoxDivider gera a linha divisória intermediária ├──────┤ sem quebra de linha
+func FormatBoxDivider(width int) string {
 	if width <= 0 {
 		width = GetBoxWidth()
 	}
 	borderCol := theme.DarkGray
 	divider := strings.Repeat("─", width-2)
-	fmt.Printf("%s├%s┤%s\n", borderCol, divider, theme.Reset)
+	return fmt.Sprintf("%s├%s┤%s", borderCol, divider, theme.Reset)
+}
+
+// PrintBoxDivider desenha a linha divisória intermediária ├──────┤
+func PrintBoxDivider(width int) {
+	fmt.Println(FormatBoxDivider(width))
 }
 
 // FormatBoxLine formata uma linha de conteúdo alinhada com as bordas da caixa
@@ -169,14 +181,19 @@ func PrintBoxLine(content string, width int) {
 	fmt.Println(FormatBoxLine(content, width))
 }
 
-// PrintBoxFooter fecha a caixa └──────┘
-func PrintBoxFooter(width int) {
+// FormatBoxFooter gera o fechamento da caixa └──────┘ sem quebra de linha
+func FormatBoxFooter(width int) string {
 	if width <= 0 {
 		width = GetBoxWidth()
 	}
 	borderCol := theme.DarkGray
 	bottomBorder := strings.Repeat("─", width-2)
-	fmt.Printf("%s└%s┘%s\n", borderCol, bottomBorder, theme.Reset)
+	return fmt.Sprintf("%s└%s┘%s", borderCol, bottomBorder, theme.Reset)
+}
+
+// PrintBoxFooter fecha a caixa └──────┘
+func PrintBoxFooter(width int) {
+	fmt.Println(FormatBoxFooter(width))
 }
 
 // PrintBoxCenterLine imprime uma linha de conteúdo centralizada dentro da caixa
