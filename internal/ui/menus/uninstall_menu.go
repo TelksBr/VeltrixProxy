@@ -32,9 +32,13 @@ func ShowUninstallMenu() {
 	components.PrintBoxFooter(w)
 
 	fmt.Printf("\n%s%s%s\n", theme.Red, i18n.T("uninstall_confirm_prompt"), theme.Reset)
-	confirmInput := strings.ToUpper(strings.TrimSpace(components.Prompt("Confirmação", "")))
+	label := i18n.T("uninstall_confirm_label")
+	if label == "" {
+		label = "Confirmação"
+	}
+	confirmInput := components.Prompt(label, "")
 
-	if confirmInput != "REMOVER" {
+	if !IsValidUninstallConfirmation(confirmInput) {
 		components.PrintInfo(i18n.T("uninstall_aborted"))
 		components.Pause()
 		return
@@ -58,3 +62,16 @@ func ShowUninstallMenu() {
 	fmt.Printf("%sObrigado por utilizar o VeltrixProxy!%s\n\n", theme.Cyan, theme.Reset)
 	os.Exit(0)
 }
+
+// IsValidUninstallConfirmation verifica se a entrada do usuário corresponde a uma das 3 palavras válidas:
+// REMOVER (Português), REMOVE (Inglês) ou ELIMINAR (Espanhol), de forma insensível a maiúsculas/minúsculas.
+func IsValidUninstallConfirmation(input string) bool {
+	normalized := strings.ToUpper(strings.TrimSpace(input))
+	switch normalized {
+	case "REMOVER", "REMOVE", "ELIMINAR":
+		return true
+	default:
+		return false
+	}
+}
+

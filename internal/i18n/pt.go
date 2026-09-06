@@ -105,6 +105,7 @@ var dictPT = map[string]string{
 	"uninstall_item_binaries":    "Remover binários (/usr/local/bin/proxy-server, udpgw, vt)",
 	"uninstall_cancel":           "Cancelar e voltar ao menu",
 	"uninstall_confirm_prompt":   "Para confirmar, digite exatamente 'REMOVER':",
+	"uninstall_confirm_label":    "Confirmação",
 	"uninstall_aborted":          "Desinstalação cancelada pelo usuário.",
 	"uninstall_running":          "Executando desinstalação completa do VTProxy...",
 	"uninstall_success":          "VTProxy e todos os componentes foram desinstalados com sucesso!",
