@@ -11,15 +11,13 @@ NC="${NC:-\033[0m}"
 REPO="TelksBr/VeltrixProxy"
 PROJECT_NAME="VTProxy"
 INSTALL_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh"
-MENU_URL="https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/vt.sh"
 RELEASE_BINARY_PREFIX="proxy"
 UDPGW_REPO="${UDPGW_REPO:-TelksBr/VeltrixUPGW}"
 BINARY_NAME="proxy-server"
 UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
-INSTALLER_REV="46"
-MENU_REV_EXPECTED="57"
+INSTALLER_REV="47"
 MENU_REV_FILE="/etc/vt-menu-revision"
 DEFAULT_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 VERSION_FILE="/etc/proxy-version"
@@ -55,7 +53,7 @@ STEP_TITLES=(
   "Plataforma e Releases do GitHub"
   "Baixando e Instalando Binários (proxy & udpgw)"
   "Otimizações de Kernel, BBR e OpenSSH"
-  "Instalando Script do Menu (vt.sh)"
+  "Instalando Menu CLI (vt)"
   "Sincronizando e Reiniciando Serviços Systemd"
 )
 
@@ -138,7 +136,7 @@ Opções:
   --version TAG   Versão específica do proxy (ex: v2.1.0)
   --udpgw-version TAG  Versão específica do UDP Gateway (ex: v1.0.1)
   --no-udpgw           Não instala/atualiza o binário udpgw
-  --binary-only   Instala/atualiza apenas os binários (não baixa vt.sh)
+  --binary-only   Instala/atualiza apenas os binários (não instala o menu vt)
   --proxy-token T Token da licença proxy (VT)
   --ip IP         IP da VPS vinculado à licença
   --yes, -y       Sem confirmações interativas
@@ -2731,7 +2729,6 @@ install_menu_script() {
 
   local menu_dest="${INSTALL_DIR}/${MENU_NAME}"
   local menu_bin_tmp="${TMP_DIR}/vt-bin"
-  local menu_sh_tmp="${TMP_DIR}/vt.sh"
   local go_arch="$ARCH_NAME"
   local menu_bin_url="https://github.com/${REPO}/releases/download/menu-latest/vt-${OS_NAME}-${go_arch}"
   local installed_type=""
@@ -2753,43 +2750,8 @@ install_menu_script() {
   fi
 
   if [[ "$installed_type" != "go" ]]; then
-    log_warn "Binário Go indisponível ou incompatível; baixando fallback em shell script (vt.sh)..."
-    local old_hash="(ausente)" new_hash menu_url menu_bytes menu_rev_found
-
-    if [[ -f "$menu_dest" ]]; then
-      old_hash=$(file_sha256 "$menu_dest")
-    fi
-
-    MENU_COMMIT_SHA=$(resolve_repo_main_sha || true)
-    if [[ -n "$MENU_COMMIT_SHA" ]]; then
-      menu_url="https://raw.githubusercontent.com/${REPO}/${MENU_COMMIT_SHA}/vt.sh"
-    else
-      menu_url="${MENU_URL}?$(date +%s)"
-    fi
-
-    download_file "$menu_url" "$menu_sh_tmp"
-
-    if ! grep -q "MENU_REV=" "$menu_sh_tmp" 2>/dev/null && ! grep -q "prompt_proxy_advanced_options" "$menu_sh_tmp" 2>/dev/null; then
-      download_file "${MENU_URL}?ts=$(date +%s)&nocache=1" "$menu_sh_tmp"
-    fi
-
-    if ! head -n1 "$menu_sh_tmp" | grep -qE '^#!'; then
-      log_error "Menu de fallback baixado inválido (sem shebang)."
-      exit 1
-    fi
-
-    menu_rev_found=$(
-      grep -oE 'MENU_REV="[^"]+"' "$menu_sh_tmp" 2>/dev/null \
-        | head -n1 \
-        | sed -E 's/MENU_REV="([^"]+)"/\1/' || true
-    )
-
-    run_privileged rm -f "$menu_dest"
-    run_privileged install -m 755 "$menu_sh_tmp" "$menu_dest"
-    new_hash=$(file_sha256 "$menu_dest")
-    menu_bytes=$(wc -c <"$menu_dest" | tr -d ' ')
-    echo "${menu_rev_found:-unknown}" | run_privileged tee "$MENU_REV_FILE" >/dev/null
-    log_success "Menu em shell script instalado: ${menu_dest} (${menu_bytes} bytes, rev=${menu_rev_found:-legacy})"
+    log_error "Não foi possível baixar ou validar o binário nativo do menu em Go (${menu_bin_url})."
+    return 1
   fi
 
   hash -r 2>/dev/null || true
