@@ -3,6 +3,7 @@ package menus
 import (
 	"fmt"
 
+	"github.com/TelksBr/VeltrixProxy/internal/i18n"
 	"github.com/TelksBr/VeltrixProxy/internal/system"
 	"github.com/TelksBr/VeltrixProxy/internal/ui/components"
 	"github.com/TelksBr/VeltrixProxy/internal/ui/theme"
@@ -13,10 +14,7 @@ func ShowOptimizeMenu() {
 	for {
 		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintDashboardHeader(w)
-
-		components.PrintBoxLine("OTIMIZAÇÕES DE PERFORMANCE DO LINUX", w)
-		components.PrintBoxDivider(w)
+		components.PrintBoxHeader(i18n.T("optimize_menu_title"), theme.Cyan, w)
 
 		components.PrintBoxLine(fmt.Sprintf("%s1 • Otimizar limites de arquivos e sockets (65536 / limits.d)%s", theme.White, theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s2 • Aplicar otimizações de Kernel & TCP BBR (sysctl.d)%s", theme.White, theme.Reset), w)

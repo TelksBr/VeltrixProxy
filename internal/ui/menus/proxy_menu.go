@@ -23,7 +23,13 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 
 		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintDashboardHeader(w)
+		components.PrintBoxHeader(i18n.T("proxy_menu_title"), theme.Cyan, w)
+
+		isProxyActive := system.IsServiceActive(system.ProxyServiceName)
+		proxyBadge := theme.BadgeOffline
+		if isProxyActive {
+			proxyBadge = theme.BadgeOnline
+		}
 
 		// Resumo de Portas
 		var activePortsStr string
@@ -33,24 +39,27 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 			activePortsStr = "nenhuma"
 		}
 
-		portsLine := fmt.Sprintf("%sPortas Ativas:%s %s%s%s", theme.Gray, theme.Reset, theme.Cyan, activePortsStr, theme.Reset)
-		components.PrintBoxLine(portsLine, w)
+		statusLine := fmt.Sprintf("%sStatus:%s %s %s│ Portas Ativas:%s %s%s%s",
+			theme.Gray, theme.Reset, proxyBadge,
+			theme.DarkGray, theme.Reset, theme.Cyan, activePortsStr, theme.Reset,
+		)
+		components.PrintBoxLine(statusLine, w)
 		components.PrintBoxDivider(w)
 
 		// Opções
-		components.PrintBoxLine(fmt.Sprintf("%s1 — %s%s", theme.White, i18n.T("proxy_opt_start_specific"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s2 — %s%s", theme.White, i18n.T("proxy_opt_start_all"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s3 — %s%s", theme.White, i18n.T("proxy_opt_pause"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s4 — %s%s", theme.White, i18n.T("proxy_opt_edit"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s5 — %s%s", theme.White, i18n.T("proxy_opt_remove"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s6 — %s%s", theme.White, i18n.T("proxy_opt_restart"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s7 — %s%s", theme.White, i18n.T("proxy_opt_adv"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s8 — %s%s", theme.White, i18n.T("proxy_opt_http"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s9 — %s%s", theme.White, i18n.T("proxy_opt_details"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%sL — %s%s", theme.White, i18n.T("proxy_opt_logs"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • %s%s", theme.White, i18n.T("proxy_opt_start_specific"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • %s%s", theme.White, i18n.T("proxy_opt_start_all"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • %s%s", theme.White, i18n.T("proxy_opt_pause"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • %s%s", theme.White, i18n.T("proxy_opt_edit"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s", theme.White, i18n.T("proxy_opt_remove"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s6 • %s%s", theme.White, i18n.T("proxy_opt_restart"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("proxy_opt_adv"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s8 • %s%s", theme.White, i18n.T("proxy_opt_http"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s9 • %s%s", theme.White, i18n.T("proxy_opt_details"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%sL • %s%s", theme.White, i18n.T("proxy_opt_logs"), theme.Reset), w)
 
 		components.PrintBoxDivider(w)
-		backLine := fmt.Sprintf("%s0 — %s%s", theme.Red, i18n.T("proxy_opt_back"), theme.Reset)
+		backLine := fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("proxy_opt_back"), theme.Reset)
 		components.PrintBoxLine(backLine, w)
 		components.PrintBoxFooter(w)
 

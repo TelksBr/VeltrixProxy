@@ -26,6 +26,12 @@ var dictES = map[string]string{
 	"proxy_opt_logs":             "Ver registros (logs) del servicio",
 	"proxy_opt_back":             "Volver al menú principal",
 
+	// Submenus
+	"udpgw_menu_title":           "ADMINISTRADOR BADVPN / UDPGW",
+	"tokens_menu_title":          "GESTIONAR TOKENS DE LICENCIA",
+	"optimize_menu_title":        "OPTIMIZACIONES DE RED & KERNEL",
+	"onlines_menu_title":         "USUARIOS CONECTADOS (ONLINE)",
+
 	// Menu Avanzado
 	"adv_menu_title":             "OPCIONES AVANZADAS DEL PROXY (JSON)",
 	"adv_opt_perf":               "Rendimiento & Timeouts (Buffer, Conexiones, Ulimit)",

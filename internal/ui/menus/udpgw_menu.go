@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/TelksBr/VeltrixProxy/internal/i18n"
 	"github.com/TelksBr/VeltrixProxy/internal/system"
 	"github.com/TelksBr/VeltrixProxy/internal/udpgw"
 	"github.com/TelksBr/VeltrixProxy/internal/ui/components"
@@ -15,7 +16,7 @@ func ShowUDPGWMenu() {
 	for {
 		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintDashboardHeader(w)
+		components.PrintBoxHeader(i18n.T("udpgw_menu_title"), theme.Cyan, w)
 
 		currentPort := udpgw.GetConfiguredPort()
 		isActive := udpgw.IsActive()

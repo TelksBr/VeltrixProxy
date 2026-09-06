@@ -3,6 +3,7 @@ package menus
 import (
 	"fmt"
 
+	"github.com/TelksBr/VeltrixProxy/internal/i18n"
 	"github.com/TelksBr/VeltrixProxy/internal/proxy"
 	"github.com/TelksBr/VeltrixProxy/internal/ui/components"
 	"github.com/TelksBr/VeltrixProxy/internal/ui/theme"
@@ -13,7 +14,7 @@ func ShowOnlinesMenu() {
 	for {
 		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintDashboardHeader(w)
+		components.PrintBoxHeader(i18n.T("onlines_menu_title"), theme.Cyan, w)
 
 		total := proxy.GetOnlineUsersTotal()
 		infoLine := fmt.Sprintf("%sConexões ativas no momento:%s %s%d conexões%s",

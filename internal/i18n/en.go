@@ -26,6 +26,12 @@ var dictEN = map[string]string{
 	"proxy_opt_logs":             "View service logs",
 	"proxy_opt_back":             "Back to main menu",
 
+	// Submenus
+	"udpgw_menu_title":           "BADVPN / UDPGW MANAGER",
+	"tokens_menu_title":          "MANAGE LICENSE TOKENS",
+	"optimize_menu_title":        "NETWORK & KERNEL OPTIMIZATIONS",
+	"onlines_menu_title":         "CONNECTED USERS (ONLINE)",
+
 	// Advanced Menu
 	"adv_menu_title":             "ADVANCED PROXY OPTIONS (JSON)",
 	"adv_opt_perf":               "Performance & Timeouts (Buffer, Conns, Ulimit)",

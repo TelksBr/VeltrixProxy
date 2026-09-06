@@ -3,6 +3,8 @@ package components
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -19,9 +21,22 @@ const (
 	MaxBoxWidth     = 74
 )
 
-// ClearScreen limpa o terminal
+// ClearScreen limpa o terminal de forma confiável em qualquer sistema operacional e emulador (Linux, WSL, Windows, SSH)
 func ClearScreen() {
-	fmt.Print("\033[H\033[2J")
+	if runtime.GOOS == "windows" {
+		cmd := exec.Command("cmd", "/c", "cls")
+		cmd.Stdout = os.Stdout
+		_ = cmd.Run()
+	} else {
+		cmd := exec.Command("clear")
+		cmd.Stdout = os.Stdout
+		_ = cmd.Run()
+	}
+	// Envia também sequência ANSI completa com limpeza de scrollback
+	// \033[H: Cursor Home (linha 1, coluna 1)
+	// \033[2J: Limpa todo o viewport da tela
+	// \033[3J: Limpa todo o buffer de rolagem (scrollback) no Windows Terminal, ConPTY e xterm
+	fmt.Print("\033[H\033[2J\033[3J")
 }
 
 // GetTerminalWidth detecta dinamicamente a largura em colunas do terminal
