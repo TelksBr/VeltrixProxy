@@ -14,11 +14,10 @@ var dictEN = map[string]string{
 
 	// Proxy Menu
 	"proxy_menu_title":           "VT PROXY MANAGER",
-	"proxy_opt_start_specific":   "Open / Enable specific port",
-	"proxy_opt_start_all":        "Enable all configured ports",
-	"proxy_opt_pause":            "Pause proxy service",
-	"proxy_opt_edit":             "Manage ports (Enable / Disable)",
-	"proxy_opt_remove":           "Remove proxy port",
+	"proxy_opt_add":              "Add port to proxy",
+	"proxy_opt_remove":           "Remove port from proxy",
+	"proxy_opt_start":            "Start proxy service (Turn On)",
+	"proxy_opt_stop":             "Stop proxy service (Turn Off)",
 	"proxy_opt_restart":          "Restart proxy service",
 	"proxy_opt_adv":              "Advanced options (config.json)",
 	"proxy_opt_http":             "Change global HTTP response",

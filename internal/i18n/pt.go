@@ -14,11 +14,10 @@ var dictPT = map[string]string{
 
 	// Menu Proxy
 	"proxy_menu_title":           "GERENCIADOR DO PROXY VT",
-	"proxy_opt_start_specific":   "Abrir / Ativar porta específica",
-	"proxy_opt_start_all":        "Ativar todas as portas configuradas",
-	"proxy_opt_pause":            "Pausar serviço do proxy",
-	"proxy_opt_edit":             "Gerenciar portas (Ativar / Desativar)",
+	"proxy_opt_add":              "Adicionar porta ao proxy",
 	"proxy_opt_remove":           "Remover porta do proxy",
+	"proxy_opt_start":            "Iniciar serviço do proxy (Ligar)",
+	"proxy_opt_stop":             "Parar serviço do proxy (Desligar)",
 	"proxy_opt_restart":          "Reiniciar serviço do proxy",
 	"proxy_opt_adv":              "Opções avançadas (config.json)",
 	"proxy_opt_http":             "Alterar resposta HTTP global",

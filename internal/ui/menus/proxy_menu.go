@@ -46,16 +46,23 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(statusLine, w)
 		components.PrintBoxDivider(w)
 
-		// Opções
-		components.PrintBoxLine(fmt.Sprintf("%s1 • %s%s", theme.White, i18n.T("proxy_opt_start_specific"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • %s%s", theme.White, i18n.T("proxy_opt_start_all"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • %s%s", theme.White, i18n.T("proxy_opt_pause"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • %s%s", theme.White, i18n.T("proxy_opt_edit"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s", theme.White, i18n.T("proxy_opt_remove"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s6 • %s%s", theme.White, i18n.T("proxy_opt_restart"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("proxy_opt_adv"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s8 • %s%s", theme.White, i18n.T("proxy_opt_http"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s9 • %s%s", theme.White, i18n.T("proxy_opt_details"), theme.Reset), w)
+		// Gestão de Portas
+		components.PrintBoxLine(fmt.Sprintf("%s1 • %s%s", theme.White, i18n.T("proxy_opt_add"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • %s%s", theme.White, i18n.T("proxy_opt_remove"), theme.Reset), w)
+
+		components.PrintBoxDivider(w)
+
+		// Controle do Serviço
+		components.PrintBoxLine(fmt.Sprintf("%s3 • %s%s", theme.White, i18n.T("proxy_opt_start"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • %s%s", theme.White, i18n.T("proxy_opt_stop"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s", theme.White, i18n.T("proxy_opt_restart"), theme.Reset), w)
+
+		components.PrintBoxDivider(w)
+
+		// Configurações & Diagnóstico
+		components.PrintBoxLine(fmt.Sprintf("%s6 • %s%s", theme.White, i18n.T("proxy_opt_adv"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("proxy_opt_http"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s8 • %s%s", theme.White, i18n.T("proxy_opt_details"), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%sL • %s%s", theme.White, i18n.T("proxy_opt_logs"), theme.Reset), w)
 
 		components.PrintBoxDivider(w)
@@ -63,10 +70,10 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(backLine, w)
 		components.PrintBoxFooter(w)
 
-		choice := strings.ToLower(components.ReadOption("Selecione a opção desejada [0-9/L]"))
+		choice := strings.ToLower(components.ReadOption(i18n.T("prompt_select_option") + " [0-8/L]"))
 		switch choice {
 		case "1":
-			portInput := components.Prompt("Digite a porta para abrir (ex: 80 ou 443:ssl)", "")
+			portInput := components.Prompt("Digite a porta para adicionar (ex: 80 ou 443:ssl)", "")
 			if portInput != "" {
 				if err := cfgMgr.AddPort(portInput); err == nil {
 					_ = system.RestartService(system.ProxyServiceName)
@@ -74,41 +81,37 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 				} else {
 					components.PrintError(fmt.Sprintf("Erro ao adicionar porta: %v", err))
 				}
+				components.Pause()
 			}
-			components.Pause()
 
 		case "2":
-			if err := system.StartService(system.ProxyServiceName); err == nil {
-				components.PrintSuccess("Todas as portas ativas foram iniciadas.")
-			} else {
-				components.PrintError(fmt.Sprintf("Falha ao iniciar: %v", err))
-			}
-			components.Pause()
+			removePortInteractive(cfgMgr)
 
 		case "3":
-			if err := system.StopService(system.ProxyServiceName); err == nil {
-				components.PrintSuccess("Serviço proxy pausado com sucesso.")
+			if system.IsServiceActive(system.ProxyServiceName) {
+				components.PrintInfo("O serviço do proxy já está em execução (ONLINE).")
 			} else {
-				components.PrintError(fmt.Sprintf("Falha ao pausar: %v", err))
-			}
-			components.Pause()
-
-		case "4":
-			managePortsSubmenu(cfgMgr)
-
-		case "5":
-			portInput := components.Prompt("Digite a porta para remover", "")
-			if portInput != "" {
-				if err := cfgMgr.RemovePort(portInput); err == nil {
-					_ = system.RestartService(system.ProxyServiceName)
-					components.PrintSuccess(fmt.Sprintf("Porta %s removida com sucesso.", portInput))
+				if err := system.StartService(system.ProxyServiceName); err == nil {
+					components.PrintSuccess("Serviço proxy iniciado com sucesso (ONLINE).")
 				} else {
-					components.PrintError(fmt.Sprintf("Erro ao remover porta: %v", err))
+					components.PrintError(fmt.Sprintf("Falha ao iniciar serviço: %v", err))
 				}
 			}
 			components.Pause()
 
-		case "6":
+		case "4":
+			if !system.IsServiceActive(system.ProxyServiceName) {
+				components.PrintInfo("O serviço do proxy já está parado (OFFLINE).")
+			} else {
+				if err := system.StopService(system.ProxyServiceName); err == nil {
+					components.PrintSuccess("Serviço proxy parado com sucesso (OFFLINE).")
+				} else {
+					components.PrintError(fmt.Sprintf("Falha ao parar serviço: %v", err))
+				}
+			}
+			components.Pause()
+
+		case "5":
 			if err := system.RestartService(system.ProxyServiceName); err == nil {
 				components.PrintSuccess("Serviço proxy reiniciado com sucesso!")
 			} else {
@@ -116,25 +119,25 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 			}
 			components.Pause()
 
-		case "7":
+		case "6":
 			ShowAdvancedMenu(cfgMgr)
 
-		case "8":
+		case "7":
 			currentResp := cfg.Response
 			newResp := components.Prompt("Nova resposta HTTP global", currentResp)
-			if newResp != "" {
+			if newResp != "" && newResp != currentResp {
 				cfg.Response = newResp
 				if err := cfgMgr.Save(cfg); err == nil {
 					_ = system.RestartService(system.ProxyServiceName)
 					components.PrintSuccess(fmt.Sprintf("Resposta HTTP atualizada para '%s'.", newResp))
 				}
+				components.Pause()
 			}
-			components.Pause()
 
-		case "9":
+		case "8":
 			showPortDetails(cfgMgr)
 
-		case "l", "10":
+		case "l", "9":
 			components.ClearScreen()
 			logs, err := system.GetServiceLogs(system.ProxyServiceName, 60)
 			if err != nil {
@@ -155,60 +158,50 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 	}
 }
 
-func managePortsSubmenu(cfgMgr *config.Manager) {
-	for {
-		cfg, _ := cfgMgr.Get()
-		w := components.GetBoxWidth()
-		components.ClearScreen()
-		components.PrintBoxHeader("GERENCIAMENTO DE PORTAS", theme.Cyan, w)
-
-		var allPorts []string
-		for _, p := range cfg.Ports {
-			allPorts = append(allPorts, fmt.Sprintf("%s [ATIVO]", p))
-		}
-		for _, p := range cfg.DisabledPorts {
-			allPorts = append(allPorts, fmt.Sprintf("%s [DESATIVADO]", p))
-		}
-
-		if len(allPorts) == 0 {
-			components.PrintBoxLine("Nenhuma porta configurada.", w)
-		} else {
-			for i, p := range allPorts {
-				badge := theme.Green + "● ON " + theme.Reset
-				if strings.Contains(p, "[DESATIVADO]") {
-					badge = theme.Red + "○ OFF" + theme.Reset
-				}
-				cleanName := strings.Split(p, " ")[0]
-				components.PrintBoxLine(fmt.Sprintf("%s%d • %s %s%s", theme.White, i+1, badge, theme.Cyan, cleanName), w)
-			}
-		}
-
-		components.PrintBoxDivider(w)
-		components.PrintBoxLine("Digite o número da porta para alternar (Ativar/Desativar)", w)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
-		components.PrintBoxFooter(w)
-
-		choice := components.ReadOption("Opção")
-		if choice == "0" || choice == "" {
-			return
-		}
-
-		var idx int
-		_, err := fmt.Sscanf(choice, "%d", &idx)
-		if err == nil && idx > 0 && idx <= len(allPorts) {
-			target := strings.Split(allPorts[idx-1], " ")[0]
-			nowActive, toggleErr := cfgMgr.TogglePort(target)
-			if toggleErr == nil {
-				_ = system.RestartService(system.ProxyServiceName)
-				statusMsg := "desativada"
-				if nowActive {
-					statusMsg = "ativada"
-				}
-				components.PrintSuccess(fmt.Sprintf("Porta %s %s.", target, statusMsg))
-			}
-			components.Pause()
-		}
+func removePortInteractive(cfgMgr *config.Manager) {
+	cfg, err := cfgMgr.Get()
+	if err != nil || len(cfg.Ports) == 0 {
+		components.PrintInfo("Nenhuma porta configurada no momento.")
+		components.Pause()
+		return
 	}
+
+	w := components.GetBoxWidth()
+	components.ClearScreen()
+	components.PrintBoxHeader("REMOVER PORTA DO PROXY", theme.Cyan, w)
+
+	for i, p := range cfg.Ports {
+		mode := "HTTP"
+		if strings.HasSuffix(p, ":ssl") {
+			mode = "HTTPS/SSL"
+		}
+		components.PrintBoxLine(fmt.Sprintf("%s%d • Porta %s%s %s(%s)%s", theme.White, i+1, theme.Cyan, p, theme.DarkGray, mode, theme.Reset), w)
+	}
+
+	components.PrintBoxDivider(w)
+	components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
+	components.PrintBoxFooter(w)
+
+	choice := components.Prompt(fmt.Sprintf("Digite o número da porta para remover [1-%d] ou '0' para cancelar", len(cfg.Ports)), "")
+	if choice == "" || choice == "0" {
+		return
+	}
+
+	var targetPort string
+	var idx int
+	if _, err := fmt.Sscanf(choice, "%d", &idx); err == nil && idx > 0 && idx <= len(cfg.Ports) {
+		targetPort = cfg.Ports[idx-1]
+	} else {
+		targetPort = choice
+	}
+
+	if err := cfgMgr.RemovePort(targetPort); err == nil {
+		_ = system.RestartService(system.ProxyServiceName)
+		components.PrintSuccess(fmt.Sprintf("Porta %s removida e proxy reiniciado.", targetPort))
+	} else {
+		components.PrintError(fmt.Sprintf("Erro ao remover porta: %v", err))
+	}
+	components.Pause()
 }
 
 func showPortDetails(cfgMgr *config.Manager) {
@@ -217,16 +210,16 @@ func showPortDetails(cfgMgr *config.Manager) {
 	components.ClearScreen()
 	components.PrintBoxHeader("DETALHES E STATUS DAS PORTAS", theme.Cyan, w)
 
-	for _, p := range cfg.Ports {
-		mode := "HTTP"
-		if strings.HasSuffix(p, ":ssl") {
-			mode = "HTTPS / TLS"
+	if len(cfg.Ports) == 0 {
+		components.PrintBoxLine(fmt.Sprintf("%sNenhuma porta configurada.%s", theme.DarkGray, theme.Reset), w)
+	} else {
+		for _, p := range cfg.Ports {
+			mode := "HTTP Normal"
+			if strings.HasSuffix(p, ":ssl") {
+				mode = "HTTPS / TLS (SSL)"
+			}
+			components.PrintBoxLine(fmt.Sprintf("Porta %s%s%s: %s | Status: %s", theme.Cyan, p, theme.Reset, mode, theme.BadgeOnline), w)
 		}
-		components.PrintBoxLine(fmt.Sprintf("Porta %s%s%s: %s | Status: %s", theme.Cyan, p, theme.Reset, mode, theme.BadgeOnline), w)
-	}
-
-	for _, p := range cfg.DisabledPorts {
-		components.PrintBoxLine(fmt.Sprintf("Porta %s%s%s: Status: %s", theme.Gray, p, theme.Reset, theme.BadgeOffline), w)
 	}
 
 	components.PrintBoxDivider(w)

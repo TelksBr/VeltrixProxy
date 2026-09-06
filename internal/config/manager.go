@@ -151,7 +151,7 @@ func (m *Manager) AddPort(portStr string) error {
 	formatted := entry.String()
 	basePort := fmt.Sprintf("%d", entry.Port)
 
-	// Remove de portas ativas se já existir (evita duplicatas)
+	// Remove de portas ativas se já existir (evita duplicatas e atualiza sufixo :ssl se alterado)
 	cleanedActive := make([]string, 0, len(cfg.Ports))
 	for _, p := range cfg.Ports {
 		if !strings.HasPrefix(p, basePort+":") && p != basePort {
@@ -159,17 +159,8 @@ func (m *Manager) AddPort(portStr string) error {
 		}
 	}
 
-	// Remove de portas desativadas se estiver lá
-	cleanedDisabled := make([]string, 0, len(cfg.DisabledPorts))
-	for _, p := range cfg.DisabledPorts {
-		if !strings.HasPrefix(p, basePort+":") && p != basePort {
-			cleanedDisabled = append(cleanedDisabled, p)
-		}
-	}
-
 	cleanedActive = append(cleanedActive, formatted)
 	cfg.Ports = cleanedActive
-	cfg.DisabledPorts = cleanedDisabled
 
 	return m.Save(cfg)
 }
@@ -191,73 +182,7 @@ func (m *Manager) RemovePort(portStr string) error {
 		}
 	}
 
-	cleanedDisabled := make([]string, 0, len(cfg.DisabledPorts))
-	for _, p := range cfg.DisabledPorts {
-		if !strings.HasPrefix(p, basePort+":") && p != basePort {
-			cleanedDisabled = append(cleanedDisabled, p)
-		}
-	}
-
 	cfg.Ports = cleanedActive
-	cfg.DisabledPorts = cleanedDisabled
 
 	return m.Save(cfg)
-}
-
-// TogglePort alterna uma porta entre ativa e desativada
-func (m *Manager) TogglePort(portStr string) (bool, error) {
-	cfg, err := m.Get()
-	if err != nil {
-		return false, err
-	}
-
-	cleanStr := strings.TrimSpace(portStr)
-	basePort := strings.Split(cleanStr, ":")[0]
-
-	isActive := false
-	var matchingPort string
-
-	for _, p := range cfg.Ports {
-		if strings.HasPrefix(p, basePort+":") || p == basePort {
-			isActive = true
-			matchingPort = p
-			break
-		}
-	}
-
-	if isActive {
-		// Desativar: mover de Ports para DisabledPorts
-		newActive := make([]string, 0, len(cfg.Ports))
-		for _, p := range cfg.Ports {
-			if !strings.HasPrefix(p, basePort+":") && p != basePort {
-				newActive = append(newActive, p)
-			}
-		}
-		cfg.Ports = newActive
-		cfg.DisabledPorts = append(cfg.DisabledPorts, matchingPort)
-		return false, m.Save(cfg)
-	}
-
-	// Ativar: mover de DisabledPorts para Ports
-	for _, p := range cfg.DisabledPorts {
-		if strings.HasPrefix(p, basePort+":") || p == basePort {
-			matchingPort = p
-			break
-		}
-	}
-
-	if matchingPort == "" {
-		matchingPort = cleanStr
-	}
-
-	newDisabled := make([]string, 0, len(cfg.DisabledPorts))
-	for _, p := range cfg.DisabledPorts {
-		if !strings.HasPrefix(p, basePort+":") && p != basePort {
-			newDisabled = append(newDisabled, p)
-		}
-	}
-	cfg.DisabledPorts = newDisabled
-	cfg.Ports = append(cfg.Ports, matchingPort)
-
-	return true, m.Save(cfg)
 }

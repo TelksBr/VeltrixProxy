@@ -81,7 +81,6 @@ func (pl *PortList) UnmarshalJSON(data []byte) error {
 type Config struct {
 	Token          string           `json:"token"`
 	Ports          PortList         `json:"ports"`
-	DisabledPorts  PortList         `json:"disabled_ports"`
 	LogLevel       string           `json:"log_level"`
 	LogFile        string           `json:"log_file"`
 	BufferSize     int              `json:"buffer_size"`
@@ -148,7 +147,6 @@ func NewDefaultConfig(token string) *Config {
 	return &Config{
 		Token:          token,
 		Ports:          PortList{"80", "443:ssl"},
-		DisabledPorts:  PortList{},
 		LogLevel:       "info",
 		LogFile:        "/var/log/proxy/proxy.log",
 		BufferSize:     32768,

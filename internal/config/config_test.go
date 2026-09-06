@@ -53,24 +53,6 @@ func TestManagerLoadSave(t *testing.T) {
 		t.Fatalf("porta 8080 não encontrada em Ports")
 	}
 
-	// Alternar porta (toggle para desativar)
-	active, err := mgr.TogglePort("8080")
-	if err != nil {
-		t.Fatalf("erro no toggle: %v", err)
-	}
-	if active {
-		t.Fatalf("esperava que a porta ficasse desativada")
-	}
-
-	// Alternar porta (toggle para ativar)
-	active, err = mgr.TogglePort("8080")
-	if err != nil {
-		t.Fatalf("erro no toggle 2: %v", err)
-	}
-	if !active {
-		t.Fatalf("esperava que a porta ficasse ativa")
-	}
-
 	// Remover porta
 	if err := mgr.RemovePort("8080"); err != nil {
 		t.Fatalf("erro ao remover: %v", err)
