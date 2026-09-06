@@ -16,12 +16,15 @@ import (
 	"time"
 )
 
-const (
+var (
 	CurrentMenuVersion = "3.0.0"
-	ProxyRepo          = "TelksBr/VeltrixProxy"
-	UDPGWRepo          = "TelksBr/VeltrixUPGW"
-	UpdateCacheFile    = "/tmp/.vt_update_check.json"
-	UpdateCacheTTL     = 1 * time.Hour
+)
+
+const (
+	ProxyRepo       = "TelksBr/VeltrixProxy"
+	UDPGWRepo       = "TelksBr/VeltrixUPGW"
+	UpdateCacheFile = "/tmp/.vt_update_check.json"
+	UpdateCacheTTL  = 1 * time.Hour
 )
 
 // ComponentStatus detalha o status de versão de um componente
@@ -158,11 +161,26 @@ func FetchRemoteUDPGWVersion() (string, error) {
 
 // FetchRemoteMenuVersion busca a versão do menu no GitHub
 func FetchRemoteMenuVersion() (string, error) {
-	// Acompanha a versão do pacote ou release menu-latest
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 
-	// Tier 1: Release tag API
+	// Tier 1: Download direto de menu-version.txt da release menu-latest (sem limites de rate limit da API)
+	txtURL := fmt.Sprintf("https://github.com/%s/releases/download/menu-latest/menu-version.txt", ProxyRepo)
+	txtReq, err := http.NewRequestWithContext(ctx, "GET", txtURL, nil)
+	if err == nil {
+		txtReq.Header.Set("User-Agent", "VeltrixProxy-VT/"+CurrentMenuVersion)
+		resp, err := httpClient.Do(txtReq)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64))
+			ver := CleanVersion(string(body))
+			if ver != "" {
+				return ver, nil
+			}
+		}
+	}
+
+	// Tier 2: Release tag API (extrai do título da release ex: 'VT CLI Manager v3.0.4')
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/menu-latest", ProxyRepo)
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err == nil {
@@ -184,7 +202,7 @@ func FetchRemoteMenuVersion() (string, error) {
 		}
 	}
 
-	// Tier 2: Fallback direto via raw.githubusercontent.com (sem rate limit de API)
+	// Tier 3: Fallback direto via raw.githubusercontent.com (sem rate limit de API)
 	rawURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/main/internal/system/updater.go", ProxyRepo)
 	rawReq, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
 	if err == nil {

@@ -32,21 +32,25 @@ jobs:
       - name: Build Menu Binaries
         run: |
           mkdir -p dist
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/vt-linux-amd64 ./cmd/vt
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/vt-linux-arm64 ./cmd/vt
+          MENU_VER="3.0.${{ github.run_number }}"
+          echo "Compilando Menu versão ${MENU_VER}..."
+          echo "${MENU_VER}" > dist/menu-version.txt
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X 'github.com/TelksBr/VeltrixProxy/internal/system.CurrentMenuVersion=${MENU_VER}'" -o dist/vt-linux-amd64 ./cmd/vt
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X 'github.com/TelksBr/VeltrixProxy/internal/system.CurrentMenuVersion=${MENU_VER}'" -o dist/vt-linux-arm64 ./cmd/vt
           cd dist
-          sha256sum vt-linux-amd64 vt-linux-arm64 > checksums-menu.txt
+          sha256sum vt-linux-amd64 vt-linux-arm64 menu-version.txt > checksums-menu.txt
           ls -la
 
       - name: Publish Menu Pre-Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: menu-latest
-          name: "VT CLI Manager (Go) - Latest Pre-Release"
+          name: "VT CLI Manager v3.0.${{ github.run_number }} (menu-latest)"
           body: |
-            ## VT CLI Manager (Go Nativo)
+            ## VT CLI Manager v3.0.${{ github.run_number }} (Go Nativo)
             Binários compilados estaticamente para o menu interativo do VeltrixProxy.
 
+            - **Versão:** v3.0.${{ github.run_number }}
             - **Arquiteturas suportadas:** linux-amd64, linux-arm64
             - **Atualização:** Automática via CI/CD a cada alteração em `main`.
 
@@ -57,6 +61,7 @@ jobs:
           files: |
             dist/vt-linux-amd64
             dist/vt-linux-arm64
+            dist/menu-version.txt
             dist/checksums-menu.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

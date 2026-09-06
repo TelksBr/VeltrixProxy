@@ -11,7 +11,7 @@ import (
 	"github.com/TelksBr/VeltrixProxy/internal/ui/theme"
 )
 
-const Version = system.CurrentMenuVersion
+var Version = system.CurrentMenuVersion
 
 func main() {
 	configFlag := flag.String("config", "", "Caminho do arquivo config.json (padrão: /etc/proxyvt/config.json)")

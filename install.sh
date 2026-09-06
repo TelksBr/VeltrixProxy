@@ -2742,8 +2742,13 @@ install_menu_script() {
       run_privileged rm -f "$menu_dest"
       run_privileged install -m 755 "$menu_bin_tmp" "$menu_dest"
       installed_type="go"
-      echo "go-v3.0.0" | run_privileged tee "$MENU_REV_FILE" >/dev/null
-      log_success "Menu nativo em Go instalado com sucesso: ${menu_dest}"
+      local detected_ver=""
+      if "$menu_dest" -v 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 >/dev/null; then
+        detected_ver=$("$menu_dest" -v 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+      fi
+      [[ -z "$detected_ver" ]] && detected_ver="3.0.0"
+      echo "go-v${detected_ver}" | run_privileged tee "$MENU_REV_FILE" >/dev/null
+      log_success "Menu nativo em Go instalado com sucesso: ${menu_dest} (v${detected_ver})"
     fi
   fi
 
