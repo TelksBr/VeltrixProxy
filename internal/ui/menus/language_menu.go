@@ -10,8 +10,9 @@ import (
 
 // ShowLanguageMenu permite alternar o idioma da interface
 func ShowLanguageMenu() {
+	w := components.GetBoxWidth()
 	components.ClearScreen()
-	components.PrintBoxHeader("MUDAR IDIOMA / CHANGE LANGUAGE", theme.Cyan, components.DefaultBoxWidth)
+	components.PrintBoxHeader("MUDAR IDIOMA / CHANGE LANGUAGE", theme.Cyan, w)
 
 	current := i18n.CurrentLanguage()
 	ptBadge, enBadge, esBadge := "", "", ""
@@ -24,13 +25,13 @@ func ShowLanguageMenu() {
 		esBadge = " " + theme.Green + "(actual)" + theme.Reset
 	}
 
-	components.PrintBoxLine(fmt.Sprintf("%s1 • Português (Brasil)%s%s", theme.White, ptBadge, theme.Reset), components.DefaultBoxWidth)
-	components.PrintBoxLine(fmt.Sprintf("%s2 • English%s%s", theme.White, enBadge, theme.Reset), components.DefaultBoxWidth)
-	components.PrintBoxLine(fmt.Sprintf("%s3 • Español%s%s", theme.White, esBadge, theme.Reset), components.DefaultBoxWidth)
+	components.PrintBoxLine(fmt.Sprintf("%s1 • Português (Brasil)%s%s", theme.White, ptBadge, theme.Reset), w)
+	components.PrintBoxLine(fmt.Sprintf("%s2 • English%s%s", theme.White, enBadge, theme.Reset), w)
+	components.PrintBoxLine(fmt.Sprintf("%s3 • Español%s%s", theme.White, esBadge, theme.Reset), w)
 
-	components.PrintBoxDivider(components.DefaultBoxWidth)
-	components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), components.DefaultBoxWidth)
-	components.PrintBoxFooter(components.DefaultBoxWidth)
+	components.PrintBoxDivider(w)
+	components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
+	components.PrintBoxFooter(w)
 
 	choice := components.ReadOption("Opção [0-3]")
 	switch choice {

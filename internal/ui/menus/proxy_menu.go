@@ -21,8 +21,9 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 			return
 		}
 
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintDashboardHeader(components.DefaultBoxWidth)
+		components.PrintDashboardHeader(w)
 
 		// Resumo de Portas
 		var activePortsStr string
@@ -33,25 +34,25 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 		}
 
 		portsLine := fmt.Sprintf("%sPortas Ativas:%s %s%s%s", theme.Gray, theme.Reset, theme.Cyan, activePortsStr, theme.Reset)
-		components.PrintBoxLine(portsLine, components.DefaultBoxWidth)
-		components.PrintBoxDivider(components.DefaultBoxWidth)
+		components.PrintBoxLine(portsLine, w)
+		components.PrintBoxDivider(w)
 
 		// Opções
-		components.PrintBoxLine(fmt.Sprintf("%s1 — %s%s", theme.White, i18n.T("proxy_opt_start_specific"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s2 — %s%s", theme.White, i18n.T("proxy_opt_start_all"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s3 — %s%s", theme.White, i18n.T("proxy_opt_pause"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s4 — %s%s", theme.White, i18n.T("proxy_opt_edit"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s5 — %s%s", theme.White, i18n.T("proxy_opt_remove"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s6 — %s%s", theme.White, i18n.T("proxy_opt_restart"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s7 — %s%s", theme.White, i18n.T("proxy_opt_adv"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s8 — %s%s", theme.White, i18n.T("proxy_opt_http"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s9 — %s%s", theme.White, i18n.T("proxy_opt_details"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%sL — %s%s", theme.White, i18n.T("proxy_opt_logs"), theme.Reset), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("%s1 — %s%s", theme.White, i18n.T("proxy_opt_start_specific"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 — %s%s", theme.White, i18n.T("proxy_opt_start_all"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 — %s%s", theme.White, i18n.T("proxy_opt_pause"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 — %s%s", theme.White, i18n.T("proxy_opt_edit"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s5 — %s%s", theme.White, i18n.T("proxy_opt_remove"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s6 — %s%s", theme.White, i18n.T("proxy_opt_restart"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s7 — %s%s", theme.White, i18n.T("proxy_opt_adv"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s8 — %s%s", theme.White, i18n.T("proxy_opt_http"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s9 — %s%s", theme.White, i18n.T("proxy_opt_details"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%sL — %s%s", theme.White, i18n.T("proxy_opt_logs"), theme.Reset), w)
 
-		components.PrintBoxDivider(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
 		backLine := fmt.Sprintf("%s0 — %s%s", theme.Red, i18n.T("proxy_opt_back"), theme.Reset)
-		components.PrintBoxLine(backLine, components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxLine(backLine, w)
+		components.PrintBoxFooter(w)
 
 		choice := strings.ToLower(components.ReadOption("Selecione a opção desejada [0-9/L]"))
 		switch choice {
@@ -148,8 +149,9 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 func managePortsSubmenu(cfgMgr *config.Manager) {
 	for {
 		cfg, _ := cfgMgr.Get()
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintBoxHeader("GERENCIAMENTO DE PORTAS", theme.Cyan, components.DefaultBoxWidth)
+		components.PrintBoxHeader("GERENCIAMENTO DE PORTAS", theme.Cyan, w)
 
 		var allPorts []string
 		for _, p := range cfg.Ports {
@@ -160,7 +162,7 @@ func managePortsSubmenu(cfgMgr *config.Manager) {
 		}
 
 		if len(allPorts) == 0 {
-			components.PrintBoxLine("Nenhuma porta configurada.", components.DefaultBoxWidth)
+			components.PrintBoxLine("Nenhuma porta configurada.", w)
 		} else {
 			for i, p := range allPorts {
 				badge := theme.Green + "● ON " + theme.Reset
@@ -168,14 +170,14 @@ func managePortsSubmenu(cfgMgr *config.Manager) {
 					badge = theme.Red + "○ OFF" + theme.Reset
 				}
 				cleanName := strings.Split(p, " ")[0]
-				components.PrintBoxLine(fmt.Sprintf("%s%d • %s %s%s", theme.White, i+1, badge, theme.Cyan, cleanName), components.DefaultBoxWidth)
+				components.PrintBoxLine(fmt.Sprintf("%s%d • %s %s%s", theme.White, i+1, badge, theme.Cyan, cleanName), w)
 			}
 		}
 
-		components.PrintBoxDivider(components.DefaultBoxWidth)
-		components.PrintBoxLine("Digite o número da porta para alternar (Ativar/Desativar)", components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine("Digite o número da porta para alternar (Ativar/Desativar)", w)
+		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
+		components.PrintBoxFooter(w)
 
 		choice := components.ReadOption("Opção")
 		if choice == "0" || choice == "" {
@@ -202,34 +204,35 @@ func managePortsSubmenu(cfgMgr *config.Manager) {
 
 func showPortDetails(cfgMgr *config.Manager) {
 	cfg, _ := cfgMgr.Get()
+	w := components.GetBoxWidth()
 	components.ClearScreen()
-	components.PrintBoxHeader("DETALHES E STATUS DAS PORTAS", theme.Cyan, components.DefaultBoxWidth)
+	components.PrintBoxHeader("DETALHES E STATUS DAS PORTAS", theme.Cyan, w)
 
 	for _, p := range cfg.Ports {
 		mode := "HTTP"
 		if strings.HasSuffix(p, ":ssl") {
 			mode = "HTTPS / TLS"
 		}
-		components.PrintBoxLine(fmt.Sprintf("Porta %s%s%s: %s | Status: %s", theme.Cyan, p, theme.Reset, mode, theme.BadgeOnline), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("Porta %s%s%s: %s | Status: %s", theme.Cyan, p, theme.Reset, mode, theme.BadgeOnline), w)
 	}
 
 	for _, p := range cfg.DisabledPorts {
-		components.PrintBoxLine(fmt.Sprintf("Porta %s%s%s: Status: %s", theme.Gray, p, theme.Reset, theme.BadgeOffline), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("Porta %s%s%s: Status: %s", theme.Gray, p, theme.Reset, theme.BadgeOffline), w)
 	}
 
-	components.PrintBoxDivider(components.DefaultBoxWidth)
-	components.PrintBoxLine(fmt.Sprintf("Resposta HTTP: %s%s%s", theme.Cyan, cfg.Response, theme.Reset), components.DefaultBoxWidth)
-	components.PrintBoxLine(fmt.Sprintf("Buffer Size: %s%d bytes%s", theme.Cyan, cfg.BufferSize, theme.Reset), components.DefaultBoxWidth)
-	components.PrintBoxLine(fmt.Sprintf("SSH Nativo: %s%v%s", theme.Cyan, cfg.SSH.Internal, theme.Reset), components.DefaultBoxWidth)
+	components.PrintBoxDivider(w)
+	components.PrintBoxLine(fmt.Sprintf("Resposta HTTP: %s%s%s", theme.Cyan, cfg.Response, theme.Reset), w)
+	components.PrintBoxLine(fmt.Sprintf("Buffer Size: %s%d bytes%s", theme.Cyan, cfg.BufferSize, theme.Reset), w)
+	components.PrintBoxLine(fmt.Sprintf("SSH Nativo: %s%v%s", theme.Cyan, cfg.SSH.Internal, theme.Reset), w)
 	if cfg.SSH.Internal {
 		limBadge := theme.Red + "false" + theme.Reset
 		if cfg.Limits.Enable {
 			limBadge = theme.Green + "true" + theme.Reset
 		}
-		components.PrintBoxLine(fmt.Sprintf("Limiter: %s", limBadge), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("Limiter: %s", limBadge), w)
 	}
-	components.PrintBoxLine(fmt.Sprintf("BTUN Nativo: %s%v%s", theme.Cyan, cfg.BTUN.Enable, theme.Reset), components.DefaultBoxWidth)
+	components.PrintBoxLine(fmt.Sprintf("BTUN Nativo: %s%v%s", theme.Cyan, cfg.BTUN.Enable, theme.Reset), w)
 
-	components.PrintBoxFooter(components.DefaultBoxWidth)
+	components.PrintBoxFooter(w)
 	components.Pause()
 }

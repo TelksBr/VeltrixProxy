@@ -3,7 +3,10 @@ package components
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+
+	"golang.org/x/term"
 
 	"github.com/TelksBr/VeltrixProxy/internal/proxy"
 	"github.com/TelksBr/VeltrixProxy/internal/system"
@@ -11,9 +14,9 @@ import (
 )
 
 const (
-	DefaultBoxWidth = 66
-	MinBoxWidth     = 56
-	MaxBoxWidth     = 80
+	DefaultBoxWidth = 62
+	MinBoxWidth     = 36
+	MaxBoxWidth     = 74
 )
 
 // ClearScreen limpa o terminal
@@ -21,10 +24,55 @@ func ClearScreen() {
 	fmt.Print("\033[H\033[2J")
 }
 
+// GetTerminalWidth detecta dinamicamente a largura em colunas do terminal
+func GetTerminalWidth() int {
+	fd := int(os.Stdout.Fd())
+	if term.IsTerminal(fd) {
+		if w, _, err := term.GetSize(fd); err == nil && w > 0 {
+			return w
+		}
+	}
+	inFd := int(os.Stdin.Fd())
+	if term.IsTerminal(inFd) {
+		if w, _, err := term.GetSize(inFd); err == nil && w > 0 {
+			return w
+		}
+	}
+	if colsStr := os.Getenv("COLUMNS"); colsStr != "" {
+		if cols, err := strconv.Atoi(colsStr); err == nil && cols > 0 {
+			return cols
+		}
+	}
+	return DefaultBoxWidth
+}
+
+// GetBoxWidth calcula a largura ideal e responsiva para a caixa do menu
+func GetBoxWidth() int {
+	tw := GetTerminalWidth()
+	if tw <= 0 {
+		return DefaultBoxWidth
+	}
+	// Em telas estreitas (ex: mobile, split terminal, janelas reduzidas),
+	// ajusta a caixa para caber na tela sem estourar margens
+	if tw <= 66 {
+		w := tw - 2
+		if w < MinBoxWidth {
+			w = MinBoxWidth
+		}
+		return w
+	}
+	// Em telas médias/padrão (67 a 78 colunas)
+	if tw < 78 {
+		return tw - 4
+	}
+	// Em telas amplas (>= 78 colunas), mantém uma largura harmônica e confortável
+	return DefaultBoxWidth
+}
+
 // PrintBoxHeader desenha o topo da caixa com o título centralizado
 func PrintBoxHeader(title string, color string, width int) {
 	if width <= 0 {
-		width = DefaultBoxWidth
+		width = GetBoxWidth()
 	}
 	if color == "" {
 		color = theme.Cyan
@@ -34,13 +82,18 @@ func PrintBoxHeader(title string, color string, width int) {
 	topBorder := strings.Repeat("─", width-2)
 	fmt.Printf("%s┌%s┐%s\n", borderCol, topBorder, theme.Reset)
 
-	// Linha do título centralizada
+	contentWidth := width - 2
 	titleLen := theme.VisibleLen(title)
-	leftPad := (width - 2 - titleLen) / 2
+	if titleLen > contentWidth {
+		title = theme.TruncateANSI(title, contentWidth)
+		titleLen = theme.VisibleLen(title)
+	}
+
+	leftPad := (contentWidth - titleLen) / 2
 	if leftPad < 0 {
 		leftPad = 0
 	}
-	rightPad := width - 2 - titleLen - leftPad
+	rightPad := contentWidth - titleLen - leftPad
 	if rightPad < 0 {
 		rightPad = 0
 	}
@@ -58,7 +111,7 @@ func PrintBoxHeader(title string, color string, width int) {
 // PrintBoxDivider desenha a linha divisória intermediária ├──────┤
 func PrintBoxDivider(width int) {
 	if width <= 0 {
-		width = DefaultBoxWidth
+		width = GetBoxWidth()
 	}
 	borderCol := theme.DarkGray
 	divider := strings.Repeat("─", width-2)
@@ -68,16 +121,26 @@ func PrintBoxDivider(width int) {
 // PrintBoxLine imprime uma linha de conteúdo alinhada com as bordas da caixa
 func PrintBoxLine(content string, width int) {
 	if width <= 0 {
-		width = DefaultBoxWidth
+		width = GetBoxWidth()
 	}
 	borderCol := theme.DarkGray
+	contentWidth := width - 4
+	if contentWidth < 4 {
+		contentWidth = 4
+	}
+
 	vLen := theme.VisibleLen(content)
-	pad := width - 4 - vLen
+	if vLen > contentWidth {
+		content = theme.TruncateANSI(content, contentWidth)
+		vLen = theme.VisibleLen(content)
+	}
+
+	pad := contentWidth - vLen
 	if pad < 0 {
 		pad = 0
 	}
 
-	fmt.Printf("%s│%s  %s%s  %s│%s\n",
+	fmt.Printf("%s│%s %s%s %s│%s\n",
 		borderCol, theme.Reset,
 		content,
 		strings.Repeat(" ", pad),
@@ -88,36 +151,42 @@ func PrintBoxLine(content string, width int) {
 // PrintBoxFooter fecha a caixa └──────┘
 func PrintBoxFooter(width int) {
 	if width <= 0 {
-		width = DefaultBoxWidth
+		width = GetBoxWidth()
 	}
 	borderCol := theme.DarkGray
 	bottomBorder := strings.Repeat("─", width-2)
 	fmt.Printf("%s└%s┘%s\n", borderCol, bottomBorder, theme.Reset)
 }
 
+func formatTwoCols(left string, right string, contentWidth int) string {
+	sep := " │ "
+	sepLen := 3
+	avail := contentWidth - sepLen
+	if avail < 8 {
+		return theme.PadRightANSI(left, contentWidth)
+	}
+
+	leftCol := avail / 2
+	rightCol := avail - leftCol
+
+	return theme.PadRightANSI(left, leftCol) + theme.DarkGray + sep + theme.Reset + theme.PadRightANSI(right, rightCol)
+}
+
 // PrintDashboardHeader exibe as informações de sistema e status da VPS
 func PrintDashboardHeader(width int) {
 	if width <= 0 {
-		width = DefaultBoxWidth
+		width = GetBoxWidth()
 	}
 
 	cpuUsage := system.GetCPUUsage()
 	ram := system.GetRAMInfo()
 	ip := system.GetPublicIP()
-	osName := system.GetOSName()
+	osName := system.GetOSShortName()
 	isProxyActive := system.IsServiceActive(system.ProxyServiceName)
 	onlines := proxy.GetOnlineUsersTotal()
 
 	PrintBoxHeader("VELTRIX PROXY • DASHBOARD", theme.Cyan, width)
 
-	// Linha 1: IP e SO
-	ipLine := fmt.Sprintf("%sIP Público:%s %s%-15s%s %s│ SO:%s %s%s%s",
-		theme.Gray, theme.Reset, theme.White, ip, theme.Reset,
-		theme.DarkGray, theme.Reset, theme.Cyan, osName, theme.Reset,
-	)
-	PrintBoxLine(ipLine, width)
-
-	// Linha 2: CPU e RAM
 	cpuColor := theme.Green
 	if cpuUsage > 75 {
 		cpuColor = theme.Red
@@ -132,23 +201,41 @@ func PrintDashboardHeader(width int) {
 		ramColor = theme.Yellow
 	}
 
-	cpuRamLine := fmt.Sprintf("%sCPU:%s %s%d%%%s %s│ RAM:%s %s%dMB / %dMB (%d%%)%s",
-		theme.Gray, theme.Reset, cpuColor, cpuUsage, theme.Reset,
-		theme.DarkGray, theme.Reset, ramColor, ram.UsedMB, ram.TotalMB, ram.Percent, theme.Reset,
-	)
-	PrintBoxLine(cpuRamLine, width)
-
-	// Linha 3: Status Proxy e Conexões
 	proxyStatusBadge := theme.BadgeOffline
 	if isProxyActive {
 		proxyStatusBadge = theme.BadgeOnline
 	}
 
-	statusLine := fmt.Sprintf("%sProxy VT:%s %s %s│ Online:%s %s%d conexões%s",
-		theme.Gray, theme.Reset, proxyStatusBadge,
-		theme.DarkGray, theme.Reset, theme.Cyan, onlines, theme.Reset,
-	)
-	PrintBoxLine(statusLine, width)
+	contentWidth := width - 4
+	if contentWidth < 4 {
+		contentWidth = 4
+	}
+
+	if width >= 54 {
+		// Layout de 2 colunas perfeitamente alinhadas
+		ipCol := fmt.Sprintf("%sIP:%s %s%s%s", theme.Gray, theme.Reset, theme.White, ip, theme.Reset)
+		osCol := fmt.Sprintf("%sSO:%s %s%s%s", theme.Gray, theme.Reset, theme.Cyan, osName, theme.Reset)
+		PrintBoxLine(formatTwoCols(ipCol, osCol, contentWidth), width)
+
+		cpuCol := fmt.Sprintf("%sCPU:%s %s%d%%%s", theme.Gray, theme.Reset, cpuColor, cpuUsage, theme.Reset)
+		ramCol := fmt.Sprintf("%sRAM:%s %s%dMB/%dMB (%d%%)%s", theme.Gray, theme.Reset, ramColor, ram.UsedMB, ram.TotalMB, ram.Percent, theme.Reset)
+		PrintBoxLine(formatTwoCols(cpuCol, ramCol, contentWidth), width)
+
+		proxyCol := fmt.Sprintf("%sProxy VT:%s %s", theme.Gray, theme.Reset, proxyStatusBadge)
+		onlineCol := fmt.Sprintf("%sOnline:%s %s%d con%s", theme.Gray, theme.Reset, theme.Cyan, onlines, theme.Reset)
+		PrintBoxLine(formatTwoCols(proxyCol, onlineCol, contentWidth), width)
+	} else {
+		// Layout compacto para telas estreitas (< 54 colunas, ex: mobile / split pane)
+		PrintBoxLine(fmt.Sprintf("%sIP:%s %s%s%s", theme.Gray, theme.Reset, theme.White, ip, theme.Reset), width)
+		PrintBoxLine(fmt.Sprintf("%sSO:%s %s%s%s", theme.Gray, theme.Reset, theme.Cyan, osName, theme.Reset), width)
+		PrintBoxLine(fmt.Sprintf("%sCPU:%s %s%d%%%s %s│ RAM:%s %s%dMB (%d%%)%s",
+			theme.Gray, theme.Reset, cpuColor, cpuUsage, theme.Reset,
+			theme.DarkGray, theme.Reset, ramColor, ram.UsedMB, ram.Percent, theme.Reset,
+		), width)
+		PrintBoxLine(fmt.Sprintf("%sStatus:%s %s %s(%d con)%s",
+			theme.Gray, theme.Reset, proxyStatusBadge, theme.Cyan, onlines, theme.Reset,
+		), width)
+	}
 
 	PrintBoxDivider(width)
 }

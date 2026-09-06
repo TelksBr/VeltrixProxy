@@ -24,14 +24,15 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 			return
 		}
 
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintBoxHeader(i18n.T("adv_menu_title"), theme.Cyan, components.DefaultBoxWidth)
+		components.PrintBoxHeader(i18n.T("adv_menu_title"), theme.Cyan, w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • %s%s", theme.White, i18n.T("adv_opt_perf"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • %s%s", theme.White, i18n.T("adv_opt_http_logs"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • %s%s", theme.White, i18n.T("adv_opt_ssl"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • %s%s", theme.White, i18n.T("adv_opt_ssh"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s", theme.White, i18n.T("adv_opt_btun"), theme.Reset), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • %s%s", theme.White, i18n.T("adv_opt_perf"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • %s%s", theme.White, i18n.T("adv_opt_http_logs"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • %s%s", theme.White, i18n.T("adv_opt_ssl"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • %s%s", theme.White, i18n.T("adv_opt_ssh"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s", theme.White, i18n.T("adv_opt_btun"), theme.Reset), w)
 
 		// Opção 6 SÓ APARECE se ssh.internal for true!
 		if cfg.SSH.Internal {
@@ -40,16 +41,16 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 				limiterBadge = theme.Green + "true" + theme.Reset
 			}
 			limLine := fmt.Sprintf("%s6 • %s (Limiter: %s%s)%s", theme.White, i18n.T("adv_opt_limits"), limiterBadge, theme.White, theme.Reset)
-			components.PrintBoxLine(limLine, components.DefaultBoxWidth)
+			components.PrintBoxLine(limLine, w)
 		}
 
-		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("adv_opt_connectors"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%sV • %s%s", theme.White, i18n.T("adv_opt_view_json"), theme.Reset), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("adv_opt_connectors"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%sV • %s%s", theme.White, i18n.T("adv_opt_view_json"), theme.Reset), w)
 
-		components.PrintBoxDivider(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
 		backLine := fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("adv_opt_finish"), theme.Reset)
-		components.PrintBoxLine(backLine, components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxLine(backLine, w)
+		components.PrintBoxFooter(w)
 
 		promptRange := "0-7/V"
 		if !cfg.SSH.Internal {
@@ -101,18 +102,19 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 func showPerformanceSubmenu(cfgMgr *config.Manager) {
 	for {
 		cfg, _ := cfgMgr.Get()
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintBoxHeader("DESEMPENHO, BUFFER & TIMEOUTS", theme.Cyan, components.DefaultBoxWidth)
+		components.PrintBoxHeader("DESEMPENHO, BUFFER & TIMEOUTS", theme.Cyan, w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Buffer I/O: %s%d bytes%s (32KB padrão)", theme.White, theme.Cyan, cfg.BufferSize, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Máximo de Conexões: %s%d%s (0=ilimitado)", theme.White, theme.Cyan, cfg.MaxConnections, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • Idle Timeout: %s%ds%s (0=desligado)", theme.White, theme.Cyan, cfg.IdleTimeout, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • Write Timeout: %s%ds%s (0=desligado)", theme.White, theme.Cyan, cfg.WriteTimeout, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s5 • Ulimit (RLIMIT_NOFILE): %s%d%s", theme.White, theme.Cyan, cfg.Ulimit, theme.Reset), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • Buffer I/O: %s%d bytes%s (32KB padrão)", theme.White, theme.Cyan, cfg.BufferSize, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • Máximo de Conexões: %s%d%s (0=ilimitado)", theme.White, theme.Cyan, cfg.MaxConnections, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • Idle Timeout: %s%ds%s (0=desligado)", theme.White, theme.Cyan, cfg.IdleTimeout, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • Write Timeout: %s%ds%s (0=desligado)", theme.White, theme.Cyan, cfg.WriteTimeout, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s5 • Ulimit (RLIMIT_NOFILE): %s%d%s", theme.White, theme.Cyan, cfg.Ulimit, theme.Reset), w)
 
-		components.PrintBoxDivider(components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
+		components.PrintBoxFooter(w)
 
 		choice := components.ReadOption("Opção [0-5]")
 		switch choice {
@@ -165,17 +167,18 @@ func showPerformanceSubmenu(cfgMgr *config.Manager) {
 func showHttpLogsSubmenu(cfgMgr *config.Manager) {
 	for {
 		cfg, _ := cfgMgr.Get()
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintBoxHeader("RESPOSTA HTTP, BANNER & LOGS", theme.Cyan, components.DefaultBoxWidth)
+		components.PrintBoxHeader("RESPOSTA HTTP, BANNER & LOGS", theme.Cyan, w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Resposta HTTP 200: %s%s%s", theme.White, theme.Cyan, cfg.Response, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Exibir Banner no Boot: %s%v%s", theme.White, theme.Cyan, cfg.DisplayBanner, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • Modo SSH-Only: %s%v%s", theme.White, theme.Cyan, cfg.SSHOnly, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • Nível de Log: %s%s%s", theme.White, theme.Cyan, cfg.LogLevel, theme.Reset), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • Resposta HTTP 200: %s%s%s", theme.White, theme.Cyan, cfg.Response, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • Exibir Banner no Boot: %s%v%s", theme.White, theme.Cyan, cfg.DisplayBanner, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • Modo SSH-Only: %s%v%s", theme.White, theme.Cyan, cfg.SSHOnly, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • Nível de Log: %s%s%s", theme.White, theme.Cyan, cfg.LogLevel, theme.Reset), w)
 
-		components.PrintBoxDivider(components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
+		components.PrintBoxFooter(w)
 
 		choice := components.ReadOption("Opção [0-4]")
 		switch choice {
@@ -215,20 +218,20 @@ func showHttpLogsSubmenu(cfgMgr *config.Manager) {
 func showSSLSubmenu(cfgMgr *config.Manager) {
 	for {
 		cfg, _ := cfgMgr.Get()
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintBoxHeader("CERTIFICADOS TLS / SSL", theme.Cyan, components.DefaultBoxWidth)
+		components.PrintBoxHeader("CERTIFICADOS TLS / SSL", theme.Cyan, w)
 
 		certPath := cfg.Cert
 		if certPath == "" {
-			certPath = "nenhum"
+			certPath = "nenhum (usando gerador embutido)"
 		}
+		components.PrintBoxLine(fmt.Sprintf("%s1 • Certificado Interno Cloudflare: %s%v%s", theme.White, theme.Cyan, cfg.CertInternal, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • Certificado Externo .crt/.pem: %s%s%s", theme.White, theme.Cyan, certPath, theme.Reset), w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Certificado Interno Cloudflare: %s%v%s", theme.White, theme.Cyan, cfg.CertInternal, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Certificado Externo .crt/.pem: %s%s%s", theme.White, theme.Cyan, certPath, theme.Reset), components.DefaultBoxWidth)
-
-		components.PrintBoxDivider(components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
+		components.PrintBoxFooter(w)
 
 		choice := components.ReadOption("Opção [0-2]")
 		switch choice {
@@ -258,17 +261,18 @@ func showSSLSubmenu(cfgMgr *config.Manager) {
 func showSSHSubmenu(cfgMgr *config.Manager) {
 	for {
 		cfg, _ := cfgMgr.Get()
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintBoxHeader("SERVIDOR SSH NATIVO (ZERO-FORK)", theme.Cyan, components.DefaultBoxWidth)
+		components.PrintBoxHeader("SERVIDOR SSH NATIVO (ZERO-FORK)", theme.Cyan, w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • SSH Nativo Go (ssh.internal): %s%v%s (Zero-Fork)", theme.White, theme.Cyan, cfg.SSH.Internal, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Porta OpenSSH Externo (ssh.port): %s%d%s", theme.White, theme.Cyan, cfg.SSH.Port, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • Porta TCP Direta Interna: %s%d%s (0=apenas WS)", theme.White, theme.Cyan, cfg.SSH.InternalPort, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • Permitir Root (allow_root): %s%v%s", theme.White, theme.Cyan, cfg.SSH.AllowRoot, theme.Reset), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • SSH Nativo Go (ssh.internal): %s%v%s (Zero-Fork)", theme.White, theme.Cyan, cfg.SSH.Internal, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • Porta OpenSSH Externo (ssh.port): %s%d%s", theme.White, theme.Cyan, cfg.SSH.Port, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • Porta TCP Direta Interna: %s%d%s (0=apenas WS)", theme.White, theme.Cyan, cfg.SSH.InternalPort, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • Permitir Root (allow_root): %s%v%s", theme.White, theme.Cyan, cfg.SSH.AllowRoot, theme.Reset), w)
 
-		components.PrintBoxDivider(components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
+		components.PrintBoxFooter(w)
 
 		choice := components.ReadOption("Opção [0-4]")
 		switch choice {
@@ -307,17 +311,18 @@ func showSSHSubmenu(cfgMgr *config.Manager) {
 func showBTUNSubmenu(cfgMgr *config.Manager) {
 	for {
 		cfg, _ := cfgMgr.Get()
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintBoxHeader("SERVIDOR BTUN (DT-PROTO / UDP NATIVO)", theme.Cyan, components.DefaultBoxWidth)
+		components.PrintBoxHeader("SERVIDOR BTUN (DT-PROTO / UDP NATIVO)", theme.Cyan, w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Habilitar BTUN: %s%v%s", theme.White, theme.Cyan, cfg.BTUN.Enable, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Interface TUN: %s%s%s", theme.White, theme.Cyan, cfg.BTUN.Tun, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • Sub-rede IPv4: %s%s%s", theme.White, theme.Cyan, cfg.BTUN.Subnet, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • Porta UDP Direta: %s%d%s (0=desativado)", theme.White, theme.Cyan, cfg.BTUN.UDPPort, theme.Reset), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • Habilitar BTUN: %s%v%s", theme.White, theme.Cyan, cfg.BTUN.Enable, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • Interface TUN: %s%s%s", theme.White, theme.Cyan, cfg.BTUN.Tun, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • Sub-rede IPv4: %s%s%s", theme.White, theme.Cyan, cfg.BTUN.Subnet, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • Porta UDP Direta: %s%d%s (0=desativado)", theme.White, theme.Cyan, cfg.BTUN.UDPPort, theme.Reset), w)
 
-		components.PrintBoxDivider(components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
+		components.PrintBoxFooter(w)
 
 		choice := components.ReadOption("Opção [0-4]")
 		switch choice {
@@ -359,18 +364,19 @@ func showBTUNSubmenu(cfgMgr *config.Manager) {
 func showConnectorsSubmenu(cfgMgr *config.Manager) {
 	for {
 		cfg, _ := cfgMgr.Get()
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintBoxHeader("CONECTORES BACKENDS & XHTTP", theme.Cyan, components.DefaultBoxWidth)
+		components.PrintBoxHeader("CONECTORES BACKENDS & XHTTP", theme.Cyan, w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Porta Local OpenVPN: %s%d%s", theme.White, theme.Cyan, cfg.Connectors.OpenVPNPort, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Porta Local V2Ray / Xray: %s%d%s", theme.White, theme.Cyan, cfg.Connectors.V2RayPort, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • Prefixo URL XHTTP: %s%s%s", theme.White, theme.Cyan, cfg.XHTTP.Path, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • Grace Period XHTTP: %s%ds%s", theme.White, theme.Cyan, cfg.XHTTP.Grace, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s5 • Idle Timeout XHTTP: %s%ds%s", theme.White, theme.Cyan, cfg.XHTTP.Idle, theme.Reset), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • Porta Local OpenVPN: %s%d%s", theme.White, theme.Cyan, cfg.Connectors.OpenVPNPort, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • Porta Local V2Ray / Xray: %s%d%s", theme.White, theme.Cyan, cfg.Connectors.V2RayPort, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • Prefixo URL XHTTP: %s%s%s", theme.White, theme.Cyan, cfg.XHTTP.Path, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • Grace Period XHTTP: %s%ds%s", theme.White, theme.Cyan, cfg.XHTTP.Grace, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s5 • Idle Timeout XHTTP: %s%ds%s", theme.White, theme.Cyan, cfg.XHTTP.Idle, theme.Reset), w)
 
-		components.PrintBoxDivider(components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
+		components.PrintBoxFooter(w)
 
 		choice := components.ReadOption("Opção [0-5]")
 		switch choice {

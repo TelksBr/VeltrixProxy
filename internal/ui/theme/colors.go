@@ -2,6 +2,7 @@ package theme
 
 import (
 	"regexp"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -42,4 +43,57 @@ func StripANSI(str string) string {
 func VisibleLen(str string) int {
 	clean := StripANSI(str)
 	return utf8.RuneCountInString(clean)
+}
+
+// TruncateANSI trunca uma string preservando sequências ANSI para caber em maxLen visível
+func TruncateANSI(str string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+	if VisibleLen(str) <= maxLen {
+		return str
+	}
+
+	target := maxLen
+	if target > 1 {
+		target-- // reserva 1 coluna para a reticência '…'
+	}
+
+	var buf strings.Builder
+	visible := 0
+	inEscape := false
+
+	for _, r := range str {
+		if r == '\x1b' {
+			inEscape = true
+			buf.WriteRune(r)
+			continue
+		}
+		if inEscape {
+			buf.WriteRune(r)
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEscape = false
+			}
+			continue
+		}
+
+		if visible < target {
+			buf.WriteRune(r)
+			visible++
+		} else {
+			break
+		}
+	}
+
+	buf.WriteString("…" + Reset)
+	return buf.String()
+}
+
+// PadRightANSI preenche a string com espaços à direita até atingir targetLen visível
+func PadRightANSI(str string, targetLen int) string {
+	vLen := VisibleLen(str)
+	if vLen >= targetLen {
+		return TruncateANSI(str, targetLen)
+	}
+	return str + strings.Repeat(" ", targetLen-vLen)
 }

@@ -14,21 +14,22 @@ import (
 // ShowMainMenu executa o loop principal do menu VT
 func ShowMainMenu(cfgMgr *config.Manager) {
 	for {
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintDashboardHeader(components.DefaultBoxWidth)
+		components.PrintDashboardHeader(w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • %s%s", theme.White, i18n.T("menu_opt_proxy"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • %s%s", theme.White, i18n.T("menu_opt_udpgw"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • %s%s", theme.White, i18n.T("menu_opt_tokens"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • %s%s", theme.White, i18n.T("menu_opt_optimization"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s", theme.White, i18n.T("menu_opt_connected_users"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s6 • %s%s", theme.White, i18n.T("menu_opt_update"), theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("menu_opt_change_language"), theme.Reset), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • %s%s", theme.White, i18n.T("menu_opt_proxy"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • %s%s", theme.White, i18n.T("menu_opt_udpgw"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • %s%s", theme.White, i18n.T("menu_opt_tokens"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • %s%s", theme.White, i18n.T("menu_opt_optimization"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s", theme.White, i18n.T("menu_opt_connected_users"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s6 • %s%s", theme.White, i18n.T("menu_opt_update"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("menu_opt_change_language"), theme.Reset), w)
 
-		components.PrintBoxDivider(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
 		exitLine := fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("menu_opt_exit"), theme.Reset)
-		components.PrintBoxLine(exitLine, components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxLine(exitLine, w)
+		components.PrintBoxFooter(w)
 
 		choice := components.ReadOption(i18n.T("prompt_select_option") + " [0-7]")
 		switch choice {

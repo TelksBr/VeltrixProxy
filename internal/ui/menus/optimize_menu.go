@@ -11,19 +11,20 @@ import (
 // ShowOptimizeMenu exibe o menu de otimizações de rede e Kernel
 func ShowOptimizeMenu() {
 	for {
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintDashboardHeader(components.DefaultBoxWidth)
+		components.PrintDashboardHeader(w)
 
-		components.PrintBoxLine("OTIMIZAÇÕES DE PERFORMANCE DO LINUX", components.DefaultBoxWidth)
-		components.PrintBoxDivider(components.DefaultBoxWidth)
+		components.PrintBoxLine("OTIMIZAÇÕES DE PERFORMANCE DO LINUX", w)
+		components.PrintBoxDivider(w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Otimizar limites de arquivos e sockets (65536 / limits.d)%s", theme.White, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Aplicar otimizações de Kernel & TCP BBR (sysctl.d)%s", theme.White, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • Aplicar todas as otimizações recomendadas%s", theme.White, theme.Reset), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • Otimizar limites de arquivos e sockets (65536 / limits.d)%s", theme.White, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • Aplicar otimizações de Kernel & TCP BBR (sysctl.d)%s", theme.White, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • Aplicar todas as otimizações recomendadas%s", theme.White, theme.Reset), w)
 
-		components.PrintBoxDivider(components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • Voltar ao menu principal%s", theme.Red, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine(fmt.Sprintf("%s0 • Voltar ao menu principal%s", theme.Red, theme.Reset), w)
+		components.PrintBoxFooter(w)
 
 		choice := components.ReadOption("Selecione a opção [0-3]")
 		switch choice {

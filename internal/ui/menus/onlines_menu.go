@@ -11,23 +11,24 @@ import (
 // ShowOnlinesMenu exibe o menu de monitoramento e desconexão de usuários
 func ShowOnlinesMenu() {
 	for {
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintDashboardHeader(components.DefaultBoxWidth)
+		components.PrintDashboardHeader(w)
 
 		total := proxy.GetOnlineUsersTotal()
 		infoLine := fmt.Sprintf("%sConexões ativas no momento:%s %s%d conexões%s",
 			theme.Gray, theme.Reset, theme.Cyan, total, theme.Reset,
 		)
-		components.PrintBoxLine(infoLine, components.DefaultBoxWidth)
-		components.PrintBoxDivider(components.DefaultBoxWidth)
+		components.PrintBoxLine(infoLine, w)
+		components.PrintBoxDivider(w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Listar conexões ativas detalhadas%s", theme.White, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Desconectar usuário específico (--kill-user)%s", theme.White, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • Desconectar todos os usuários expirados (--kill-expired)%s", theme.White, theme.Reset), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • Listar conexões ativas detalhadas%s", theme.White, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • Desconectar usuário específico (--kill-user)%s", theme.White, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • Desconectar todos os usuários expirados (--kill-expired)%s", theme.White, theme.Reset), w)
 
-		components.PrintBoxDivider(components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • Voltar ao menu principal%s", theme.Red, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine(fmt.Sprintf("%s0 • Voltar ao menu principal%s", theme.Red, theme.Reset), w)
+		components.PrintBoxFooter(w)
 
 		choice := components.ReadOption("Selecione a opção [0-3]")
 		switch choice {

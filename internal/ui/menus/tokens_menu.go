@@ -13,8 +13,9 @@ import (
 // ShowTokensMenu exibe o menu de gerenciamento do token de licença
 func ShowTokensMenu(cfgMgr *config.Manager) {
 	for {
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintDashboardHeader(components.DefaultBoxWidth)
+		components.PrintDashboardHeader(w)
 
 		currentToken := config.LoadToken()
 		maskedToken := "nenhum"
@@ -25,15 +26,15 @@ func ShowTokensMenu(cfgMgr *config.Manager) {
 		}
 
 		infoLine := fmt.Sprintf("%sToken Atual:%s %s%s%s", theme.Gray, theme.Reset, theme.Cyan, maskedToken, theme.Reset)
-		components.PrintBoxLine(infoLine, components.DefaultBoxWidth)
-		components.PrintBoxDivider(components.DefaultBoxWidth)
+		components.PrintBoxLine(infoLine, w)
+		components.PrintBoxDivider(w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Inserir / Alterar token de acesso%s", theme.White, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Validar token atual com a API%s", theme.White, theme.Reset), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • Inserir / Alterar token de acesso%s", theme.White, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • Validar token atual com a API%s", theme.White, theme.Reset), w)
 
-		components.PrintBoxDivider(components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • Voltar ao menu principal%s", theme.Red, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine(fmt.Sprintf("%s0 • Voltar ao menu principal%s", theme.Red, theme.Reset), w)
+		components.PrintBoxFooter(w)
 
 		choice := components.ReadOption("Selecione a opção [0-2]")
 		switch choice {

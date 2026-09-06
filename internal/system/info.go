@@ -195,3 +195,12 @@ func GetOSName() string {
 	}
 	return "Linux"
 }
+
+// GetOSShortName retorna uma versão concisa e limpa do sistema operacional para o dashboard
+func GetOSShortName() string {
+	name := GetOSName()
+	name = strings.ReplaceAll(name, "GNU/Linux ", "")
+	name = strings.ReplaceAll(name, "GNU/Linux", "")
+	name = strings.ReplaceAll(name, "Linux ", "")
+	return strings.TrimSpace(name)
+}

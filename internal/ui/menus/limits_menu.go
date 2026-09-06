@@ -27,28 +27,29 @@ func ShowLimitsMenu(cfgMgr *config.Manager) {
 			return
 		}
 
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintBoxHeader(i18n.T("limits_menu_title"), theme.Cyan, components.DefaultBoxWidth)
+		components.PrintBoxHeader(i18n.T("limits_menu_title"), theme.Cyan, w)
 
 		enBadge := theme.Red + "false" + theme.Reset
 		if cfg.Limits.Enable {
 			enBadge = theme.Green + "true" + theme.Reset
 		}
 
-		line1 := fmt.Sprintf("%s  1 • %s: %s", theme.White, i18n.T("limits_opt_enable"), enBadge)
-		line2 := fmt.Sprintf("%s  2 • %s: %s%d%s (0=ilimitado)", theme.White, i18n.T("limits_opt_default_limit"), theme.Cyan, cfg.Limits.DefaultUserLimit, theme.White)
-		line3 := fmt.Sprintf("%s  3 • %s: %s%s%s (0=desativado, ex: 1m, 5m)", theme.White, i18n.T("limits_opt_expire_check"), theme.Cyan, cfg.Limits.ExpireCheckInterval, theme.White)
-		line4 := fmt.Sprintf("%s  4 • %s: %s%s%s", theme.White, i18n.T("limits_opt_passwd_file"), theme.Cyan, cfg.Limits.PasswdFile, theme.Reset)
+		line1 := fmt.Sprintf("%s1 • %s: %s", theme.White, i18n.T("limits_opt_enable"), enBadge)
+		line2 := fmt.Sprintf("%s2 • %s: %s%d%s (0=ilimitado)", theme.White, i18n.T("limits_opt_default_limit"), theme.Cyan, cfg.Limits.DefaultUserLimit, theme.White)
+		line3 := fmt.Sprintf("%s3 • %s: %s%s%s (0=desativado, ex: 1m, 5m)", theme.White, i18n.T("limits_opt_expire_check"), theme.Cyan, cfg.Limits.ExpireCheckInterval, theme.White)
+		line4 := fmt.Sprintf("%s4 • %s: %s%s%s", theme.White, i18n.T("limits_opt_passwd_file"), theme.Cyan, cfg.Limits.PasswdFile, theme.Reset)
 
-		components.PrintBoxLine(line1, components.DefaultBoxWidth)
-		components.PrintBoxLine(line2, components.DefaultBoxWidth)
-		components.PrintBoxLine(line3, components.DefaultBoxWidth)
-		components.PrintBoxLine(line4, components.DefaultBoxWidth)
+		components.PrintBoxLine(line1, w)
+		components.PrintBoxLine(line2, w)
+		components.PrintBoxLine(line3, w)
+		components.PrintBoxLine(line4, w)
 
-		components.PrintBoxDivider(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
 		backLine := fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset)
-		components.PrintBoxLine(backLine, components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxLine(backLine, w)
+		components.PrintBoxFooter(w)
 
 		choice := components.ReadOption("Opção [0-4]")
 		switch choice {

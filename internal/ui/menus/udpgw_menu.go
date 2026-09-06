@@ -13,8 +13,9 @@ import (
 // ShowUDPGWMenu exibe o menu de gerenciamento do BadVPN / UDPGW
 func ShowUDPGWMenu() {
 	for {
+		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintDashboardHeader(components.DefaultBoxWidth)
+		components.PrintDashboardHeader(w)
 
 		currentPort := udpgw.GetConfiguredPort()
 		isActive := udpgw.IsActive()
@@ -28,17 +29,17 @@ func ShowUDPGWMenu() {
 			theme.Gray, theme.Reset, statusBadge,
 			theme.DarkGray, theme.Reset, theme.Cyan, currentPort, theme.Reset,
 		)
-		components.PrintBoxLine(infoLine, components.DefaultBoxWidth)
-		components.PrintBoxDivider(components.DefaultBoxWidth)
+		components.PrintBoxLine(infoLine, w)
+		components.PrintBoxDivider(w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Iniciar serviço UDPGW%s", theme.White, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Pausar / Parar serviço UDPGW%s", theme.White, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • Reiniciar serviço UDPGW%s", theme.White, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • Alterar porta de escuta do UDPGW%s", theme.White, theme.Reset), components.DefaultBoxWidth)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • Iniciar serviço UDPGW%s", theme.White, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • Pausar / Parar serviço UDPGW%s", theme.White, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • Reiniciar serviço UDPGW%s", theme.White, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • Alterar porta de escuta do UDPGW%s", theme.White, theme.Reset), w)
 
-		components.PrintBoxDivider(components.DefaultBoxWidth)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • Voltar ao menu principal%s", theme.Red, theme.Reset), components.DefaultBoxWidth)
-		components.PrintBoxFooter(components.DefaultBoxWidth)
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine(fmt.Sprintf("%s0 • Voltar ao menu principal%s", theme.Red, theme.Reset), w)
+		components.PrintBoxFooter(w)
 
 		choice := components.ReadOption("Selecione a opção [0-4]")
 		switch choice {
