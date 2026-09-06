@@ -521,5 +521,4 @@ func UpdateDashboardMetrics(width int, offsetUp ...int) {
 	buf.WriteString("\0338\033[u\033[?25h")
 
 	_, _ = os.Stdout.WriteString(buf.String())
-	_ = os.Stdout.Sync()
 }

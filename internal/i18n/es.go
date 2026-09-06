@@ -55,7 +55,7 @@ var dictES = map[string]string{
 	"adv_opt_ssl":                "Certificados TLS / SSL (Interno / Externo)",
 	"adv_opt_ssh":                "Servidor SSH Nativo Embebido (Zero-Fork)",
 	"adv_opt_btun":               "Servidor BTUN / UDP DT-Proto",
-	"adv_opt_limits":             "Límites de Conexión y Expiración (Limiter)",
+	"adv_opt_limits":             "Límites de Conexión y Expiración",
 	"adv_opt_connectors":         "Conectores Backends (OpenVPN, V2Ray) & XHTTP",
 	"adv_opt_view_json":          "Ver archivo config.json",
 	"adv_opt_finish":             "Finalizar / Volver",

@@ -55,7 +55,7 @@ var dictEN = map[string]string{
 	"adv_opt_ssl":                "TLS / SSL Certificates (Internal / External)",
 	"adv_opt_ssh":                "Native SSH Server (Zero-Fork)",
 	"adv_opt_btun":               "BTUN / UDP DT-Proto Server",
-	"adv_opt_limits":             "Connection Limits & Expiration (Limiter)",
+	"adv_opt_limits":             "Connection Limits & Expiration",
 	"adv_opt_connectors":         "Backend Connectors (OpenVPN, V2Ray) & XHTTP",
 	"adv_opt_view_json":          "View config.json file",
 	"adv_opt_finish":             "Finish / Back",

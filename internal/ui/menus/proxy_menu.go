@@ -320,9 +320,9 @@ func renderLiveBannerFrame(logPath string, isTTY bool) {
 	w := components.GetBoxWidth()
 	isProxyActive := system.IsServiceActive(system.ProxyServiceName)
 
-	statusBadge := theme.BadgeOnline + " " + theme.Green + "ONLINE (AO VIVO)" + theme.Reset
+	statusBadge := theme.BadgeOnline
 	if !isProxyActive {
-		statusBadge = theme.BadgeOffline + " " + theme.Red + "SERVIÇO PARADO" + theme.Reset
+		statusBadge = theme.BadgeOffline
 	}
 
 	var buf strings.Builder
@@ -365,7 +365,6 @@ func renderLiveBannerFrame(logPath string, isTTY bool) {
 	}
 
 	_, _ = os.Stdout.WriteString(out)
-	_ = os.Stdout.Sync()
 }
 
 func getLatestProxyBanner(logPath string) string {

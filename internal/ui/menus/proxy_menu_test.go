@@ -91,3 +91,27 @@ func TestGetLatestProxyBannerNonExistent(t *testing.T) {
 		t.Errorf("Esperava string vazia para arquivo inexistente, obteve: %q", result)
 	}
 }
+
+func TestRenderLiveBannerFrameNotDuplicated(t *testing.T) {
+	// Redireciona stdout temporariamente para capturar o render do frame
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	renderLiveBannerFrame("/var/log/proxy/proxy.log", false)
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf [4096]byte
+	n, _ := r.Read(buf[:])
+	output := string(buf[:n])
+
+	if strings.Contains(output, "ONLINE ONLINE") {
+		t.Errorf("O status do banner contém 'ONLINE ONLINE' duplicado! Output:\n%s", output)
+	}
+	if strings.Contains(output, "ONLI...") {
+		t.Errorf("A linha de status foi truncada com 'ONLI...'! Output:\n%s", output)
+	}
+}
+
