@@ -128,14 +128,16 @@ func runSystemUpdate() {
 		}
 
 		// Em sistemas Linux/Unix, substitui o processo atual pelo novo binário do menu
-		_ = syscall.Exec(vtPath, []string{"vt"}, os.Environ())
+		err := syscall.Exec(vtPath, []string{vtPath}, os.Environ())
 
-		// Fallback com terminais devidamente conectados caso syscall.Exec não seja suportado (ex: Windows)
-		fallbackCmd := exec.Command(vtPath)
-		fallbackCmd.Stdin = os.Stdin
-		fallbackCmd.Stdout = os.Stdout
-		fallbackCmd.Stderr = os.Stderr
-		_ = fallbackCmd.Run()
+		// Fallback com terminais devidamente conectados caso syscall.Exec não seja suportado (ex: Windows) ou falhe
+		if err != nil {
+			fallbackCmd := exec.Command(vtPath)
+			fallbackCmd.Stdin = os.Stdin
+			fallbackCmd.Stdout = os.Stdout
+			fallbackCmd.Stderr = os.Stderr
+			_ = fallbackCmd.Run()
+		}
 		os.Exit(0)
 	}
 }
