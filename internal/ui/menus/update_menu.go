@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
+	"time"
 
 	"github.com/TelksBr/VeltrixProxy/internal/i18n"
 	"github.com/TelksBr/VeltrixProxy/internal/system"
@@ -102,6 +104,7 @@ func runSystemUpdate() {
 
 	updateCmd := "curl -fsSL https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh | bash -s -- --update --yes"
 	cmd := exec.Command("bash", "-c", updateCmd)
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -113,11 +116,26 @@ func runSystemUpdate() {
 		_ = os.Remove(system.UpdateCacheFile)
 		components.PrintSuccess(i18n.T("update_success"))
 		components.PrintInfo("Reiniciando menu atualizado...")
-		components.Pause()
-		// Re-executa o menu vt se disponível
-		if vtPath, err := exec.LookPath("vt"); err == nil {
-			_ = exec.Command(vtPath).Run()
+		time.Sleep(1500 * time.Millisecond)
+
+		vtPath := "/usr/local/bin/vt"
+		if _, err := os.Stat(vtPath); err != nil {
+			if lp, err := exec.LookPath("vt"); err == nil {
+				vtPath = lp
+			} else if exe, err := os.Executable(); err == nil {
+				vtPath = exe
+			}
 		}
+
+		// Em sistemas Linux/Unix, substitui o processo atual pelo novo binário do menu
+		_ = syscall.Exec(vtPath, []string{"vt"}, os.Environ())
+
+		// Fallback com terminais devidamente conectados caso syscall.Exec não seja suportado (ex: Windows)
+		fallbackCmd := exec.Command(vtPath)
+		fallbackCmd.Stdin = os.Stdin
+		fallbackCmd.Stdout = os.Stdout
+		fallbackCmd.Stderr = os.Stderr
+		_ = fallbackCmd.Run()
 		os.Exit(0)
 	}
 }
