@@ -1057,6 +1057,7 @@ default_cfg = {
     "udp_port": 0
   },
   "limits": {
+    "enable": True,
     "default_user_limit": 0,
     "passwd_file": "/etc/passwd",
     "expire_check_interval": "1m"
@@ -1067,8 +1068,8 @@ default_cfg = {
   },
   "xhttp": {
     "path": "/ssh",
-    "grace": 120,
-    "idle": 120
+    "grace": 15,
+    "idle": 60
   }
 }
 os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -1154,6 +1155,7 @@ config = {
         "udp_port": 0
     },
     "limits": {
+        "enable": True,
         "default_user_limit": 0,
         "passwd_file": "/etc/passwd",
         "expire_check_interval": "1m"
@@ -1164,8 +1166,8 @@ config = {
     },
     "xhttp": {
         "path": "/ssh",
-        "grace": 120,
-        "idle": 120
+        "grace": 15,
+        "idle": 60
     }
 }
 
@@ -2515,28 +2517,54 @@ adv_submenu_btun() {
 }
 
 adv_submenu_limits() {
+    local ssh_int
+    ssh_int=$(json_get_field "ssh.internal" "true")
+    if [[ "$ssh_int" != "true" ]]; then
+        print_error "O gerenciamento de limites (limiter) requer o SSH Nativo Go (ssh.internal: true)."
+        pause
+        return 0
+    fi
+
     while true; do
         print_header
-        local d_lim exp_int pw_f
+        ssh_int=$(json_get_field "ssh.internal" "true")
+        if [[ "$ssh_int" != "true" ]]; then
+            print_error "SSH Nativo Go foi desativado. O Limiter não pode ser configurado."
+            pause
+            return 0
+        fi
+
+        local l_en d_lim exp_int pw_f
+        l_en=$(json_get_field "limits.enable" "true")
         d_lim=$(json_get_field "limits.default_user_limit" "0")
         exp_int=$(json_get_field "limits.expire_check_interval" "1m")
         pw_f=$(json_get_field "limits.passwd_file" "/etc/passwd")
 
         print_box_open
-        print_box_heading "LIMITES DE CONEXÕES & EXPIRAÇÃO" "$CYAN"
+        print_box_heading "LIMITES DE CONEXÕES & EXPIRAÇÃO (LIMITER)" "$CYAN"
         print_box_divider
-        print_box_line "${WHITE}  1 • Limite Padrão por Conta: ${CYAN}${d_lim}${WHITE} (0=ilimitado)${RESET}"
-        print_box_line "${WHITE}  2 • Varredura Automática de Expirados: ${CYAN}${exp_int}${WHITE} (0=desativado, ex: 1m, 5m)${RESET}"
-        print_box_line "${WHITE}  3 • Arquivo de Limites / Senhas: ${CYAN}${pw_f}${RESET}"
+        print_box_line "${WHITE}  1 • Habilitar Limiter (limits.enable): ${CYAN}${l_en}${RESET}"
+        print_box_line "${WHITE}  2 • Limite Padrão por Conta: ${CYAN}${d_lim}${WHITE} (0=ilimitado)${RESET}"
+        print_box_line "${WHITE}  3 • Varredura Automática de Expirados: ${CYAN}${exp_int}${WHITE} (0=desativado, ex: 1m, 5m)${RESET}"
+        print_box_line "${WHITE}  4 • Arquivo de Limites / Senhas: ${CYAN}${pw_f}${RESET}"
         print_box_divider
         render_menu_option "0 • Voltar" "red"
         print_box_close
         echo
 
         local opt
-        read -rp "$(echo -e "${BLUE}Opção [0-3]:${RESET} ")" opt
+        read -rp "$(echo -e "${BLUE}Opção [0-4]:${RESET} ")" opt
         case "$opt" in
             1)
+                if confirm_action "Habilitar controle de limites e expiração (Limiter)?" "$([[ "$l_en" == "true" ]] && echo s || echo n)"; then
+                    json_set_field "limits.enable" "true" "bool"
+                else
+                    json_set_field "limits.enable" "false" "bool"
+                fi
+                print_success "Configuração limits.enable atualizada."
+                pause
+                ;;
+            2)
                 local val
                 val=$(prompt_with_default "Limite padrão de conexões simultâneas (0=ilimitado)" "$d_lim")
                 if [[ "$val" =~ ^[0-9]+$ ]]; then
@@ -2545,7 +2573,7 @@ adv_submenu_limits() {
                 fi
                 pause
                 ;;
-            2)
+            3)
                 local val
                 val=$(prompt_with_default "Intervalo de checagem e desconexão de expirados (ex: 1m, 5m, 0 para desativar)" "$exp_int")
                 if [[ -n "$val" ]]; then
@@ -2554,7 +2582,7 @@ adv_submenu_limits() {
                 fi
                 pause
                 ;;
-            3)
+            4)
                 local val
                 val=$(prompt_with_default "Caminho do arquivo passwd" "$pw_f")
                 if [[ -n "$val" ]]; then
@@ -2576,8 +2604,8 @@ adv_submenu_connectors() {
         ovpn_p=$(json_get_field "connectors.openvpn_port" "1194")
         v2ray_p=$(json_get_field "connectors.v2ray_port" "1080")
         xp=$(json_get_field "xhttp.path" "/ssh")
-        xg=$(json_get_field "xhttp.grace" "120")
-        xi=$(json_get_field "xhttp.idle" "120")
+        xg=$(json_get_field "xhttp.grace" "15")
+        xi=$(json_get_field "xhttp.idle" "60")
 
         print_box_open
         print_box_heading "CONECTORES BACKENDS & XHTTP" "$CYAN"
@@ -2649,6 +2677,9 @@ adv_submenu_connectors() {
 edit_proxy_advanced_service() {
     while true; do
         print_header
+        local ssh_int
+        ssh_int=$(json_get_field "ssh.internal" "true")
+
         print_box_open
         print_box_heading "OPÇÕES AVANÇADAS DO PROXY (JSON)" "$CYAN"
         print_box_divider
@@ -2657,7 +2688,11 @@ edit_proxy_advanced_service() {
         print_box_line "${WHITE}  3 • Certificados TLS / SSL (Certificado Interno / Externo)${RESET}"
         print_box_line "${WHITE}  4 • Servidor SSH Nativo Embutido (Zero-Fork, Porta Direta, Banner)${RESET}"
         print_box_line "${WHITE}  5 • Servidor BTUN / UDP DT-Proto (Interface, Subnet, Porta UDP)${RESET}"
-        print_box_line "${WHITE}  6 • Limites de Conexão e Expiração (Limite por Usuário, Expirados)${RESET}"
+        if [[ "$ssh_int" == "true" ]]; then
+            local lim_en
+            lim_en=$(json_get_field "limits.enable" "true")
+            print_box_line "${WHITE}  6 • Limites de Conexão e Expiração (Limiter: ${CYAN}${lim_en}${WHITE})${RESET}"
+        fi
         print_box_line "${WHITE}  7 • Conectores Backends (OpenVPN, V2Ray) & XHTTP${RESET}"
         print_box_line "${WHITE}  V • Visualizar arquivo /etc/proxyvt/config.json${RESET}"
         print_box_divider
@@ -2665,15 +2700,27 @@ edit_proxy_advanced_service() {
         print_box_close
         echo
 
-        local choice
-        read -rp "$(echo -e "${BLUE}Selecione a opção desejada [0-7/V]:${RESET} ")" choice
+        local choice prompt_range
+        if [[ "$ssh_int" == "true" ]]; then
+            prompt_range="0-7/V"
+        else
+            prompt_range="0-5,7/V"
+        fi
+        read -rp "$(echo -e "${BLUE}Selecione a opção desejada [${prompt_range}]:${RESET} ")" choice
         case "${choice,,}" in
             1) adv_submenu_performance ;;
             2) adv_submenu_http_logs ;;
             3) adv_submenu_ssl ;;
             4) adv_submenu_ssh ;;
             5) adv_submenu_btun ;;
-            6) adv_submenu_limits ;;
+            6)
+                if [[ "$ssh_int" == "true" ]]; then
+                    adv_submenu_limits
+                else
+                    print_error "Opção indisponível: o Limiter requer o SSH Nativo Go (ssh.internal: true)."
+                    pause
+                fi
+                ;;
             7) adv_submenu_connectors ;;
             v)
                 echo
@@ -3011,6 +3058,11 @@ show_proxy_port_details() {
     print_box_line "${WHITE}  Max conexões: ${CYAN}${max_conn}${RESET}"
     print_box_line "${WHITE}  Timeouts W/I: ${CYAN}${write_t}s / ${idle_t}s${RESET}"
     print_box_line "${WHITE}  SSH Nativo (Zero-Fork): ${CYAN}${ssh_int}${RESET}"
+    if [[ "$ssh_int" == "true" ]]; then
+        local lim_en
+        lim_en=$(json_get_field "limits.enable" "true")
+        print_box_line "${WHITE}  Limiter (Controle de Limites): ${CYAN}${lim_en}${RESET}"
+    fi
     print_box_line "${WHITE}  BTUN Nativo: ${CYAN}${btun_en}${RESET}"
     print_box_line "${WHITE}  Arquivo config: ${CYAN}${PROXY_JSON_FILE}${RESET}"
 

@@ -1652,6 +1652,7 @@ default_cfg = {
     "udp_port": 0
   },
   "limits": {
+    "enable": True,
     "default_user_limit": 0,
     "passwd_file": "/etc/passwd",
     "expire_check_interval": "1m"
@@ -1662,8 +1663,8 @@ default_cfg = {
   },
   "xhttp": {
     "path": "/ssh",
-    "grace": 120,
-    "idle": 120
+    "grace": 15,
+    "idle": 60
   }
 }
 os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -1754,6 +1755,7 @@ config = {
         "udp_port": 0
     },
     "limits": {
+        "enable": True,
         "default_user_limit": 0,
         "passwd_file": "/etc/passwd",
         "expire_check_interval": "1m"
@@ -1764,8 +1766,8 @@ config = {
     },
     "xhttp": {
         "path": "/ssh",
-        "grace": 120,
-        "idle": 120
+        "grace": 15,
+        "idle": 60
     }
 }
 

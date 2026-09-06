@@ -90,6 +90,7 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
   },
 
   "limits": {
+    "enable": true,
     "default_user_limit": 0,
     "passwd_file": "/etc/passwd",
     "expire_check_interval": "1m"
@@ -102,8 +103,8 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 
   "xhttp": {
     "path": "/ssh",
-    "grace": 120,
-    "idle": 120
+    "grace": 15,
+    "idle": 60
   }
 }
 ```
@@ -166,10 +167,11 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 
 ### D. Seção `limits` (Controle de Conexões e Expiração de Usuários)
 
-> Controle nativo de conexões simultâneas por conta e desconexão de expirados.
+> Controle nativo de conexões simultâneas por conta e desconexão de expirados. **Nota:** O módulo Limiter só opera e é configurável quando o servidor SSH nativo estiver habilitado (`ssh.internal: true`).
 
 | Campo | Tipo | Default | Descrição |
 | :--- | :--- | :--- | :--- |
+| `enable` | `bool` | `true` | Habilita ou desabilita o módulo de controle de conexões e expiração (Limiter). |
 | `default_user_limit` | `int` | `0` | Limite padrão de conexões simultâneas por usuário (`0` = ilimitado). |
 | `passwd_file` | `string` | `"/etc/passwd"` | Caminho do `/etc/passwd` onde os limites individuais são lidos. |
 | `expire_check_interval` | `string` ou `int` | `"1m"` | Intervalo da varredura periódica e desconexão automática de usuários expirados (`"0"` para desativar). |
@@ -190,8 +192,8 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 | Campo | Tipo | Default | Descrição |
 | :--- | :--- | :--- | :--- |
 | `path` | `string` | `"/ssh"` | Prefixo da URL para transporte SplitHTTP (VOID). |
-| `grace` | `int` | `120` | Segundos para manter a sessão aberta após o download cair. |
-| `idle` | `int` | `120` | Segundos para manter sessões ociosas sem tráfego. |
+| `grace` | `int` | `15` | Segundos para manter a sessão aberta após o download cair. |
+| `idle` | `int` | `60` | Segundos para manter sessões ociosas sem tráfego. |
 
 ---
 
