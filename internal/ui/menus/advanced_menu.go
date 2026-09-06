@@ -175,12 +175,13 @@ func showHttpLogsSubmenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(fmt.Sprintf("%s2 • Exibir Banner no Boot: %s%v%s", theme.White, theme.Cyan, cfg.DisplayBanner, theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s3 • Modo SSH-Only: %s%v%s", theme.White, theme.Cyan, cfg.SSHOnly, theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s4 • Nível de Log: %s%s%s", theme.White, theme.Cyan, cfg.LogLevel, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s5 • Arquivo de Log: %s%s%s", theme.White, theme.Cyan, cfg.LogFile, theme.Reset), w)
 
 		components.PrintBoxDivider(w)
 		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
 		components.PrintBoxFooter(w)
 
-		choice := components.ReadOption("Opção [0-4]")
+		choice := components.ReadOption("Opção [0-5]")
 		switch choice {
 		case "1":
 			resp := components.Prompt("Nova resposta HTTP global", cfg.Response)
@@ -207,6 +208,14 @@ func showHttpLogsSubmenu(cfgMgr *config.Manager) {
 				cfg.LogLevel = resp
 				_ = cfgMgr.Save(cfg)
 				components.PrintSuccess("Nível de log atualizado.")
+			}
+			components.Pause()
+		case "5":
+			resp := components.Prompt("Caminho do arquivo de log", cfg.LogFile)
+			if resp != "" {
+				cfg.LogFile = resp
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess("Caminho do arquivo de log atualizado.")
 			}
 			components.Pause()
 		case "0":

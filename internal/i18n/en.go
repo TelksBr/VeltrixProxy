@@ -22,6 +22,8 @@ var dictEN = map[string]string{
 	"proxy_opt_http":             "Change global HTTP response",
 	"proxy_opt_details":          "Port details and status",
 	"proxy_opt_logs":             "View service logs",
+	"proxy_opt_journal_logs":     "Real-time service logs (Journalctl)",
+	"proxy_opt_file_logs":        "Proxy metrics & logs from file (log_file)",
 	"proxy_opt_back":             "Back to main menu",
 
 	// UDPGW Submenu
