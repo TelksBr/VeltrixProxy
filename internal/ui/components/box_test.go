@@ -84,3 +84,21 @@ func TestGetBoxWidthResponsiveness(t *testing.T) {
 		t.Errorf("GetBoxWidth com COLUMNS=80 retornou %d", w80)
 	}
 }
+
+func TestPrintMenuCredits(t *testing.T) {
+	testWidths := []int{40, 45, 50, 56, 62, 70}
+
+	for _, w := range testWidths {
+		output := captureOutput(func() {
+			PrintMenuCredits(w)
+		})
+
+		lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
+		for idx, line := range lines {
+			visible := theme.VisibleLen(line)
+			if visible != w {
+				t.Errorf("Credits width %d, line %d (%q) has visible length %d, want %d", w, idx, theme.StripANSI(line), visible, w)
+			}
+		}
+	}
+}

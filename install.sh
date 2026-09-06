@@ -2825,6 +2825,8 @@ print_finish_message() {
   print_dashboard_center "Execute o menu a qualquer momento com o comando:" "${YELLOW:-\033[1;33m}"
   print_dashboard_center "👉  vt" "${GREEN:-\033[0;32m}"
   print_dash_rule
+  print_dashboard_center "Dev: @telks13  │  Telegram: @VeltrixPanelGroup" "${CYAN:-\033[0;36m}"
+  print_dash_rule
   echo
 }
 

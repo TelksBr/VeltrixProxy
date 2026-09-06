@@ -37,7 +37,7 @@ func ShowMainMenu(cfgMgr *config.Manager) {
 		components.PrintBoxDivider(w)
 		exitLine := fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("menu_opt_exit"), theme.Reset)
 		components.PrintBoxLine(exitLine, w)
-		components.PrintBoxFooter(w)
+		components.PrintMenuCredits(w)
 
 		// Atualizador dinâmico de métricas (CPU, RAM, Online, Status) sem piscar a tela
 		stopLiveUpdater := make(chan struct{})

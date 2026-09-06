@@ -21,6 +21,7 @@ func main() {
 
 	if *versionFlag {
 		fmt.Printf("%sVT CLI Manager%s v%s (Go nativo)\n", theme.Cyan, theme.Reset, Version)
+		fmt.Printf("%sDev: %s@telks13 %s│ Telegram: %s@VeltrixPanelGroup%s\n", theme.DarkGray, theme.Cyan, theme.DarkGray, theme.Cyan, theme.Reset)
 		os.Exit(0)
 	}
 

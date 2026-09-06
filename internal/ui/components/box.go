@@ -179,6 +179,61 @@ func PrintBoxFooter(width int) {
 	fmt.Printf("%s└%s┘%s\n", borderCol, bottomBorder, theme.Reset)
 }
 
+// PrintBoxCenterLine imprime uma linha de conteúdo centralizada dentro da caixa
+func PrintBoxCenterLine(content string, width int) {
+	if width <= 0 {
+		width = GetBoxWidth()
+	}
+	contentWidth := width - 4
+	if contentWidth < 4 {
+		contentWidth = 4
+	}
+
+	vLen := theme.VisibleLen(content)
+	if vLen > contentWidth {
+		content = theme.TruncateANSI(content, contentWidth)
+		vLen = theme.VisibleLen(content)
+	}
+
+	leftPad := (contentWidth - vLen) / 2
+	if leftPad < 0 {
+		leftPad = 0
+	}
+	rightPad := contentWidth - vLen - leftPad
+	if rightPad < 0 {
+		rightPad = 0
+	}
+
+	borderCol := theme.DarkGray
+	fmt.Printf("%s│%s %s%s%s %s│%s\n",
+		borderCol, theme.Reset,
+		strings.Repeat(" ", leftPad),
+		content,
+		strings.Repeat(" ", rightPad),
+		borderCol, theme.Reset,
+	)
+}
+
+// PrintMenuCredits imprime a linha de rodapé com créditos e contatos oficiais
+func PrintMenuCredits(width int) {
+	if width <= 0 {
+		width = GetBoxWidth()
+	}
+	PrintBoxDivider(width)
+
+	contentWidth := width - 4
+	var line string
+	if contentWidth < 46 {
+		line = fmt.Sprintf("%s@telks13 %s│ %s@VeltrixPanelGroup%s",
+			theme.Cyan, theme.DarkGray, theme.Cyan, theme.Reset)
+	} else {
+		line = fmt.Sprintf("%sDev: %s@telks13 %s│ %sTelegram: %s@VeltrixPanelGroup%s",
+			theme.DarkGray, theme.Cyan, theme.DarkGray, theme.DarkGray, theme.Cyan, theme.Reset)
+	}
+	PrintBoxCenterLine(line, width)
+	PrintBoxFooter(width)
+}
+
 func formatTwoCols(left string, right string, contentWidth int) string {
 	sep := " │ "
 	sepLen := 3
