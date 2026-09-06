@@ -58,7 +58,7 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
     "443:ssl"
   ],
   "log_level": "info",
-  "log_file": "/var/log/proxy/proxy.log",
+  "log_file": "",
   "buffer_size": 32768,
   "max_connections": 0,
   "idle_timeout": 0,
@@ -93,7 +93,8 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
     "enable": true,
     "default_user_limit": 0,
     "passwd_file": "/etc/passwd",
-    "expire_check_interval": "1m"
+    "expire_check_interval": "1m",
+    "kill_expired": false
   },
 
   "connectors": {
@@ -104,7 +105,18 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
   "xhttp": {
     "path": "/ssh",
     "grace": 15,
-    "idle": 60
+    "idle": 30
+  },
+
+  "dnstt": {
+    "enable": false,
+    "domain": "t.exemplo.com",
+    "udp": ":53",
+    "privkey": "",
+    "privkey_file": "/etc/dnstt/server.key",
+    "fallback": "",
+    "upstream": "",
+    "mtu": 1232
   }
 }
 ```
@@ -120,7 +132,7 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 | `token` | `string` | `""` | **Obrigatório.** Token de acesso validado na API de licenciamento. |
 | `ports` | `array` | `["80", "443:ssl"]` | Portas de escuta do proxy. Aceita formatos flexíveis (ver seção 5). |
 | `log_level` | `string` | `"info"` | Nível de log: `"debug"`, `"info"`, `"warn"`, `"error"`. |
-| `log_file` | `string` | `"/var/log/proxy/proxy.log"` | Caminho do arquivo de logs do proxy (`/var/log/proxy/proxy.log`). |
+| `log_file` | `string` | `""` | Caminho do arquivo para salvar o banner de inicialização (opcional). |
 | `buffer_size` | `int` | `32768` | Tamanho do buffer de cópia I/O em bytes (32 KB). |
 | `max_connections` | `int` | `0` | Máximo de conexões simultâneas por porta (`0` = ilimitado). |
 | `idle_timeout` | `int` | `0` | Timeout sem tráfego em segundos para derrubar túneis (`0` = desligado). |
@@ -140,7 +152,7 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 
 | Campo | Tipo | Default | Descrição |
 | :--- | :--- | :--- | :--- |
-| `internal` | `bool` | `true` | **Recomendado `true`**. Ativa o servidor SSH nativo em Go embutido no proxy. |
+| `internal` | `bool` | `true` | **Recomendado `true`**. Ativa o servidor SSH nativo em Go embutido no proxy. Se `false`, o limitador de conexões é inativo por padrão. |
 | `port` | `int` | `22` | Porta do SSH externo legado (usado apenas se `internal: false`). |
 | `internal_port` | `int` | `0` | Porta TCP direta opcional para o SSH embutido (`0` = apenas via túnel HTTP/WS). |
 | `auth` | `string` | `"shadow"` | Mecanismo de autenticação: `"shadow"` (lê `/etc/shadow`), `"file"` ou `"allow"`. |
@@ -167,14 +179,16 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 
 ### D. Seção `limits` (Controle de Conexões e Expiração de Usuários)
 
-> Controle nativo de conexões simultâneas por conta e desconexão de expirados. **Nota:** O módulo Limiter só opera e é configurável quando o servidor SSH nativo estiver habilitado (`ssh.internal: true`).
+> Controle nativo de conexões simultâneas por conta e desconexão de expirados.
+> **Regra do Limitador:** O limitador de conexões só entra em ação se `ssh.internal` for `true` (ou se for forçado pela flag `--enable-limiter` ou `"enable": true`). Sem o SSH interno, o proxy não aplica limite nas conexões.
 
 | Campo | Tipo | Default | Descrição |
 | :--- | :--- | :--- | :--- |
-| `enable` | `bool` | `true` | Habilita ou desabilita o módulo de controle de conexões e expiração (Limiter). |
-| `default_user_limit` | `int` | `0` | Limite padrão de conexões simultâneas por usuário (`0` = ilimitado). |
-| `passwd_file` | `string` | `"/etc/passwd"` | Caminho do `/etc/passwd` onde os limites individuais são lidos. |
-| `expire_check_interval` | `string` ou `int` | `"1m"` | Intervalo da varredura periódica e desconexão automática de usuários expirados (`"0"` para desativar). |
+| `enable` | `bool` | `true` (se internal) | Ativa o limitador de conexões por usuário (`false` desativa totalmente o limitador, permitindo conexões ilimitadas). |
+| `default_user_limit` | `int` | `0` | Limite padrão de conexões simultâneas por usuário (`0` = ilimitado, a não ser que haja `limit=N` no `/etc/passwd`). |
+| `passwd_file` | `string` | `"/etc/passwd"` | Caminho do `/etc/passwd` onde os limites individuais são lidos (`limit=N` no GECOS). |
+| `expire_check_interval` | `string` ou `int` | `"1m"` | Intervalo da varredura periódica de usuários expirados (`"0"` para desativar). |
+| `kill_expired` | `bool` | `false` | Se `true`, a varredura derruba automaticamente as conexões de usuários vencidos no Linux. |
 
 ---
 
@@ -193,7 +207,22 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 | :--- | :--- | :--- | :--- |
 | `path` | `string` | `"/ssh"` | Prefixo da URL para transporte SplitHTTP (VOID). |
 | `grace` | `int` | `15` | Segundos para manter a sessão aberta após o download cair. |
-| `idle` | `int` | `60` | Segundos para manter sessões ociosas sem tráfego. |
+| `idle` | `int` | `30` | Segundos para manter sessões ociosas sem tráfego. |
+
+---
+
+### G. Seção `dnstt` (DNS Tunneling)
+
+| Campo | Tipo | Default | Descrição |
+| :--- | :--- | :--- | :--- |
+| `enable` | `bool` | `false` | Se `true`, ativa o servidor embutido de DNSTT. |
+| `domain` | `string` | `""` | Domínio raiz da zona configurada no registrador para o túnel (ex.: `t.exemplo.com`). |
+| `udp` | `string` | `":53"` | Endereço/porta UDP de escuta do DNSTT. |
+| `privkey` | `string` | `""` | Chave privada Noise Curve25519 (64 hex). |
+| `privkey_file` | `string` | `""` | Caminho do arquivo contendo a chave privada do DNSTT. |
+| `fallback` | `string` | `""` | Endereço UDP de fallback para tráfego não-DNS na porta 53 (ex.: `127.0.0.1:8888`). |
+| `upstream` | `string` | `""` | Endereço TCP opcional de upstream. Se omitido, utiliza o pipeline em memória do VTProxy. |
+| `mtu` | `int` | `1232` | Tamanho máximo do payload de resposta DNS (EDNS0). |
 
 ---
 
@@ -238,6 +267,7 @@ O menu pode optar por usar campos planos sem objetos aninhados, e o proxy reconh
   "ssh_internal_port": 0,
   "btun_enable": true,
   "default_user_limit": 2,
+  "kill_expired": true,
   "expire_check_interval": "1m"
 }
 ```

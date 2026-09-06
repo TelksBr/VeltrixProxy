@@ -98,6 +98,7 @@ type Config struct {
 	Limits         LimitsConfig     `json:"limits"`
 	Connectors     ConnectorsConfig `json:"connectors"`
 	XHTTP          XHTTPConfig      `json:"xhttp"`
+	DNSTT          DNSTTConfig      `json:"dnstt"`
 }
 
 // SSHConfig define parâmetros do servidor SSH interno/legado
@@ -127,6 +128,7 @@ type LimitsConfig struct {
 	DefaultUserLimit    int    `json:"default_user_limit"`
 	PasswdFile          string `json:"passwd_file"`
 	ExpireCheckInterval string `json:"expire_check_interval"`
+	KillExpired         bool   `json:"kill_expired"`
 }
 
 // ConnectorsConfig define portas para backends externos (OpenVPN e V2Ray)
@@ -140,6 +142,18 @@ type XHTTPConfig struct {
 	Path  string `json:"path"`
 	Grace int    `json:"grace"`
 	Idle  int    `json:"idle"`
+}
+
+// DNSTTConfig define parâmetros do servidor DNS Tunneling integrado
+type DNSTTConfig struct {
+	Enable      bool   `json:"enable"`
+	Domain      string `json:"domain"`
+	UDP         string `json:"udp"`
+	Privkey     string `json:"privkey"`
+	PrivkeyFile string `json:"privkey_file"`
+	Fallback    string `json:"fallback"`
+	Upstream    string `json:"upstream"`
+	MTU         int    `json:"mtu"`
 }
 
 // NewDefaultConfig gera uma configuração com todos os valores padrão recomendados
@@ -181,6 +195,7 @@ func NewDefaultConfig(token string) *Config {
 			DefaultUserLimit:    0,
 			PasswdFile:          "/etc/passwd",
 			ExpireCheckInterval: "1m",
+			KillExpired:         false,
 		},
 		Connectors: ConnectorsConfig{
 			OpenVPNPort: 1194,
@@ -190,6 +205,16 @@ func NewDefaultConfig(token string) *Config {
 			Path:  "/ssh",
 			Grace: 15,
 			Idle:  60,
+		},
+		DNSTT: DNSTTConfig{
+			Enable:      false,
+			Domain:      "",
+			UDP:         ":53",
+			Privkey:     "",
+			PrivkeyFile: "/etc/dnstt/server.key",
+			Fallback:    "",
+			Upstream:    "",
+			MTU:         1232,
 		},
 	}
 }

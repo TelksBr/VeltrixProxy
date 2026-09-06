@@ -57,8 +57,19 @@ var dictPT = map[string]string{
 	"adv_opt_btun":               "Servidor BTUN / UDP DT-Proto",
 	"adv_opt_limits":             "Limites de Conexão e Expiração",
 	"adv_opt_connectors":         "Conectores Backends (OpenVPN, V2Ray) & XHTTP",
+	"adv_opt_dnstt":              "Servidor DNS Tunneling (DNSTT)",
 	"adv_opt_view_json":          "Visualizar arquivo config.json",
 	"adv_opt_finish":             "Concluir / Voltar",
+
+	// DNSTT
+	"dnstt_menu_title":          "GERENCIADOR DNS TUNNELING (DNSTT)",
+	"dnstt_opt_toggle":          "Ativar / Desativar DNSTT",
+	"dnstt_opt_domain":          "Configurar Domínio do Túnel (domain)",
+	"dnstt_opt_udp":             "Configurar Endereço/Porta UDP (udp)",
+	"dnstt_opt_keys":            "Gerenciar Chaves Criptográficas (Pública / Privada)",
+	"dnstt_opt_fallback":        "Configurar Fallback UDP (fallback)",
+	"dnstt_opt_upstream":        "Configurar Upstream TCP (upstream)",
+	"dnstt_opt_mtu":             "Configurar MTU DNS (mtu)",
 
 	// Limiter
 	"limits_menu_title":          "LIMITES DE CONEXÕES & EXPIRAÇÃO (LIMITER)",

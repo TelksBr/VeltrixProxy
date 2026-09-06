@@ -80,6 +80,22 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 		case "1":
 			portInput := components.Prompt("Digite a porta para adicionar (ex: 80 ou 443:ssl)", "")
 			if portInput != "" {
+				entry, errParse := config.ParsePortEntry(portInput)
+				if errParse != nil {
+					components.PrintError(fmt.Sprintf("Porta inválida: %v", errParse))
+					components.Pause()
+					break
+				}
+
+				avail, procInfo := system.CheckTCPPortAvailable(entry.Port)
+				if !avail {
+					components.PrintWarning(fmt.Sprintf("Atenção: A porta TCP %d já está em uso por '%s'.", entry.Port, procInfo))
+					components.PrintInfo("Adicionar uma porta ocupada pode impedir o serviço proxy de iniciar.")
+					if !components.Confirm("Deseja adicionar a porta mesmo assim?", false) {
+						break
+					}
+				}
+
 				if err := cfgMgr.AddPort(portInput); err == nil {
 					_ = system.RestartService(system.ProxyServiceName)
 					components.PrintSuccess(fmt.Sprintf("Porta %s adicionada e proxy reiniciado.", portInput))

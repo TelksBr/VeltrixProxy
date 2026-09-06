@@ -79,3 +79,36 @@ func TestHeterogeneousPortList(t *testing.T) {
 		t.Fatalf("portas inesperadas: %v", cfg.Ports)
 	}
 }
+
+func TestDNSTTConfig(t *testing.T) {
+	cfg := NewDefaultConfig("TEST_TOKEN")
+	if cfg.DNSTT.Enable != false {
+		t.Fatalf("esperado DNSTT.Enable false por padrão")
+	}
+	if cfg.DNSTT.UDP != ":53" {
+		t.Fatalf("esperado DNSTT.UDP :53, obtido %s", cfg.DNSTT.UDP)
+	}
+	if cfg.DNSTT.MTU != 1232 {
+		t.Fatalf("esperado DNSTT.MTU 1232, obtido %d", cfg.DNSTT.MTU)
+	}
+
+	jsonRaw := `{
+		"dnstt": {
+			"enable": true,
+			"domain": "t.exemplo.com",
+			"udp": ":5300",
+			"privkey": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			"fallback": "127.0.0.1:8888",
+			"upstream": "127.0.0.1:22",
+			"mtu": 1200
+		}
+	}`
+	var loaded Config
+	if err := json.Unmarshal([]byte(jsonRaw), &loaded); err != nil {
+		t.Fatalf("erro ao decodificar dnstt: %v", err)
+	}
+	if !loaded.DNSTT.Enable || loaded.DNSTT.Domain != "t.exemplo.com" || loaded.DNSTT.UDP != ":5300" || loaded.DNSTT.MTU != 1200 {
+		t.Fatalf("valores inesperados em DNSTT: %+v", loaded.DNSTT)
+	}
+}
+
