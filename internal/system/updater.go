@@ -329,9 +329,23 @@ func CheckUpdates(force bool) *UpdateCheckResult {
 	installedUDPGW := GetInstalledUDPGWVersion()
 	installedMenu := GetInstalledMenuVersion()
 
-	remoteProxy, _ := FetchRemoteProxyVersion()
-	remoteUDPGW, _ := FetchRemoteUDPGWVersion()
-	remoteMenu, _ := FetchRemoteMenuVersion()
+	var wg sync.WaitGroup
+	var remoteProxy, remoteUDPGW, remoteMenu string
+
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		remoteProxy, _ = FetchRemoteProxyVersion()
+	}()
+	go func() {
+		defer wg.Done()
+		remoteUDPGW, _ = FetchRemoteUDPGWVersion()
+	}()
+	go func() {
+		defer wg.Done()
+		remoteMenu, _ = FetchRemoteMenuVersion()
+	}()
+	wg.Wait()
 
 	proxyUpdate := false
 	if remoteProxy != "" && IsNewerVersion(remoteProxy, installedProxy) {

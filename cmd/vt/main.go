@@ -25,6 +25,7 @@ func main() {
 	}
 
 	cfgMgr := config.NewManager(*configFlag)
-	system.CheckInBackground()
+	// Força a verificação de atualizações sempre que o menu for iniciado
+	system.CheckUpdates(true)
 	menus.ShowMainMenu(cfgMgr)
 }
