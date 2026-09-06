@@ -3,10 +3,10 @@ package menus
 import (
 	"fmt"
 	"os"
-	"os/exec"
 
 	"github.com/TelksBr/VeltrixProxy/internal/config"
 	"github.com/TelksBr/VeltrixProxy/internal/i18n"
+	"github.com/TelksBr/VeltrixProxy/internal/system"
 	"github.com/TelksBr/VeltrixProxy/internal/ui/components"
 	"github.com/TelksBr/VeltrixProxy/internal/ui/theme"
 )
@@ -23,7 +23,13 @@ func ShowMainMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(fmt.Sprintf("%s3 • %s%s", theme.White, i18n.T("menu_opt_tokens"), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s4 • %s%s", theme.White, i18n.T("menu_opt_optimization"), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s", theme.White, i18n.T("menu_opt_connected_users"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s6 • %s%s", theme.White, i18n.T("menu_opt_update"), theme.Reset), w)
+
+		updateBadge := ""
+		if system.HasPendingUpdates() {
+			updateBadge = " " + theme.Yellow + "[" + i18n.T("update_badge_available") + "]"
+		}
+		components.PrintBoxLine(fmt.Sprintf("%s6 • %s%s%s", theme.White, i18n.T("menu_opt_update"), updateBadge, theme.Reset), w)
+
 		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("menu_opt_change_language"), theme.Reset), w)
 
 		components.PrintBoxDivider(w)
@@ -44,7 +50,7 @@ func ShowMainMenu(cfgMgr *config.Manager) {
 		case "5":
 			ShowOnlinesMenu()
 		case "6":
-			updateSystem()
+			ShowUpdateMenu()
 		case "7":
 			ShowLanguageMenu()
 		case "0":
@@ -56,21 +62,4 @@ func ShowMainMenu(cfgMgr *config.Manager) {
 			components.Pause()
 		}
 	}
-}
-
-func updateSystem() {
-	components.ClearScreen()
-	fmt.Printf("\n%sBuscando e aplicando atualizações do Veltrix Proxy...%s\n\n", theme.Cyan, theme.Reset)
-
-	updateCmd := "curl -fsSL https://raw.githubusercontent.com/TelksBr/VeltrixProxy/main/install.sh | bash -s -- --update --yes"
-	cmd := exec.Command("bash", "-c", updateCmd)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		components.PrintError(fmt.Sprintf("Falha ao atualizar: %v", err))
-	} else {
-		components.PrintSuccess("Atualização concluída com sucesso!")
-	}
-	components.Pause()
 }

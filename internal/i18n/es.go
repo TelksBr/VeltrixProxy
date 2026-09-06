@@ -61,4 +61,15 @@ var dictES = map[string]string{
 	"operation_failed":           "Error al ejecutar la operación.",
 	"confirm_action":             "¿Desea confirmar esta acción? (s/n)",
 	"back":                       "Volver",
+
+	// Actualizaciones
+	"update_title":               "ACTUALIZACIÓN DEL SISTEMA & BINARIOS",
+	"update_badge_available":     "¡NUEVO UPDATE!",
+	"update_badge_current":       "ACTUALIZADO",
+	"update_opt_apply":           "Actualizar ahora (Binarios y Menú)",
+	"update_opt_check_again":     "Forzar comprobación en GitHub",
+	"update_preserve_notice":     "Las configuraciones y puertos se preservarán al 100%.",
+	"update_running":             "Descargando y aplicando actualización oficial...",
+	"update_success":             "¡Actualización completada con éxito!",
+	"update_canceled":            "Actualización cancelada.",
 }

@@ -61,4 +61,15 @@ var dictPT = map[string]string{
 	"operation_failed":           "Falha ao executar operação.",
 	"confirm_action":             "Deseja confirmar esta ação? (s/n)",
 	"back":                       "Voltar",
+
+	// Atualizações
+	"update_title":               "ATUALIZAÇÃO DO SISTEMA & BINÁRIOS",
+	"update_badge_available":     "NOVO UPDATE!",
+	"update_badge_current":       "ATUALIZADO",
+	"update_opt_apply":           "Atualizar agora (Binários e Menu)",
+	"update_opt_check_again":     "Forçar verificação no GitHub",
+	"update_preserve_notice":     "Configurações e portas serão 100% preservadas.",
+	"update_running":             "Baixando e aplicando atualização oficial...",
+	"update_success":             "Atualização concluída com sucesso!",
+	"update_canceled":            "Atualização cancelada.",
 }

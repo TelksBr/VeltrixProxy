@@ -6,11 +6,12 @@ import (
 	"os"
 
 	"github.com/TelksBr/VeltrixProxy/internal/config"
+	"github.com/TelksBr/VeltrixProxy/internal/system"
 	"github.com/TelksBr/VeltrixProxy/internal/ui/menus"
 	"github.com/TelksBr/VeltrixProxy/internal/ui/theme"
 )
 
-const Version = "3.0.0"
+const Version = system.CurrentMenuVersion
 
 func main() {
 	configFlag := flag.String("config", "", "Caminho do arquivo config.json (padrão: /etc/proxyvt/config.json)")
@@ -24,5 +25,6 @@ func main() {
 	}
 
 	cfgMgr := config.NewManager(*configFlag)
+	system.CheckInBackground()
 	menus.ShowMainMenu(cfgMgr)
 }

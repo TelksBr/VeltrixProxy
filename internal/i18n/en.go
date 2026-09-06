@@ -61,4 +61,15 @@ var dictEN = map[string]string{
 	"operation_failed":           "Operation failed.",
 	"confirm_action":             "Do you confirm this action? (y/n)",
 	"back":                       "Back",
+
+	// Updates
+	"update_title":               "SYSTEM & BINARIES UPDATE",
+	"update_badge_available":     "NEW UPDATE!",
+	"update_badge_current":       "UP TO DATE",
+	"update_opt_apply":           "Update now (Binaries and Menu)",
+	"update_opt_check_again":     "Force check on GitHub",
+	"update_preserve_notice":     "Settings and ports will be 100% preserved.",
+	"update_running":             "Downloading and applying official update...",
+	"update_success":             "Update completed successfully!",
+	"update_canceled":            "Update canceled.",
 }
