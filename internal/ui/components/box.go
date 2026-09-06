@@ -134,8 +134,8 @@ func PrintBoxDivider(width int) {
 	fmt.Printf("%s├%s┤%s\n", borderCol, divider, theme.Reset)
 }
 
-// PrintBoxLine imprime uma linha de conteúdo alinhada com as bordas da caixa
-func PrintBoxLine(content string, width int) {
+// FormatBoxLine formata uma linha de conteúdo alinhada com as bordas da caixa
+func FormatBoxLine(content string, width int) string {
 	if width <= 0 {
 		width = GetBoxWidth()
 	}
@@ -156,12 +156,17 @@ func PrintBoxLine(content string, width int) {
 		pad = 0
 	}
 
-	fmt.Printf("%s│%s %s%s %s│%s\n",
+	return fmt.Sprintf("%s│%s %s%s %s│%s",
 		borderCol, theme.Reset,
 		content,
 		strings.Repeat(" ", pad),
 		borderCol, theme.Reset,
 	)
+}
+
+// PrintBoxLine imprime uma linha de conteúdo alinhada com as bordas da caixa
+func PrintBoxLine(content string, width int) {
+	fmt.Println(FormatBoxLine(content, width))
 }
 
 // PrintBoxFooter fecha a caixa └──────┘
@@ -308,4 +313,113 @@ func PrintWarning(msg string) {
 // PrintInfo imprime mensagem informativa
 func PrintInfo(msg string) {
 	fmt.Printf("\n%sℹ%s %s%s%s\n", theme.Cyan, theme.Reset, theme.Gray, msg, theme.Reset)
+}
+
+// UpdateDashboardMetrics atualiza no terminal apenas os valores dinâmicos (CPU, RAM, Online, Status) sem piscar a tela
+func UpdateDashboardMetrics(width int) {
+	if width <= 0 {
+		width = GetBoxWidth()
+	}
+
+	cpuUsage := system.GetCPUUsage()
+	ram := system.GetRAMInfo()
+	isProxyActive := system.IsServiceActive(system.ProxyServiceName)
+	onlines := proxy.GetOnlineUsersTotal()
+	isUDPGWActive := udpgw.IsActive()
+	udpgwPorts := udpgw.ListConfiguredPorts()
+
+	cpuColor := theme.Green
+	if cpuUsage > 75 {
+		cpuColor = theme.Red
+	} else if cpuUsage > 50 {
+		cpuColor = theme.Yellow
+	}
+
+	ramColor := theme.Green
+	if ram.Percent > 80 {
+		ramColor = theme.Red
+	} else if ram.Percent > 60 {
+		ramColor = theme.Yellow
+	}
+
+	proxyStatusBadge := theme.BadgeOffline
+	if isProxyActive {
+		proxyStatusBadge = theme.BadgeOnline
+	}
+
+	udpgwStatusBadge := theme.BadgeOffline
+	if isUDPGWActive {
+		udpgwStatusBadge = theme.BadgeOnline
+	}
+
+	var portsLabel string
+	if len(udpgwPorts) == 0 {
+		portsLabel = "-"
+	} else if len(udpgwPorts) == 1 {
+		portsLabel = strconv.Itoa(udpgwPorts[0])
+	} else if len(udpgwPorts) == 2 {
+		portsLabel = fmt.Sprintf("%d, %d", udpgwPorts[0], udpgwPorts[1])
+	} else {
+		portsLabel = fmt.Sprintf("%d (+%d)", udpgwPorts[0], len(udpgwPorts)-1)
+	}
+
+	contentWidth := width - 4
+	if contentWidth < 4 {
+		contentWidth = 4
+	}
+
+	var line1, line2, line3 string
+	if width >= 54 {
+		cpuCol := fmt.Sprintf("%sCPU:%s %s%d%%%s", theme.Gray, theme.Reset, cpuColor, cpuUsage, theme.Reset)
+		ramCol := fmt.Sprintf("%sRAM:%s %s%dMB/%dMB (%d%%)%s", theme.Gray, theme.Reset, ramColor, ram.UsedMB, ram.TotalMB, ram.Percent, theme.Reset)
+		line1 = FormatBoxLine(formatTwoCols(cpuCol, ramCol, contentWidth), width)
+
+		proxyCol := fmt.Sprintf("%sProxy VT:%s %s", theme.Gray, theme.Reset, proxyStatusBadge)
+		onlineCol := fmt.Sprintf("%sOnline:%s %s%d con%s", theme.Gray, theme.Reset, theme.Cyan, onlines, theme.Reset)
+		line2 = FormatBoxLine(formatTwoCols(proxyCol, onlineCol, contentWidth), width)
+
+		avail := contentWidth - 3
+		leftCol := avail / 2
+		udpgwCol := fmt.Sprintf("%sBadVPN / UDPGW:%s %s", theme.Gray, theme.Reset, udpgwStatusBadge)
+		if leftCol < 25 {
+			udpgwCol = fmt.Sprintf("%sBadVPN:%s %s", theme.Gray, theme.Reset, udpgwStatusBadge)
+		}
+		portTitle := "Portas UDP:"
+		if len(udpgwPorts) <= 1 {
+			portTitle = "Porta UDP:"
+		}
+		udpgwPortCol := fmt.Sprintf("%s%s%s %s%s%s", theme.Gray, portTitle, theme.Reset, theme.Cyan, portsLabel, theme.Reset)
+		line3 = FormatBoxLine(formatTwoCols(udpgwCol, udpgwPortCol, contentWidth), width)
+	} else {
+		line1 = FormatBoxLine(fmt.Sprintf("%sCPU:%s %s%d%%%s %s│ RAM:%s %s%dMB (%d%%)%s",
+			theme.Gray, theme.Reset, cpuColor, cpuUsage, theme.Reset,
+			theme.DarkGray, theme.Reset, ramColor, ram.UsedMB, ram.Percent, theme.Reset,
+		), width)
+		line2 = FormatBoxLine(fmt.Sprintf("%sProxy VT:%s %s %s(%d con)%s",
+			theme.Gray, theme.Reset, proxyStatusBadge, theme.Cyan, onlines, theme.Reset,
+		), width)
+		line3 = FormatBoxLine(fmt.Sprintf("%sBadVPN / UDPGW:%s %s %s(%s)%s",
+			theme.Gray, theme.Reset, udpgwStatusBadge, theme.Cyan, portsLabel, theme.Reset,
+		), width)
+	}
+
+	// Sequência ANSI atômica em buffer único:
+	// \033[s \0337 : Salva posição do cursor (compatível ANSI e DEC)
+	// \033[?25l    : Oculta o cursor temporariamente
+	// \033[14A\r   : Move o cursor para cima 14 linhas até a linha 1 dinâmica
+	// Redesenha as 3 linhas dinâmicas em seus devidos lugares
+	// \0338 \033[u : Restaura o cursor exatamente onde estava no prompt
+	// \033[?25h    : Torna o cursor visível novamente
+	var buf strings.Builder
+	buf.WriteString("\033[s\0337\033[?25l")
+	buf.WriteString("\033[14A\r")
+	buf.WriteString(line1)
+	buf.WriteString("\n\r")
+	buf.WriteString(line2)
+	buf.WriteString("\n\r")
+	buf.WriteString(line3)
+	buf.WriteString("\0338\033[u\033[?25h")
+
+	_, _ = os.Stdout.WriteString(buf.String())
+	_ = os.Stdout.Sync()
 }

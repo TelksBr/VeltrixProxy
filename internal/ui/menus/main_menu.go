@@ -3,6 +3,8 @@ package menus
 import (
 	"fmt"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/TelksBr/VeltrixProxy/internal/config"
 	"github.com/TelksBr/VeltrixProxy/internal/i18n"
@@ -36,7 +38,27 @@ func ShowMainMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(exitLine, w)
 		components.PrintBoxFooter(w)
 
+		// Atualizador dinâmico de métricas (CPU, RAM, Online, Status) sem piscar a tela
+		stopLiveUpdater := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stopLiveUpdater:
+					return
+				case <-ticker.C:
+					components.UpdateDashboardMetrics(w)
+				}
+			}
+		}()
+
 		choice := components.ReadOption(i18n.T("prompt_select_option") + " [0-6]")
+		close(stopLiveUpdater)
+		wg.Wait()
 		switch choice {
 		case "1":
 			ShowProxyMenu(cfgMgr)

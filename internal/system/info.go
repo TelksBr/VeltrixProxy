@@ -27,6 +27,13 @@ type RAMInfo struct {
 	Percent int
 }
 
+var (
+	cpuMu        sync.Mutex
+	prevCPUTotal uint64
+	prevCPUIdle  uint64
+	prevCPUTime  time.Time
+)
+
 // GetCPUUsage calcula a porcentagem de uso de CPU no Linux
 func GetCPUUsage() int {
 	if runtime.GOOS != "linux" {
@@ -59,20 +66,36 @@ func GetCPUUsage() int {
 		return 0, 0, fmt.Errorf("formato inválido")
 	}
 
-	idle1, total1, err := readStat()
+	cpuMu.Lock()
+	defer cpuMu.Unlock()
+
+	idle, total, err := readStat()
 	if err != nil {
 		return 0
 	}
 
-	time.Sleep(150 * time.Millisecond)
-
-	idle2, total2, err := readStat()
-	if err != nil {
-		return 0
+	now := time.Now()
+	// Se for a primeira leitura ou tiver se passado muito tempo (>10s), faz amostragem curta de 100ms
+	if prevCPUTotal == 0 || now.Sub(prevCPUTime) > 10*time.Second {
+		prevCPUTotal = total
+		prevCPUIdle = idle
+		prevCPUTime = now
+		time.Sleep(100 * time.Millisecond)
+		idle2, total2, err2 := readStat()
+		if err2 != nil {
+			return 0
+		}
+		idle = idle2
+		total = total2
 	}
 
-	deltaTotal := total2 - total1
-	deltaIdle := idle2 - idle1
+	deltaTotal := total - prevCPUTotal
+	deltaIdle := idle - prevCPUIdle
+
+	prevCPUTotal = total
+	prevCPUIdle = idle
+	prevCPUTime = now
+
 	if deltaTotal == 0 {
 		return 0
 	}
