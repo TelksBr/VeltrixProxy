@@ -6,7 +6,6 @@ var dictEN = map[string]string{
 	"menu_opt_proxy":             "Proxy Menu (Ports & JSON)",
 	"menu_opt_udpgw":             "BadVPN / UDPGW Menu",
 	"menu_opt_tokens":            "Manage License Tokens",
-	"menu_opt_optimization":      "Network & Kernel Optimization",
 	"menu_opt_connected_users":   "Connected Users (Online)",
 	"menu_opt_update":            "Update System & Binaries",
 	"menu_opt_change_language":   "Change Language",
@@ -44,7 +43,6 @@ var dictEN = map[string]string{
 	"udpgw_adv_execstart":        "View ExecStart command",
 	"udpgw_adv_apply":            "Save and apply to systemd",
 	"tokens_menu_title":          "MANAGE LICENSE TOKENS",
-	"optimize_menu_title":        "NETWORK & KERNEL OPTIMIZATIONS",
 	"onlines_menu_title":         "CONNECTED USERS (ONLINE)",
 
 	// Advanced Menu
