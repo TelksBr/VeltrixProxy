@@ -361,7 +361,6 @@ get_missing_commands() {
   has_command curl || missing+=("curl")
   has_checksum_command || missing+=("sha256sum")
   has_command iptables || missing+=("iptables")
-  has_command python3 || missing+=("python3")
   if [[ ${#missing[@]} -gt 0 ]]; then
     printf '%s\n' "${missing[@]}"
   fi
@@ -406,7 +405,6 @@ commands_to_packages() {
     curl) pkg="curl" ;;
     sha256sum) pkg="coreutils" ;;
     iptables) pkg="iptables" ;;
-    python3) pkg="python3" ;;
     *) continue ;;
     esac
     [[ " ${packages[*]} " == *" $pkg "* ]] || packages+=("$pkg")
@@ -1466,8 +1464,9 @@ sync_proxy_service_tokens() {
     fi
   done
 
-  if [[ -f "/etc/proxyvt/config.json" ]] && command -v python3 >/dev/null 2>&1; then
-    run_privileged python3 -c '
+  if [[ -f "/etc/proxyvt/config.json" ]]; then
+    if command -v python3 >/dev/null 2>&1; then
+      run_privileged python3 -c '
 import json, sys
 p = "/etc/proxyvt/config.json"
 try:
@@ -1481,6 +1480,9 @@ try:
 except Exception:
     pass
 ' "$token" 2>/dev/null || true
+    else
+      safe_sed_inplace "/etc/proxyvt/config.json" "s|\"token\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"token\": \"${safe_token}\"|g" || true
+    fi
   fi
 }
 
@@ -1676,6 +1678,64 @@ with open(path, "w", encoding="utf-8") as f:
 ' "$token" 2>/dev/null || true
   fi
 
+  # Fallback 100% autossuficiente (sem precisar de Python)
+  if [[ ! -s "$PROXY_JSON_FILE" ]]; then
+    cat << EOF | run_privileged tee "$PROXY_JSON_FILE" >/dev/null
+{
+  "token": "${token}",
+  "ports": [
+    "80",
+    "443:ssl"
+  ],
+  "disabled_ports": [],
+  "log_level": "info",
+  "log_file": "",
+  "buffer_size": 32768,
+  "max_connections": 0,
+  "idle_timeout": 0,
+  "write_timeout": 0,
+  "cert": "",
+  "cert_internal": true,
+  "display_banner": true,
+  "response": "VeltrixProxy",
+  "ssh_only": false,
+  "ulimit": 65536,
+  "ssh": {
+    "internal": true,
+    "internal_port": 0,
+    "port": 22,
+    "auth": "shadow",
+    "auth_file": "",
+    "allow_root": true,
+    "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3"
+  },
+  "btun": {
+    "enable": true,
+    "tun": "btun0",
+    "subnet": "10.77.0.0/16",
+    "auth": "shadow",
+    "auth_file": "/etc/btun/users",
+    "udp_port": 0
+  },
+  "limits": {
+    "enable": true,
+    "default_user_limit": 0,
+    "passwd_file": "/etc/passwd",
+    "expire_check_interval": "1m"
+  },
+  "connectors": {
+    "openvpn_port": 1194,
+    "v2ray_port": 1080
+  },
+  "xhttp": {
+    "path": "/ssh",
+    "grace": 15,
+    "idle": 60
+  }
+}
+EOF
+  fi
+
   if command -v python3 >/dev/null 2>&1 && [[ -f "$PROXY_JSON_FILE" ]]; then
     run_privileged python3 -c '
 import json, sys
@@ -1712,7 +1772,7 @@ migrate_flags_to_json_config() {
   run_privileged mkdir -p "$PROXY_JSON_DIR" 2>/dev/null || true
 
   if ! command -v python3 >/dev/null 2>&1; then
-    log_warn "Python 3 não disponível; garantindo modelo básico de config.json."
+    log_info "Python 3 não detectado; utilizando gerador nativo de config.json."
     ensure_proxy_json_config "$token"
     return 0
   fi
