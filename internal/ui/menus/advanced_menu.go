@@ -45,13 +45,6 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 		}
 
 		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("adv_opt_connectors"), theme.Reset), w)
-
-		dnsttBadge := theme.Red + "[INATIVO]" + theme.Reset
-		if cfg.DNSTT.Enable {
-			dnsttBadge = theme.Green + "[ATIVO]" + theme.Reset
-		}
-		components.PrintBoxLine(fmt.Sprintf("%s8 • %s (%s)%s", theme.White, i18n.T("adv_opt_dnstt"), dnsttBadge, theme.Reset), w)
-
 		components.PrintBoxLine(fmt.Sprintf("%sV • %s%s", theme.White, i18n.T("adv_opt_view_json"), theme.Reset), w)
 
 		components.PrintBoxDivider(w)
@@ -59,9 +52,9 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(backLine, w)
 		components.PrintBoxFooter(w)
 
-		promptRange := "0-8/V"
+		promptRange := "0-7/V"
 		if !cfg.SSH.Internal {
-			promptRange = "0-5,7-8/V"
+			promptRange = "0-5,7/V"
 		}
 
 		choice := strings.ToLower(components.ReadOption(fmt.Sprintf("Selecione a opção [%s]", promptRange)))

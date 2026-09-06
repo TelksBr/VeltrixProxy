@@ -49,7 +49,7 @@ func TestDNSTTOptionFormatting(t *testing.T) {
 		i18n.SetLanguage(lang)
 
 		dnsttBadge := theme.Green + "[ATIVO]" + theme.Reset
-		line := fmt.Sprintf("%s8 • %s (%s)%s", theme.White, i18n.T("adv_opt_dnstt"), dnsttBadge, theme.Reset)
+		line := fmt.Sprintf("%s3 • %s (%s)%s", theme.White, i18n.T("adv_opt_dnstt"), dnsttBadge, theme.Reset)
 
 		visible := theme.VisibleLen(line)
 		contentWidth := width - 4
