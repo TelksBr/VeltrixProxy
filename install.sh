@@ -713,6 +713,7 @@ fetch_release_tags() {
       echo "$releases_json" \
         | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' \
         | sed -E 's/.*"([^"]+)"$/\1/' \
+        | grep -v 'menu-' \
         | head -n "$MAX_VERSIONS"
     )
   fi
@@ -731,6 +732,7 @@ fetch_release_tags() {
         echo "$atom_output" \
           | grep -oE '/releases/tag/[^"'\''<> ]+' \
           | sed 's|/releases/tag/||' \
+          | grep -v 'menu-' \
           | sort -u -V -r \
           | head -n "$MAX_VERSIONS"
       )
@@ -1013,7 +1015,7 @@ fetch_latest_release_tag() {
   # 3. Feed Atom
   atom_tag=$(curl -fsSL -A "$DEFAULT_USER_AGENT" --connect-timeout 5 --max-time 10 \
     "https://github.com/${repo}/releases.atom" 2>/dev/null \
-    | grep -oE '/releases/tag/[^"'\''<> ]+' | head -n1 | sed 's|/releases/tag/||' || true)
+    | grep -oE '/releases/tag/[^"'\''<> ]+' | sed 's|/releases/tag/||' | grep -v 'menu-' | head -n1 || true)
   if [[ -n "$atom_tag" ]]; then
     echo "$atom_tag"
     return 0
@@ -2644,72 +2646,65 @@ install_menu_script() {
 
   [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]] || TMP_DIR=$(mktemp -d)
 
-  local menu_tmp="${TMP_DIR}/vt.sh"
   local menu_dest="${INSTALL_DIR}/${MENU_NAME}"
-  local old_hash="(ausente)" new_hash menu_url menu_sha menu_bytes menu_rev_found
+  local menu_bin_tmp="${TMP_DIR}/vt-bin"
+  local menu_sh_tmp="${TMP_DIR}/vt.sh"
+  local go_arch="$ARCH_NAME"
+  local menu_bin_url="https://github.com/${REPO}/releases/download/menu-latest/vt-${OS_NAME}-${go_arch}"
+  local installed_type=""
 
-  if [[ -f "$menu_dest" ]]; then
-    old_hash=$(file_sha256 "$menu_dest")
-    log_info "Menu atual: ${menu_dest} (sha256=${old_hash:0:12}…)"
-  fi
-
-  log_info "Baixando menu unificado (vt.sh) do branch main (sem cache)..."
-  MENU_COMMIT_SHA=$(resolve_repo_main_sha || true)
-  if [[ -n "$MENU_COMMIT_SHA" ]]; then
-    # URL por commit SHA evita cache do path /main/
-    menu_url="https://raw.githubusercontent.com/${REPO}/${MENU_COMMIT_SHA}/vt.sh"
-    log_info "Commit main: ${MENU_COMMIT_SHA:0:12}"
-  else
-    menu_url="${MENU_URL}?$(date +%s)"
-    log_warn "Não foi possível resolver SHA do main; usando URL com cache-bust."
-  fi
-
-  download_file "$menu_url" "$menu_tmp"
-
-  if ! grep -q "MENU_REV=" "$menu_tmp" 2>/dev/null && ! grep -q "prompt_proxy_advanced_options" "$menu_tmp" 2>/dev/null; then
-    log_warn "Menu baixado parece antigo/incompleto — tentando URL alternativa."
-    download_file "${MENU_URL}?ts=$(date +%s)&nocache=1" "$menu_tmp"
-  fi
-
-  if ! head -n1 "$menu_tmp" | grep -qE '^#!'; then
-    log_error "Menu baixado inválido (sem shebang)."
-    exit 1
-  fi
-
-  menu_rev_found=$(
-    grep -oE 'MENU_REV="[^"]+"' "$menu_tmp" 2>/dev/null \
-      | head -n1 \
-      | sed -E 's/MENU_REV="([^"]+)"/\1/' || true
-  )
-
-  # Remove destino (symlink ou arquivo) antes de instalar — evita escrever através de symlink antigo.
-  run_privileged rm -f "$menu_dest"
-  run_privileged install -m 755 "$menu_tmp" "$menu_dest"
-
-  # Garante que o shell não use hash antigo do comando vt
-  hash -r 2>/dev/null || true
-
-  new_hash=$(file_sha256 "$menu_dest")
-  menu_bytes=$(wc -c <"$menu_dest" | tr -d ' ')
-  echo "${menu_rev_found:-unknown}" | run_privileged tee "$MENU_REV_FILE" >/dev/null
-
-  if [[ "$old_hash" == "$new_hash" ]]; then
-    log_warn "Hash do menu igual ao anterior (${new_hash:0:12}…). Se esperava mudanças, limpe cache CDN ou force push do vt.sh."
-  else
-    log_success "Menu substituído (${old_hash:0:12}… → ${new_hash:0:12}…)"
-  fi
-
-  if [[ -n "$menu_rev_found" ]]; then
-    log_success "Menu instalado: ${menu_dest} (${menu_bytes} bytes, rev=${menu_rev_found})"
-    if [[ -n "$MENU_REV_EXPECTED" && "$menu_rev_found" != "$MENU_REV_EXPECTED" ]]; then
-      log_warn "Revisão do menu (${menu_rev_found}) difere da esperada pelo instalador (${MENU_REV_EXPECTED})."
-      log_warn "Faça push do vt.sh no GitHub main e rode o update de novo."
+  log_info "Verificando binário nativo em Go do menu (menu-latest)..."
+  if download_file "$menu_bin_url" "$menu_bin_tmp" 2>/dev/null && [[ -s "$menu_bin_tmp" ]]; then
+    if head -c 4 "$menu_bin_tmp" 2>/dev/null | grep -q $'\x7fELF' || file "$menu_bin_tmp" 2>/dev/null | grep -qiE 'ELF|executable'; then
+      run_privileged rm -f "$menu_dest"
+      run_privileged install -m 755 "$menu_bin_tmp" "$menu_dest"
+      installed_type="go"
+      echo "go-v3.0.0" | run_privileged tee "$MENU_REV_FILE" >/dev/null
+      log_success "Menu nativo em Go instalado com sucesso: ${menu_dest}"
     fi
-  else
-    log_success "Menu instalado: ${menu_dest} (${menu_bytes} bytes)"
-    log_warn "MENU_REV não encontrado no vt.sh baixado — confirme se o main está atualizado."
   fi
 
+  if [[ "$installed_type" != "go" ]]; then
+    log_warn "Binário Go indisponível ou incompatível; baixando fallback em shell script (vt.sh)..."
+    local old_hash="(ausente)" new_hash menu_url menu_bytes menu_rev_found
+
+    if [[ -f "$menu_dest" ]]; then
+      old_hash=$(file_sha256 "$menu_dest")
+    fi
+
+    MENU_COMMIT_SHA=$(resolve_repo_main_sha || true)
+    if [[ -n "$MENU_COMMIT_SHA" ]]; then
+      menu_url="https://raw.githubusercontent.com/${REPO}/${MENU_COMMIT_SHA}/vt.sh"
+    else
+      menu_url="${MENU_URL}?$(date +%s)"
+    fi
+
+    download_file "$menu_url" "$menu_sh_tmp"
+
+    if ! grep -q "MENU_REV=" "$menu_sh_tmp" 2>/dev/null && ! grep -q "prompt_proxy_advanced_options" "$menu_sh_tmp" 2>/dev/null; then
+      download_file "${MENU_URL}?ts=$(date +%s)&nocache=1" "$menu_sh_tmp"
+    fi
+
+    if ! head -n1 "$menu_sh_tmp" | grep -qE '^#!'; then
+      log_error "Menu de fallback baixado inválido (sem shebang)."
+      exit 1
+    fi
+
+    menu_rev_found=$(
+      grep -oE 'MENU_REV="[^"]+"' "$menu_sh_tmp" 2>/dev/null \
+        | head -n1 \
+        | sed -E 's/MENU_REV="([^"]+)"/\1/' || true
+    )
+
+    run_privileged rm -f "$menu_dest"
+    run_privileged install -m 755 "$menu_sh_tmp" "$menu_dest"
+    new_hash=$(file_sha256 "$menu_dest")
+    menu_bytes=$(wc -c <"$menu_dest" | tr -d ' ')
+    echo "${menu_rev_found:-unknown}" | run_privileged tee "$MENU_REV_FILE" >/dev/null
+    log_success "Menu em shell script instalado: ${menu_dest} (${menu_bytes} bytes, rev=${menu_rev_found:-legacy})"
+  fi
+
+  hash -r 2>/dev/null || true
   if command -v "$MENU_NAME" >/dev/null 2>&1; then
     local resolved
     resolved=$(command -v "$MENU_NAME")

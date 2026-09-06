@@ -1,0 +1,64 @@
+package i18n
+
+var dictEN = map[string]string{
+	// Main Menu
+	"app_title":                  "VELTRIX PROXY MANAGER",
+	"menu_opt_proxy":             "Proxy Menu (Ports & JSON)",
+	"menu_opt_udpgw":             "BadVPN / UDPGW Menu",
+	"menu_opt_tokens":            "Manage License Tokens",
+	"menu_opt_optimization":      "Network & Kernel Optimization",
+	"menu_opt_connected_users":   "Connected Users (Online)",
+	"menu_opt_update":            "Update System & Binaries",
+	"menu_opt_change_language":   "Change Language",
+	"menu_opt_exit":              "Exit Menu",
+
+	// Proxy Menu
+	"proxy_menu_title":           "VT PROXY MANAGER",
+	"proxy_opt_start_specific":   "Open / Enable specific port",
+	"proxy_opt_start_all":        "Enable all configured ports",
+	"proxy_opt_pause":            "Pause proxy service",
+	"proxy_opt_edit":             "Manage ports (Enable / Disable)",
+	"proxy_opt_remove":           "Remove proxy port",
+	"proxy_opt_restart":          "Restart proxy service",
+	"proxy_opt_adv":              "Advanced options (config.json)",
+	"proxy_opt_http":             "Change global HTTP response",
+	"proxy_opt_details":          "Port details and status",
+	"proxy_opt_logs":             "View service logs",
+	"proxy_opt_back":             "Back to main menu",
+
+	// Advanced Menu
+	"adv_menu_title":             "ADVANCED PROXY OPTIONS (JSON)",
+	"adv_opt_perf":               "Performance & Timeouts (Buffer, Conns, Ulimit)",
+	"adv_opt_http_logs":          "HTTP Response, Banner & Logs",
+	"adv_opt_ssl":                "TLS / SSL Certificates (Internal / External)",
+	"adv_opt_ssh":                "Native SSH Server (Zero-Fork)",
+	"adv_opt_btun":               "BTUN / UDP DT-Proto Server",
+	"adv_opt_limits":             "Connection Limits & Expiration (Limiter)",
+	"adv_opt_connectors":         "Backend Connectors (OpenVPN, V2Ray) & XHTTP",
+	"adv_opt_view_json":          "View config.json file",
+	"adv_opt_finish":             "Finish / Back",
+
+	// Limiter
+	"limits_menu_title":          "CONNECTION LIMITS & EXPIRATION (LIMITER)",
+	"limits_opt_enable":          "Enable Limiter (limits.enable)",
+	"limits_opt_default_limit":   "Default Limit Per Account (0=unlimited)",
+	"limits_opt_expire_check":    "Automatic Expired Users Check",
+	"limits_opt_passwd_file":     "Limits / Password File (/etc/passwd)",
+
+	// Status
+	"status_online":              "ONLINE",
+	"status_offline":             "OFFLINE",
+	"status_active":              "ACTIVE",
+	"status_inactive":            "INACTIVE",
+	"service_running":            "Running",
+	"service_stopped":            "Stopped",
+
+	// Prompts
+	"prompt_select_option":       "Select an option",
+	"prompt_press_enter":         "Press [Enter] to continue...",
+	"invalid_option":             "Invalid option!",
+	"operation_success":          "Operation completed successfully.",
+	"operation_failed":           "Operation failed.",
+	"confirm_action":             "Do you confirm this action? (y/n)",
+	"back":                       "Back",
+}
