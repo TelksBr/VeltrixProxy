@@ -370,10 +370,38 @@ func PrintInfo(msg string) {
 	fmt.Printf("\n%sℹ%s %s%s%s\n", theme.Cyan, theme.Reset, theme.Gray, msg, theme.Reset)
 }
 
+// MainMenuMetricsOffsetUp define a quantidade exata de linhas que o cursor precisa subir
+// a partir do prompt de seleção para alcançar a primeira linha dinâmica (CPU/RAM).
+//
+// Detalhamento das 17 linhas a partir da linha do prompt:
+//  1: Linha em branco (\n inicial do prompt em ReadOption)
+//  2: Borda inferior da caixa (PrintBoxFooter de PrintMenuCredits)
+//  3: Linha de créditos (PrintBoxCenterLine de PrintMenuCredits)
+//  4: Divisória de créditos (PrintBoxDivider de PrintMenuCredits)
+//  5: Opção 0 • Sair do Menu
+//  6: Divisória intermediária antes da opção 0
+//  7: Opção 7 • Desinstalar / Remover VTProxy
+//  8: Opção 6 • Mudar Idioma (Change Language)
+//  9: Opção 5 • Atualizar Sistema & Binários
+// 10: Opção 4 • Usuários Conectados (Online)
+// 11: Opção 3 • Gerenciar Tokens de Licença
+// 12: Opção 2 • Menu BadVPN / UDPGW
+// 13: Opção 1 • Menu Proxy (Portas & JSON)
+// 14: Divisória inferior do cabeçalho do Dashboard
+// 15: Linha Dinâmica 3 (BadVPN / UDPGW & Portas)
+// 16: Linha Dinâmica 2 (Proxy VT & Online)
+// 17: Linha Dinâmica 1 (CPU & RAM)  <-- Posição alvo exata
+const MainMenuMetricsOffsetUp = 17
+
 // UpdateDashboardMetrics atualiza no terminal apenas os valores dinâmicos (CPU, RAM, Online, Status) sem piscar a tela
-func UpdateDashboardMetrics(width int) {
+func UpdateDashboardMetrics(width int, offsetUp ...int) {
 	if width <= 0 {
 		width = GetBoxWidth()
+	}
+
+	linesUp := MainMenuMetricsOffsetUp
+	if len(offsetUp) > 0 && offsetUp[0] > 0 {
+		linesUp = offsetUp[0]
 	}
 
 	cpuUsage := system.GetCPUUsage()
@@ -459,15 +487,15 @@ func UpdateDashboardMetrics(width int) {
 	}
 
 	// Sequência ANSI atômica em buffer único:
-	// \033[s \0337 : Salva posição do cursor (compatível ANSI e DEC)
-	// \033[?25l    : Oculta o cursor temporariamente
-	// \033[14A\r   : Move o cursor para cima 14 linhas até a linha 1 dinâmica
+	// \033[s \0337     : Salva posição do cursor (compatível ANSI e DEC)
+	// \033[?25l        : Oculta o cursor temporariamente
+	// \033[<linesUp>A\r: Move o cursor para cima exatamente até a linha 1 dinâmica
 	// Redesenha as 3 linhas dinâmicas em seus devidos lugares
-	// \0338 \033[u : Restaura o cursor exatamente onde estava no prompt
-	// \033[?25h    : Torna o cursor visível novamente
+	// \0338 \033[u     : Restaura o cursor exatamente onde estava no prompt
+	// \033[?25h        : Torna o cursor visível novamente
 	var buf strings.Builder
 	buf.WriteString("\033[s\0337\033[?25l")
-	buf.WriteString("\033[14A\r")
+	buf.WriteString(fmt.Sprintf("\033[%dA\r", linesUp))
 	buf.WriteString(line1)
 	buf.WriteString("\n\r")
 	buf.WriteString(line2)

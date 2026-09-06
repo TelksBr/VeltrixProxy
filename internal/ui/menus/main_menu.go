@@ -52,7 +52,7 @@ func ShowMainMenu(cfgMgr *config.Manager) {
 				case <-stopLiveUpdater:
 					return
 				case <-ticker.C:
-					components.UpdateDashboardMetrics(w)
+					components.UpdateDashboardMetrics(w, components.MainMenuMetricsOffsetUp)
 				}
 			}
 		}()

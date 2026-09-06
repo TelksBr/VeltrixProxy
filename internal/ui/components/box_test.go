@@ -2,6 +2,7 @@ package components
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -102,3 +103,47 @@ func TestPrintMenuCredits(t *testing.T) {
 		}
 	}
 }
+
+func TestMainMenuOffsetToDynamicLine(t *testing.T) {
+	for _, w := range []int{42, 50, 54, 62, 70} {
+		output := captureOutput(func() {
+			PrintDashboardHeader(w)
+			PrintBoxLine("1 • Menu Proxy", w)
+			PrintBoxLine("2 • Menu BadVPN", w)
+			PrintBoxLine("3 • Gerenciar Tokens", w)
+			PrintBoxLine("4 • Usuários Conectados", w)
+			PrintBoxLine("5 • Atualizar Sistema", w)
+			PrintBoxLine("6 • Mudar Idioma", w)
+			PrintBoxLine("7 • Desinstalar", w)
+			PrintBoxDivider(w)
+			PrintBoxLine("0 • Sair", w)
+			PrintMenuCredits(w)
+			// Simula o prompt do ReadOption com \n inicial
+			fmt.Printf("\nSelecione uma opção [0-7]: ")
+		})
+
+		lines := strings.Split(output, "\n")
+		promptIdx := len(lines) - 1
+		targetIdx := promptIdx - MainMenuMetricsOffsetUp
+
+		if targetIdx < 0 || targetIdx >= len(lines) {
+			t.Fatalf("Width %d: targetIdx %d out of bounds (total lines=%d)", w, targetIdx, len(lines))
+		}
+
+		targetLine := theme.StripANSI(lines[targetIdx])
+		if !strings.Contains(targetLine, "CPU:") || !strings.Contains(targetLine, "RAM:") {
+			t.Errorf("Width %d: Line at offset %d is %q, expected to contain CPU: and RAM:", w, MainMenuMetricsOffsetUp, targetLine)
+		}
+
+		line2 := theme.StripANSI(lines[targetIdx+1])
+		if !strings.Contains(line2, "Proxy VT:") {
+			t.Errorf("Width %d: Line at offset %d is %q, expected to contain Proxy VT:", w, MainMenuMetricsOffsetUp-1, line2)
+		}
+
+		line3 := theme.StripANSI(lines[targetIdx+2])
+		if !strings.Contains(line3, "BadVPN") {
+			t.Errorf("Width %d: Line at offset %d is %q, expected to contain BadVPN", w, MainMenuMetricsOffsetUp-2, line3)
+		}
+	}
+}
+
