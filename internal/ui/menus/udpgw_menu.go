@@ -119,8 +119,8 @@ func handleCreatePort(existingPorts []int) {
 		}
 	}
 
-	avail, procInfo := system.CheckTCPPortAvailable(port)
-	if !avail {
+	inUse, procInfo := system.IsPortInUseByOther("tcp", port)
+	if inUse {
 		components.PrintWarning(fmt.Sprintf("Atenção: A porta TCP %d já está em uso por '%s'.", port, procInfo))
 		components.PrintInfo("Criar o gateway UDPGW em uma porta ocupada fará o serviço systemd falhar ao iniciar.")
 		if !components.Confirm("Deseja criar a porta mesmo assim?", false) {
@@ -175,8 +175,8 @@ func handleStartPort(ports []int) {
 
 	startPortChecked := func(p int) {
 		if !udpgw.IsPortActive(p) {
-			avail, procInfo := system.CheckTCPPortAvailable(p)
-			if !avail {
+			inUse, procInfo := system.IsPortInUseByOther("tcp", p)
+			if inUse {
 				components.PrintWarning(fmt.Sprintf("Atenção: A porta TCP %d já está em uso por '%s'.", p, procInfo))
 				if !components.Confirm(fmt.Sprintf("Deseja tentar iniciar a porta UDPGW %d mesmo assim?", p), false) {
 					return

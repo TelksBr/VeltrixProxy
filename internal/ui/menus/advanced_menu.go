@@ -304,8 +304,8 @@ func showSSHSubmenu(cfgMgr *config.Manager) {
 			resp := components.Prompt("Porta TCP direta para SSH interno (0=apenas via túnel)", strconv.Itoa(cfg.SSH.InternalPort))
 			if val, err := strconv.Atoi(resp); err == nil && val >= 0 {
 				if val > 0 && val != cfg.SSH.InternalPort {
-					avail, procInfo := system.CheckTCPPortAvailable(val)
-					if !avail {
+					inUse, procInfo := system.IsPortInUseByOther("tcp", val)
+					if inUse {
 						components.PrintWarning(fmt.Sprintf("Atenção: A porta TCP %d já está em uso por '%s'.", val, procInfo))
 						if !components.Confirm("Deseja configurar esta porta mesmo assim?", false) {
 							break

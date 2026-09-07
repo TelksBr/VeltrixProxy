@@ -100,10 +100,10 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 					break
 				}
 
-				avail, procInfo := system.CheckTCPPortAvailable(entry.Port)
-				if !avail {
+				inUse, procInfo := system.IsPortInUseByOther("tcp", entry.Port)
+				if inUse {
 					components.PrintWarning(fmt.Sprintf("Atenção: A porta TCP %d já está em uso por '%s'.", entry.Port, procInfo))
-					components.PrintInfo("Adicionar uma porta ocupada pode impedir o serviço proxy de iniciar.")
+					components.PrintInfo("Adicionar uma porta ocupada por outro serviço pode impedir o serviço proxy de iniciar.")
 					if !components.Confirm("Deseja adicionar a porta mesmo assim?", false) {
 						break
 					}

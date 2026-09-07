@@ -155,14 +155,15 @@ func handleToggleDNSTT(cfgMgr *config.Manager, cfg *config.Config, pubkey string
 			_ = privHex
 		}
 
-		// Checagem preventiva de porta UDP
+		// Checagem preventiva de porta UDP (apenas avisa se ocupada por processos externos)
 		udpPort := parsePortFromUDPAddr(cfg.DNSTT.UDP)
 		if udpPort > 0 {
-			avail, procInfo := system.CheckUDPPortAvailable(udpPort)
-			if !avail {
+			inUse, procInfo := system.IsPortInUseByOther("udp", udpPort)
+			if inUse {
 				components.PrintWarning(fmt.Sprintf("Aviso: A porta UDP %d já está em uso por '%s'.", udpPort, procInfo))
-				if udpPort == 53 {
-					if components.Confirm("A porta 53 está ocupada. Deseja liberar a porta 53 automaticamente desativando o DNSStubListener do systemd-resolved e liberando no firewall?", true) {
+				isResolved := strings.Contains(strings.ToLower(procInfo), "resolved") || strings.Contains(strings.ToLower(procInfo), "desconhecido")
+				if udpPort == 53 && isResolved {
+					if components.Confirm("A porta 53 está ocupada pelo systemd-resolved. Deseja liberar a porta 53 automaticamente desativando o DNSStubListener e liberando no firewall?", true) {
 						if errFree := system.ReleasePort53FromSystemdResolved(); errFree == nil {
 							components.PrintSuccess("Porta 53 UDP liberada com sucesso do systemd-resolved!")
 						} else {
@@ -237,10 +238,11 @@ func handleEditUDP(cfgMgr *config.Manager, cfg *config.Config) {
 	if clean != "" && clean != cfg.DNSTT.UDP {
 		port := parsePortFromUDPAddr(clean)
 		if port > 0 {
-			avail, procInfo := system.CheckUDPPortAvailable(port)
-			if !avail {
+			inUse, procInfo := system.IsPortInUseByOther("udp", port)
+			if inUse {
 				components.PrintWarning(fmt.Sprintf("Aviso: A porta UDP %d já está em uso por '%s'.", port, procInfo))
-				if port == 53 {
+				isResolved := strings.Contains(strings.ToLower(procInfo), "resolved") || strings.Contains(strings.ToLower(procInfo), "desconhecido")
+				if port == 53 && isResolved {
 					if components.Confirm("Deseja tentar liberar a porta 53 desativando o DNSStubListener do systemd-resolved agora?", true) {
 						if errFree := system.ReleasePort53FromSystemdResolved(); errFree == nil {
 							components.PrintSuccess("Porta 53 UDP liberada com sucesso!")
@@ -281,10 +283,10 @@ func handleFreePort53() {
 	fmt.Println("4. Liberar a porta 53/udp no firewall (UFW e iptables)")
 	fmt.Println()
 
-	avail, proc := system.CheckUDPPortAvailable(53)
-	if avail {
-		components.PrintSuccess("A porta UDP 53 já está livre no sistema.")
-		if !components.Confirm("Deseja aplicar as configurações de firewall mesmo assim?", true) {
+	inUse, proc := system.IsPortInUseByOther("udp", 53)
+	if !inUse {
+		components.PrintSuccess("A porta UDP 53 já está livre de processos conflitantes no sistema.")
+		if !components.Confirm("Deseja aplicar as configurações de firewall e systemd-resolved mesmo assim?", true) {
 			return
 		}
 	} else {

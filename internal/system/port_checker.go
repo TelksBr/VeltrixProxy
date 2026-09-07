@@ -85,8 +85,14 @@ func findProcessLinux(proto string, port int) string {
 		ssFlag = "-ulpn"
 	}
 
-	cmdSS := exec.Command("ss", ssFlag, fmt.Sprintf("sport = :%d", port))
-	if out, err := cmdSS.Output(); err == nil && len(out) > 0 {
+	cmdSS := exec.Command("ss", ssFlag, "sport", "=", fmt.Sprintf(":%d", port))
+	out, err := cmdSS.Output()
+	if err != nil || len(out) == 0 {
+		// Tenta formato de argumento único
+		cmdSS = exec.Command("ss", ssFlag, fmt.Sprintf("sport = :%d", port))
+		out, _ = cmdSS.Output()
+	}
+	if len(out) > 0 {
 		lines := strings.Split(string(out), "\n")
 		for _, line := range lines {
 			if strings.Contains(line, "users:") {
@@ -120,7 +126,15 @@ func findProcessLinux(proto string, port int) string {
 	if out, err := cmdFuser.Output(); err == nil {
 		pids := strings.Fields(strings.TrimSpace(string(out)))
 		if len(pids) > 0 {
-			return fmt.Sprintf("PID %s", pids[0])
+			pid := pids[0]
+			// Tenta obter o nome do processo via /proc/<pid>/comm
+			if commBytes, errComm := os.ReadFile(fmt.Sprintf("/proc/%s/comm", pid)); errComm == nil {
+				comm := strings.TrimSpace(string(commBytes))
+				if comm != "" {
+					return fmt.Sprintf("%s (PID: %s)", comm, pid)
+				}
+			}
+			return fmt.Sprintf("PID %s", pid)
 		}
 	}
 
@@ -150,24 +164,54 @@ func findProcessWindows(proto string, port int) string {
 	return ""
 }
 
-// EnsurePortNotBusy testa a porta e retorna erro descritivo caso esteja ocupada
-func EnsurePortNotBusy(proto string, port int) error {
-	var available bool
-	var procInfo string
+// IsOwnProxyProcess verifica se o processo identificado pertence ao próprio VTProxy / proxy-server
+func IsOwnProxyProcess(procInfo string) bool {
+	clean := strings.ToLower(procInfo)
+	return strings.Contains(clean, "proxy-server") || strings.Contains(clean, "vtproxy")
+}
+
+// IsOwnServiceProcess verifica se o processo pertence ao VTProxy ou ao BadVPN / UDPGW
+func IsOwnServiceProcess(procInfo string) bool {
+	clean := strings.ToLower(procInfo)
+	return strings.Contains(clean, "proxy-server") ||
+		strings.Contains(clean, "vtproxy") ||
+		strings.Contains(clean, "udpgw")
+}
+
+// IsPortInUseByOther verifica se a porta especificada está ocupada por um processo ESTRANHO (não pertencente ao VTProxy/UDPGW).
+// Retorna inUse = true apenas se houver conflito real com processos de terceiros (ex: nginx, apache, systemd-resolved).
+func IsPortInUseByOther(proto string, port int) (inUse bool, processInfo string) {
+	var avail bool
+	var proc string
 
 	if strings.ToLower(proto) == "udp" {
-		available, procInfo = CheckUDPPortAvailable(port)
+		avail, proc = CheckUDPPortAvailable(port)
 	} else {
-		available, procInfo = CheckTCPPortAvailable(port)
+		avail, proc = CheckTCPPortAvailable(port)
 	}
 
-	if !available {
+	if avail {
+		return false, ""
+	}
+
+	if IsOwnServiceProcess(proc) {
+		// Ocupado pelo próprio VTProxy ou UDPGW: não é conflito impeditivo
+		return false, proc
+	}
+
+	return true, proc
+}
+
+// EnsurePortNotBusy testa a porta e retorna erro descritivo caso esteja ocupada por processo estranho
+func EnsurePortNotBusy(proto string, port int) error {
+	inUse, procInfo := IsPortInUseByOther(proto, port)
+	if inUse {
 		return fmt.Errorf("porta %s/%d já está em uso por %s", strings.ToUpper(proto), port, procInfo)
 	}
 	return nil
 }
 
-// CheckConfiguredPortsConflict verifica se alguma das portas configuradas está ocupada.
+// CheckConfiguredPortsConflict verifica se alguma das portas configuradas está ocupada por processos externos.
 // Retorna uma lista com a descrição de cada conflito detectado.
 func CheckConfiguredPortsConflict(ports []string, internalPort int, dnsttEnabled bool, dnsttUDP string) []string {
 	var conflicts []string
@@ -183,8 +227,8 @@ func CheckConfiguredPortsConflict(ports []string, internalPort int, dnsttEnabled
 		}
 		var portNum int
 		if _, err := fmt.Sscanf(clean, "%d", &portNum); err == nil && portNum > 0 {
-			avail, procInfo := CheckTCPPortAvailable(portNum)
-			if !avail {
+			inUse, procInfo := IsPortInUseByOther("tcp", portNum)
+			if inUse {
 				conflicts = append(conflicts, fmt.Sprintf("Porta TCP %d (%s) em uso por '%s'", portNum, p, procInfo))
 			}
 		}
@@ -192,8 +236,8 @@ func CheckConfiguredPortsConflict(ports []string, internalPort int, dnsttEnabled
 
 	// 2. Porta TCP do SSH Interno
 	if internalPort > 0 {
-		avail, procInfo := CheckTCPPortAvailable(internalPort)
-		if !avail {
+		inUse, procInfo := IsPortInUseByOther("tcp", internalPort)
+		if inUse {
 			conflicts = append(conflicts, fmt.Sprintf("Porta TCP SSH Interno %d em uso por '%s'", internalPort, procInfo))
 		}
 	}
@@ -208,8 +252,8 @@ func CheckConfiguredPortsConflict(ports []string, internalPort int, dnsttEnabled
 			_, _ = fmt.Sscanf(udpClean, "%d", &udpPort)
 		}
 		if udpPort > 0 {
-			avail, procInfo := CheckUDPPortAvailable(udpPort)
-			if !avail {
+			inUse, procInfo := IsPortInUseByOther("udp", udpPort)
+			if inUse {
 				conflicts = append(conflicts, fmt.Sprintf("Porta UDP %d (DNSTT) em uso por '%s'", udpPort, procInfo))
 			}
 		}
@@ -260,9 +304,9 @@ func ReleasePort53FromSystemdResolved() error {
 	// Aguarda liberação do socket
 	time.Sleep(300 * time.Millisecond)
 
-	// Valida se a porta 53 UDP foi realmente liberada
-	avail, procInfo := CheckUDPPortAvailable(53)
-	if !avail {
+	// Valida se a porta 53 UDP foi realmente liberada do resolvedor (ignora se for o próprio proxy-server)
+	inUse, procInfo := IsPortInUseByOther("udp", 53)
+	if inUse {
 		return fmt.Errorf("a porta 53 ainda está em uso por '%s'. Verifique outros serviços de DNS locais como dnsmasq ou named", procInfo)
 	}
 

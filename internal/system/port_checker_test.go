@@ -116,3 +116,38 @@ func TestCheckConfiguredPortsConflict(t *testing.T) {
 	_ = ln.Close()
 }
 
+func TestIsOwnServiceProcess(t *testing.T) {
+	cases := []struct {
+		proc     string
+		expected bool
+	}{
+		{"proxy-server (PID: 72898)", true},
+		{"vtproxy (PID: 1234)", true},
+		{"udpgw (PID: 4321)", true},
+		{"/usr/local/bin/proxy-server (PID: 555)", true},
+		{"nginx (PID: 8080)", false},
+		{"systemd-resolve (PID: 514)", false},
+		{"named (PID: 111)", false},
+		{"dnsmasq (PID: 222)", false},
+		{"unknown", false},
+	}
+	for _, c := range cases {
+		got := IsOwnServiceProcess(c.proc)
+		if got != c.expected {
+			t.Errorf("IsOwnServiceProcess(%q) = %v; want %v", c.proc, got, c.expected)
+		}
+	}
+}
+
+func TestIsOwnProxyProcess(t *testing.T) {
+	if !IsOwnProxyProcess("proxy-server (PID: 72898)") {
+		t.Errorf("esperado true para proxy-server")
+	}
+	if !IsOwnProxyProcess("vtproxy (PID: 123)") {
+		t.Errorf("esperado true para vtproxy")
+	}
+	if IsOwnProxyProcess("nginx (PID: 123)") {
+		t.Errorf("esperado false para nginx")
+	}
+}
+
