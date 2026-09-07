@@ -20,6 +20,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.LogFile != "/var/log/proxy/proxy.log" {
 		t.Fatalf("esperado log_file /var/log/proxy/proxy.log, obtido %s", cfg.LogFile)
 	}
+	if cfg.SSHOnly != false {
+		t.Fatalf("esperado SSHOnly false por padrão, obtido %v", cfg.SSHOnly)
+	}
 }
 
 func TestManagerLoadSave(t *testing.T) {
