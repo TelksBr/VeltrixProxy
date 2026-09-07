@@ -44,7 +44,7 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 			components.PrintBoxLine(limLine, w)
 		}
 
-		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("adv_opt_connectors"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("adv_opt_xhttp"), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%sV • %s%s", theme.White, i18n.T("adv_opt_view_json"), theme.Reset), w)
 
 		components.PrintBoxDivider(w)
@@ -77,7 +77,7 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 				components.Pause()
 			}
 		case "7":
-			showConnectorsSubmenu(cfgMgr)
+			showXHTTPSubmenu(cfgMgr)
 		case "8":
 			ShowDNSTTMenu(cfgMgr)
 		case "v":
@@ -175,15 +175,14 @@ func showHttpLogsSubmenu(cfgMgr *config.Manager) {
 
 		components.PrintBoxLine(fmt.Sprintf("%s1 • Resposta HTTP 200: %s%s%s", theme.White, theme.Cyan, cfg.Response, theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s2 • Exibir Banner no Boot: %s%v%s", theme.White, theme.Cyan, cfg.DisplayBanner, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • Modo SSH-Only: %s%v%s", theme.White, theme.Cyan, cfg.SSHOnly, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • Nível de Log: %s%s%s", theme.White, theme.Cyan, cfg.LogLevel, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s5 • Arquivo de Log: %s%s%s", theme.White, theme.Cyan, cfg.LogFile, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • Nível de Log: %s%s%s", theme.White, theme.Cyan, cfg.LogLevel, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • Arquivo de Log: %s%s%s", theme.White, theme.Cyan, cfg.LogFile, theme.Reset), w)
 
 		components.PrintBoxDivider(w)
 		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
 		components.PrintBoxFooter(w)
 
-		choice := components.ReadOption("Opção [0-5]")
+		choice := components.ReadOption("Opção [0-4]")
 		switch choice {
 		case "1":
 			resp := components.Prompt("Nova resposta HTTP global", cfg.Response)
@@ -199,11 +198,6 @@ func showHttpLogsSubmenu(cfgMgr *config.Manager) {
 			components.PrintSuccess("Display banner atualizado.")
 			components.Pause()
 		case "3":
-			cfg.SSHOnly = components.Confirm("Ativar modo SSH-Only?", cfg.SSHOnly)
-			_ = cfgMgr.Save(cfg)
-			components.PrintSuccess("SSH-Only atualizado.")
-			components.Pause()
-		case "4":
 			fmt.Printf("\nNíveis disponíveis: debug, info, warn, error\n")
 			resp := components.Prompt("Nível de log", cfg.LogLevel)
 			if resp != "" {
@@ -212,7 +206,7 @@ func showHttpLogsSubmenu(cfgMgr *config.Manager) {
 				components.PrintSuccess("Nível de log atualizado.")
 			}
 			components.Pause()
-		case "5":
+		case "4":
 			resp := components.Prompt("Caminho do arquivo de log", cfg.LogFile)
 			if resp != "" {
 				cfg.LogFile = resp
@@ -390,42 +384,24 @@ func showBTUNSubmenu(cfgMgr *config.Manager) {
 	}
 }
 
-func showConnectorsSubmenu(cfgMgr *config.Manager) {
+func showXHTTPSubmenu(cfgMgr *config.Manager) {
 	for {
 		cfg, _ := cfgMgr.Get()
 		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintBoxHeader("CONECTORES BACKENDS & XHTTP", theme.Cyan, w)
+		components.PrintBoxHeader("CONFIGURAÇÕES XHTTP / SPLITHTTP", theme.Cyan, w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Porta Local OpenVPN: %s%d%s", theme.White, theme.Cyan, cfg.Connectors.OpenVPNPort, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Porta Local V2Ray / Xray: %s%d%s", theme.White, theme.Cyan, cfg.Connectors.V2RayPort, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • Prefixo URL XHTTP: %s%s%s", theme.White, theme.Cyan, cfg.XHTTP.Path, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • Grace Period XHTTP: %s%ds%s", theme.White, theme.Cyan, cfg.XHTTP.Grace, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s5 • Idle Timeout XHTTP: %s%ds%s", theme.White, theme.Cyan, cfg.XHTTP.Idle, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • Prefixo URL XHTTP: %s%s%s", theme.White, theme.Cyan, cfg.XHTTP.Path, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • Grace Period XHTTP: %s%ds%s", theme.White, theme.Cyan, cfg.XHTTP.Grace, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • Idle Timeout XHTTP: %s%ds%s", theme.White, theme.Cyan, cfg.XHTTP.Idle, theme.Reset), w)
 
 		components.PrintBoxDivider(w)
 		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
 		components.PrintBoxFooter(w)
 
-		choice := components.ReadOption("Opção [0-5]")
+		choice := components.ReadOption("Opção [0-3]")
 		switch choice {
 		case "1":
-			resp := components.Prompt("Porta local OpenVPN", strconv.Itoa(cfg.Connectors.OpenVPNPort))
-			if val, err := strconv.Atoi(resp); err == nil && val > 0 {
-				cfg.Connectors.OpenVPNPort = val
-				_ = cfgMgr.Save(cfg)
-				components.PrintSuccess("Porta OpenVPN atualizada.")
-			}
-			components.Pause()
-		case "2":
-			resp := components.Prompt("Porta local V2Ray / Xray", strconv.Itoa(cfg.Connectors.V2RayPort))
-			if val, err := strconv.Atoi(resp); err == nil && val > 0 {
-				cfg.Connectors.V2RayPort = val
-				_ = cfgMgr.Save(cfg)
-				components.PrintSuccess("Porta V2Ray atualizada.")
-			}
-			components.Pause()
-		case "3":
 			resp := components.Prompt("Prefixo de URL SplitHTTP", cfg.XHTTP.Path)
 			if resp != "" {
 				cfg.XHTTP.Path = resp
@@ -433,7 +409,7 @@ func showConnectorsSubmenu(cfgMgr *config.Manager) {
 				components.PrintSuccess("xhttp.path atualizado.")
 			}
 			components.Pause()
-		case "4":
+		case "2":
 			resp := components.Prompt("Grace period em segundos", strconv.Itoa(cfg.XHTTP.Grace))
 			if val, err := strconv.Atoi(resp); err == nil && val >= 0 {
 				cfg.XHTTP.Grace = val
@@ -441,7 +417,7 @@ func showConnectorsSubmenu(cfgMgr *config.Manager) {
 				components.PrintSuccess("xhttp.grace atualizado.")
 			}
 			components.Pause()
-		case "5":
+		case "3":
 			resp := components.Prompt("Idle timeout em segundos", strconv.Itoa(cfg.XHTTP.Idle))
 			if val, err := strconv.Atoi(resp); err == nil && val >= 0 {
 				cfg.XHTTP.Idle = val

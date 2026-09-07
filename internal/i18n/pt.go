@@ -56,7 +56,7 @@ var dictPT = map[string]string{
 	"adv_opt_ssh":                "Servidor SSH Nativo Embutido (Zero-Fork)",
 	"adv_opt_btun":               "Servidor BTUN / UDP DT-Proto",
 	"adv_opt_limits":             "Limites de Conexão e Expiração",
-	"adv_opt_connectors":         "Conectores Backends (OpenVPN, V2Ray) & XHTTP",
+	"adv_opt_xhttp":              "Configurações XHTTP (SplitHTTP Streaming)",
 	"adv_opt_dnstt":              "Servidor DNS Tunneling (DNSTT)",
 	"adv_opt_view_json":          "Visualizar arquivo config.json",
 	"adv_opt_finish":             "Concluir / Voltar",

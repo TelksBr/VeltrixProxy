@@ -1569,7 +1569,7 @@ extract_or_ensure_proxy_conf() {
     exec_line=$(grep -E '^ExecStart=' "$service_file" 2>/dev/null | head -n1 | sed 's/^ExecStart=//')
   fi
 
-  local ssl="false" cert="" cert_internal="true" ssh_only="false"
+  local ssl="false" cert="" cert_internal="true"
   local response="VTProxy" buffer="32768"
 
   [[ "$exec_line" == *":ssl"* ]] && ssl="true"
@@ -1577,7 +1577,6 @@ extract_or_ensure_proxy_conf() {
     cert="${BASH_REMATCH[1]}"
     cert_internal="false"
   fi
-  [[ "$exec_line" == *"--ssh-only"* ]] && ssh_only="true"
   if [[ "$exec_line" =~ --response=([^ ]+) ]]; then
     response="${BASH_REMATCH[1]}"
   fi
@@ -1591,7 +1590,6 @@ ENABLED=true
 SSL_ENABLED=$ssl
 SSL_CERT_PATH=$cert
 CERT_INTERNAL=$cert_internal
-SSH_ONLY=$ssh_only
 HTTP_RESPONSE=$response
 BUFFER_SIZE=$buffer
 DOMAIN=false
@@ -1600,8 +1598,6 @@ WRITE_TIMEOUT=60
 IDLE_TIMEOUT=120
 LOG_LEVEL=info
 SSH_PORT=22
-OPENVPN_PORT=1194
-V2RAY_PORT=1080
 DISPLAY_BANNER=true
 EOF
 }
@@ -1643,7 +1639,6 @@ default_cfg = {
   "cert_internal": True,
   "display_banner": True,
   "response": "VeltrixProxy",
-  "ssh_only": False,
   "ulimit": 65536,
   "ssh": {
     "internal": True,
@@ -1667,10 +1662,6 @@ default_cfg = {
     "default_user_limit": 0,
     "passwd_file": "/etc/passwd",
     "expire_check_interval": "1m"
-  },
-  "connectors": {
-    "openvpn_port": 1194,
-    "v2ray_port": 1080
   },
   "xhttp": {
     "path": "/ssh",
@@ -1705,7 +1696,6 @@ with open(path, "w", encoding="utf-8") as f:
   "cert_internal": true,
   "display_banner": true,
   "response": "VeltrixProxy",
-  "ssh_only": false,
   "ulimit": 65536,
   "ssh": {
     "internal": true,
@@ -1729,10 +1719,6 @@ with open(path, "w", encoding="utf-8") as f:
     "default_user_limit": 0,
     "passwd_file": "/etc/passwd",
     "expire_check_interval": "1m"
-  },
-  "connectors": {
-    "openvpn_port": 1194,
-    "v2ray_port": 1080
   },
   "xhttp": {
     "path": "/ssh",
@@ -1815,7 +1801,6 @@ config = {
     "cert_internal": True,
     "display_banner": True,
     "response": "VeltrixProxy",
-    "ssh_only": False,
     "ulimit": 65536,
     "ssh": {
         "internal": True,
@@ -1839,10 +1824,6 @@ config = {
         "default_user_limit": 0,
         "passwd_file": "/etc/passwd",
         "expire_check_interval": "1m"
-    },
-    "connectors": {
-        "openvpn_port": 1194,
-        "v2ray_port": 1080
     },
     "xhttp": {
         "path": "/ssh",
@@ -1963,20 +1944,12 @@ for sf in service_files:
             if "--cert-internal" not in exec_cmd:
                 config["cert_internal"] = False
 
-        if "--ssh-only" in exec_cmd:
-            config["ssh_only"] = True
         if "--display-banner=false" in exec_cmd:
             config["display_banner"] = False
 
         m_sp = re.search(r"--ssh-port[= ]([0-9]+)", exec_cmd)
         if m_sp:
             config["ssh"]["port"] = int(m_sp.group(1))
-        m_op = re.search(r"--openvpn-port[= ]([0-9]+)", exec_cmd)
-        if m_op:
-            config["connectors"]["openvpn_port"] = int(m_op.group(1))
-        m_vp = re.search(r"--v2ray-port[= ]([0-9]+)", exec_cmd)
-        if m_vp:
-            config["connectors"]["v2ray_port"] = int(m_vp.group(1))
 
         if "--btun-enable=false" in exec_cmd:
             config["btun"]["enable"] = False

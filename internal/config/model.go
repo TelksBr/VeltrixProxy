@@ -91,12 +91,10 @@ type Config struct {
 	CertInternal   bool             `json:"cert_internal"`
 	DisplayBanner  bool             `json:"display_banner"`
 	Response       string           `json:"response"`
-	SSHOnly        bool             `json:"ssh_only"`
 	Ulimit         int              `json:"ulimit"`
 	SSH            SSHConfig        `json:"ssh"`
 	BTUN           BTUNConfig       `json:"btun"`
 	Limits         LimitsConfig     `json:"limits"`
-	Connectors     ConnectorsConfig `json:"connectors"`
 	XHTTP          XHTTPConfig      `json:"xhttp"`
 	DNSTT          DNSTTConfig      `json:"dnstt"`
 }
@@ -129,12 +127,6 @@ type LimitsConfig struct {
 	PasswdFile          string `json:"passwd_file"`
 	ExpireCheckInterval string `json:"expire_check_interval"`
 	KillExpired         bool   `json:"kill_expired"`
-}
-
-// ConnectorsConfig define portas para backends externos (OpenVPN e V2Ray)
-type ConnectorsConfig struct {
-	OpenVPNPort int `json:"openvpn_port"`
-	V2RayPort   int `json:"v2ray_port"`
 }
 
 // XHTTPConfig define configurações do transporte SplitHTTP (VOID)
@@ -171,7 +163,6 @@ func NewDefaultConfig(token string) *Config {
 		CertInternal:   true,
 		DisplayBanner:  true,
 		Response:       "VeltrixProxy",
-		SSHOnly:        false,
 		Ulimit:         65536,
 		SSH: SSHConfig{
 			Internal:     true,
@@ -196,10 +187,6 @@ func NewDefaultConfig(token string) *Config {
 			PasswdFile:          "/etc/passwd",
 			ExpireCheckInterval: "1m",
 			KillExpired:         false,
-		},
-		Connectors: ConnectorsConfig{
-			OpenVPNPort: 1194,
-			V2RayPort:   1080,
 		},
 		XHTTP: XHTTPConfig{
 			Path:  "/ssh",

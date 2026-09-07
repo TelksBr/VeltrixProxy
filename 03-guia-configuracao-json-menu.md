@@ -67,7 +67,6 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
   "cert_internal": true,
   "display_banner": true,
   "response": "VeltrixProxy",
-  "ssh_only": false,
   "ulimit": 65536,
 
   "ssh": {
@@ -95,11 +94,6 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
     "passwd_file": "/etc/passwd",
     "expire_check_interval": "1m",
     "kill_expired": false
-  },
-
-  "connectors": {
-    "openvpn_port": 1194,
-    "v2ray_port": 1080
   },
 
   "xhttp": {
@@ -141,7 +135,6 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 | `cert_internal` | `bool` | `true` | Se `true`, usa o certificado Cloudflare TLS embutido nas portas `:ssl`. |
 | `display_banner`| `bool` | `true` | Exibe o banner informativo com portas e status na inicialização. |
 | `response` | `string` | `"VeltrixProxy"` | Mensagem da resposta HTTP 200/101 do payload falso. |
-| `ssh_only` | `bool` | `false` | Se `true`, ignora checagens de OpenVPN/V2Ray e força tudo para SSH. |
 | `ulimit` | `int` | `65536` | Limite de descritores de arquivos (`RLIMIT_NOFILE`) no Linux. |
 
 ---
@@ -192,16 +185,7 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 
 ---
 
-### E. Seção `connectors` (Redirecionamento para Backends Externos)
-
-| Campo | Tipo | Default | Descrição |
-| :--- | :--- | :--- | :--- |
-| `openvpn_port` | `int` | `1194` | Porta local do serviço OpenVPN. |
-| `v2ray_port` | `int` | `1080` | Porta local do serviço V2Ray / Xray. |
-
----
-
-### F. Seção `xhttp` (Transporte HTTP com Chunking)
+### E. Seção `xhttp` (Transporte HTTP com Chunking)
 
 | Campo | Tipo | Default | Descrição |
 | :--- | :--- | :--- | :--- |
@@ -211,7 +195,7 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 
 ---
 
-### G. Seção `dnstt` (DNS Tunneling)
+### F. Seção `dnstt` (DNS Tunneling)
 
 | Campo | Tipo | Default | Descrição |
 | :--- | :--- | :--- | :--- |
