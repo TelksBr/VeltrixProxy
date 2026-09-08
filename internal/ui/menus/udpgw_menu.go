@@ -415,12 +415,20 @@ func showUDPGWAdvancedMenu(port int) {
 			components.Pause()
 
 		case "6":
-			// Toggle debug
-			cfg.Debug = !cfg.Debug
-			if cfg.Debug {
-				components.PrintSuccess("Modo debug ativado (-debug será incluído).")
+			newVal, changed := components.ConfirmToggle(
+				i18n.T("toggle_udpgw_debug_on"),
+				i18n.T("toggle_udpgw_debug_off"),
+				cfg.Debug,
+			)
+			if !changed {
+				components.PrintInfo(i18n.T("confirm_no_change", "debug", cfg.Debug))
 			} else {
-				components.PrintSuccess("Modo debug desativado.")
+				cfg.Debug = newVal
+				if cfg.Debug {
+					components.PrintSuccess("Modo debug ativado (-debug será incluído).")
+				} else {
+					components.PrintSuccess("Modo debug desativado.")
+				}
 			}
 			components.Pause()
 

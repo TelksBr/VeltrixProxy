@@ -128,7 +128,16 @@ func ShowDNSTTMenu(cfgMgr *config.Manager) {
 }
 
 func handleToggleDNSTT(cfgMgr *config.Manager, cfg *config.Config, pubkey string) {
-	newStatus := !cfg.DNSTT.Enable
+	newStatus, changed := components.ConfirmToggle(
+		i18n.T("toggle_dnstt_on"),
+		i18n.T("toggle_dnstt_off"),
+		cfg.DNSTT.Enable,
+	)
+	if !changed {
+		components.PrintInfo(i18n.T("confirm_no_change", "dnstt.enable", cfg.DNSTT.Enable))
+		components.Pause()
+		return
+	}
 	if newStatus {
 		// Validar se há domínio configurado
 		if strings.TrimSpace(cfg.DNSTT.Domain) == "" {

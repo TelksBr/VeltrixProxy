@@ -28,36 +28,22 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 		components.ClearScreen()
 		components.PrintBoxHeader(i18n.T("adv_menu_title"), theme.Cyan, w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • %s%s", theme.White, i18n.T("adv_opt_perf"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • %s%s", theme.White, i18n.T("adv_opt_http_logs"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • %s%s", theme.White, i18n.T("adv_opt_ssl"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • %s%s", theme.White, i18n.T("adv_opt_ssh"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s", theme.White, i18n.T("adv_opt_btun"), theme.Reset), w)
-
-		// Opção 6 SÓ APARECE se ssh.internal for true!
-		if cfg.SSH.Internal {
-			limiterBadge := theme.Red + "false" + theme.Reset
-			if cfg.Limits.Enable {
-				limiterBadge = theme.Green + "true" + theme.Reset
-			}
-			limLine := fmt.Sprintf("%s6 • %s (Limiter: %s%s)%s", theme.White, i18n.T("adv_opt_limits"), limiterBadge, theme.White, theme.Reset)
-			components.PrintBoxLine(limLine, w)
-		}
-
-		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("adv_opt_xhttp"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%sV • %s%s", theme.White, i18n.T("adv_opt_view_json"), theme.Reset), w)
+		components.PrintBoxLine(advMenuItem("1", i18n.T("adv_opt_perf"), ""), w)
+		components.PrintBoxLine(advMenuItem("2", i18n.T("adv_opt_http_logs"), ""), w)
+		components.PrintBoxLine(advMenuItem("3", i18n.T("adv_opt_ssl"), components.FormatBool(cfg.CertInternal)), w)
+		components.PrintBoxLine(advMenuItem("4", i18n.T("adv_opt_ssh"), components.FormatBool(cfg.SSH.Internal)), w)
+		components.PrintBoxLine(advMenuItem("5", i18n.T("adv_opt_btun"), components.FormatBool(cfg.BTUN.Enable)), w)
+		components.PrintBoxLine(advMenuItem("6", i18n.T("adv_opt_limits"), components.FormatBool(cfg.Limits.Enable)), w)
+		components.PrintBoxLine(advMenuItem("7", i18n.T("adv_opt_xhttp"), ""), w)
+		components.PrintBoxLine(advMenuItem("8", i18n.T("adv_opt_dnstt"), components.FormatBool(cfg.DNSTT.Enable)), w)
+		components.PrintBoxLine(advMenuItem("V", i18n.T("adv_opt_view_json"), ""), w)
 
 		components.PrintBoxDivider(w)
 		backLine := fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("adv_opt_finish"), theme.Reset)
 		components.PrintBoxLine(backLine, w)
 		components.PrintBoxFooter(w)
 
-		promptRange := "0-7/V"
-		if !cfg.SSH.Internal {
-			promptRange = "0-5,7/V"
-		}
-
-		choice := strings.ToLower(components.ReadOption(fmt.Sprintf("Selecione a opção [%s]", promptRange)))
+		choice := strings.ToLower(components.ReadOption(i18n.T("adv_prompt_range")))
 		switch choice {
 		case "1":
 			showPerformanceSubmenu(cfgMgr)
@@ -70,12 +56,7 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 		case "5":
 			showBTUNSubmenu(cfgMgr)
 		case "6":
-			if cfg.SSH.Internal {
-				ShowLimitsMenu(cfgMgr)
-			} else {
-				components.PrintError("Opção indisponível: o Limiter requer o SSH Nativo Go (ssh.internal: true).")
-				components.Pause()
-			}
+			ShowLimitsMenu(cfgMgr)
 		case "7":
 			showXHTTPSubmenu(cfgMgr)
 		case "8":
@@ -84,7 +65,7 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 			viewConfigFile(cfgMgr)
 		case "0":
 			if system.IsServiceActive(system.ProxyServiceName) {
-				if components.Confirm("Deseja reiniciar o serviço proxy para aplicar eventuais alterações?", true) {
+				if components.Confirm(i18n.T("confirm_restart_proxy"), true) {
 					if err := system.RestartService(system.ProxyServiceName); err == nil {
 						components.PrintSuccess("Serviço proxy reiniciado com sucesso.")
 					} else {
@@ -99,6 +80,60 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 			components.Pause()
 		}
 	}
+}
+
+func advMenuItem(num, label, badge string) string {
+	if badge == "" {
+		return fmt.Sprintf("%s%s • %s%s", theme.White, num, label, theme.Reset)
+	}
+	return fmt.Sprintf("%s%s • %s: %s%s", theme.White, num, label, badge, theme.Reset)
+}
+
+func displayOrEmpty(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "(vazio)"
+	}
+	return v
+}
+
+func promptAuthMode(current string) string {
+	fmt.Printf("\n%s%s%s\n", theme.Cyan, i18n.T("auth_mode_title"), theme.Reset)
+	fmt.Printf("  1 • %s\n", i18n.T("auth_mode_shadow"))
+	fmt.Printf("  2 • %s\n", i18n.T("auth_mode_file"))
+	fmt.Printf("  3 • %s\n", i18n.T("auth_mode_allow"))
+	choice := components.ReadOption(i18n.T("prompt_select_option") + " [0-3]")
+	switch choice {
+	case "1":
+		return "shadow"
+	case "2":
+		return "file"
+	case "3":
+		return "allow"
+	default:
+		return current
+	}
+}
+
+func applyJSONBoolToggle(cfgMgr *config.Manager, cfg *config.Config, current bool, set func(bool), enableQuestion, disableQuestion, field string) {
+	newValue, changed := components.ConfirmToggle(enableQuestion, disableQuestion, current)
+	if !changed {
+		components.PrintInfo(i18n.T("confirm_no_change", field, current))
+		components.Pause()
+		return
+	}
+
+	set(newValue)
+	if err := cfgMgr.Save(cfg); err != nil {
+		components.PrintError(fmt.Sprintf("Falha ao salvar: %v", err))
+		components.Pause()
+		return
+	}
+	if newValue {
+		components.PrintSuccess(i18n.T("toggle_enabled", field))
+	} else {
+		components.PrintSuccess(i18n.T("toggle_disabled", field))
+	}
+	components.Pause()
 }
 
 func showPerformanceSubmenu(cfgMgr *config.Manager) {
@@ -174,7 +209,7 @@ func showHttpLogsSubmenu(cfgMgr *config.Manager) {
 		components.PrintBoxHeader("RESPOSTA HTTP, BANNER & LOGS", theme.Cyan, w)
 
 		components.PrintBoxLine(fmt.Sprintf("%s1 • Resposta HTTP 200: %s%s%s", theme.White, theme.Cyan, cfg.Response, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Exibir Banner no Boot: %s%v%s", theme.White, theme.Cyan, cfg.DisplayBanner, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • Exibir Banner no Boot: %s%s", theme.White, components.FormatBool(cfg.DisplayBanner), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s3 • Nível de Log: %s%s%s", theme.White, theme.Cyan, cfg.LogLevel, theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s4 • Arquivo de Log: %s%s%s", theme.White, theme.Cyan, cfg.LogFile, theme.Reset), w)
 
@@ -193,10 +228,10 @@ func showHttpLogsSubmenu(cfgMgr *config.Manager) {
 			}
 			components.Pause()
 		case "2":
-			cfg.DisplayBanner = components.Confirm("Exibir banner na inicialização?", cfg.DisplayBanner)
-			_ = cfgMgr.Save(cfg)
-			components.PrintSuccess("Display banner atualizado.")
-			components.Pause()
+			applyJSONBoolToggle(cfgMgr, cfg, cfg.DisplayBanner, func(v bool) { cfg.DisplayBanner = v },
+				i18n.T("toggle_banner_on"),
+				i18n.T("toggle_banner_off"),
+				"display_banner")
 		case "3":
 			fmt.Printf("\nNíveis disponíveis: debug, info, warn, error\n")
 			resp := components.Prompt("Nível de log", cfg.LogLevel)
@@ -231,7 +266,7 @@ func showSSLSubmenu(cfgMgr *config.Manager) {
 		if certPath == "" {
 			certPath = "nenhum (usando gerador embutido)"
 		}
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Certificado Interno Cloudflare: %s%v%s", theme.White, theme.Cyan, cfg.CertInternal, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • Certificado Interno Cloudflare: %s%s", theme.White, components.FormatBool(cfg.CertInternal), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s2 • Certificado Externo .crt/.pem: %s%s%s", theme.White, theme.Cyan, certPath, theme.Reset), w)
 
 		components.PrintBoxDivider(w)
@@ -241,13 +276,15 @@ func showSSLSubmenu(cfgMgr *config.Manager) {
 		choice := components.ReadOption("Opção [0-2]")
 		switch choice {
 		case "1":
-			cfg.CertInternal = components.Confirm("Usar certificado TLS Cloudflare embutido?", cfg.CertInternal)
-			if cfg.CertInternal {
-				cfg.Cert = ""
-			}
-			_ = cfgMgr.Save(cfg)
-			components.PrintSuccess("Configuração cert_internal atualizada.")
-			components.Pause()
+			applyJSONBoolToggle(cfgMgr, cfg, cfg.CertInternal, func(v bool) {
+				cfg.CertInternal = v
+				if v {
+					cfg.Cert = ""
+				}
+			},
+				i18n.T("toggle_cert_internal_on"),
+				i18n.T("toggle_cert_internal_off"),
+				"cert_internal")
 		case "2":
 			resp := components.Prompt("Caminho do certificado TLS externo (.crt / .pem)", cfg.Cert)
 			if resp != "" {
@@ -270,22 +307,25 @@ func showSSHSubmenu(cfgMgr *config.Manager) {
 		components.ClearScreen()
 		components.PrintBoxHeader("SERVIDOR SSH NATIVO (ZERO-FORK)", theme.Cyan, w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • SSH Nativo Go (ssh.internal): %s%v%s (Zero-Fork)", theme.White, theme.Cyan, cfg.SSH.Internal, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • SSH Nativo Go (ssh.internal): %s%s", theme.White, components.FormatBool(cfg.SSH.Internal), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s2 • Porta OpenSSH Externo (ssh.port): %s%d%s", theme.White, theme.Cyan, cfg.SSH.Port, theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s3 • Porta TCP Direta Interna: %s%d%s (0=apenas WS)", theme.White, theme.Cyan, cfg.SSH.InternalPort, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • Permitir Root (allow_root): %s%v%s", theme.White, theme.Cyan, cfg.SSH.AllowRoot, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • Permitir Root (allow_root): %s%s", theme.White, components.FormatBool(cfg.SSH.AllowRoot), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s5 • %s: %s%s%s", theme.White, i18n.T("ssh_opt_auth"), theme.Cyan, displayOrEmpty(cfg.SSH.Auth), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s6 • %s: %s%s%s", theme.White, i18n.T("ssh_opt_auth_file"), theme.Cyan, displayOrEmpty(cfg.SSH.AuthFile), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s7 • %s: %s%s%s", theme.White, i18n.T("ssh_opt_banner"), theme.Cyan, displayOrEmpty(cfg.SSH.Banner), theme.Reset), w)
 
 		components.PrintBoxDivider(w)
 		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
 		components.PrintBoxFooter(w)
 
-		choice := components.ReadOption("Opção [0-4]")
+		choice := components.ReadOption("Opção [0-7]")
 		switch choice {
 		case "1":
-			cfg.SSH.Internal = components.Confirm("Ativar servidor SSH nativo em Go (Zero-Fork)?", cfg.SSH.Internal)
-			_ = cfgMgr.Save(cfg)
-			components.PrintSuccess("Configuração ssh.internal atualizada.")
-			components.Pause()
+			applyJSONBoolToggle(cfgMgr, cfg, cfg.SSH.Internal, func(v bool) { cfg.SSH.Internal = v },
+				i18n.T("toggle_ssh_internal_on"),
+				i18n.T("toggle_ssh_internal_off"),
+				"ssh.internal")
 		case "2":
 			resp := components.Prompt("Porta do OpenSSH externo legado", strconv.Itoa(cfg.SSH.Port))
 			if val, err := strconv.Atoi(resp); err == nil && val > 0 {
@@ -312,9 +352,34 @@ func showSSHSubmenu(cfgMgr *config.Manager) {
 			}
 			components.Pause()
 		case "4":
-			cfg.SSH.AllowRoot = components.Confirm("Permitir login de root no SSH interno?", cfg.SSH.AllowRoot)
+			applyJSONBoolToggle(cfgMgr, cfg, cfg.SSH.AllowRoot, func(v bool) { cfg.SSH.AllowRoot = v },
+				i18n.T("toggle_allow_root_on"),
+				i18n.T("toggle_allow_root_off"),
+				"ssh.allow_root")
+		case "5":
+			mode := promptAuthMode(cfg.SSH.Auth)
+			if mode != cfg.SSH.Auth {
+				cfg.SSH.Auth = mode
+				if mode == "file" && strings.TrimSpace(cfg.SSH.AuthFile) == "" {
+					cfg.SSH.AuthFile = components.Prompt(i18n.T("ssh_opt_auth_file"), cfg.SSH.AuthFile)
+				}
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess("ssh.auth atualizado.")
+			}
+			components.Pause()
+		case "6":
+			resp := components.Prompt(i18n.T("ssh_opt_auth_file"), cfg.SSH.AuthFile)
+			cfg.SSH.AuthFile = resp
 			_ = cfgMgr.Save(cfg)
-			components.PrintSuccess("allow_root atualizado.")
+			components.PrintSuccess("ssh.auth_file atualizado.")
+			components.Pause()
+		case "7":
+			resp := components.Prompt(i18n.T("ssh_opt_banner"), cfg.SSH.Banner)
+			if resp != "" {
+				cfg.SSH.Banner = resp
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess("ssh.banner atualizado.")
+			}
 			components.Pause()
 		case "0":
 			return
@@ -329,22 +394,24 @@ func showBTUNSubmenu(cfgMgr *config.Manager) {
 		components.ClearScreen()
 		components.PrintBoxHeader("SERVIDOR BTUN (DT-PROTO / UDP NATIVO)", theme.Cyan, w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Habilitar BTUN: %s%v%s", theme.White, theme.Cyan, cfg.BTUN.Enable, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s1 • Habilitar BTUN: %s%s", theme.White, components.FormatBool(cfg.BTUN.Enable), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s2 • Interface TUN: %s%s%s", theme.White, theme.Cyan, cfg.BTUN.Tun, theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s3 • Sub-rede IPv4: %s%s%s", theme.White, theme.Cyan, cfg.BTUN.Subnet, theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s4 • Porta UDP Direta: %s%d%s (0=desativado)", theme.White, theme.Cyan, cfg.BTUN.UDPPort, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s5 • %s: %s%s%s", theme.White, i18n.T("btun_opt_auth"), theme.Cyan, displayOrEmpty(cfg.BTUN.Auth), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s6 • %s: %s%s%s", theme.White, i18n.T("btun_opt_auth_file"), theme.Cyan, displayOrEmpty(cfg.BTUN.AuthFile), theme.Reset), w)
 
 		components.PrintBoxDivider(w)
 		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
 		components.PrintBoxFooter(w)
 
-		choice := components.ReadOption("Opção [0-4]")
+		choice := components.ReadOption("Opção [0-6]")
 		switch choice {
 		case "1":
-			cfg.BTUN.Enable = components.Confirm("Habilitar BTUN nativo via TUN?", cfg.BTUN.Enable)
-			_ = cfgMgr.Save(cfg)
-			components.PrintSuccess("btun.enable atualizado.")
-			components.Pause()
+			applyJSONBoolToggle(cfgMgr, cfg, cfg.BTUN.Enable, func(v bool) { cfg.BTUN.Enable = v },
+				i18n.T("toggle_btun_on"),
+				i18n.T("toggle_btun_off"),
+				"btun.enable")
 		case "2":
 			resp := components.Prompt("Nome da interface TUN", cfg.BTUN.Tun)
 			if resp != "" {
@@ -377,6 +444,23 @@ func showBTUNSubmenu(cfgMgr *config.Manager) {
 				_ = cfgMgr.Save(cfg)
 				components.PrintSuccess("btun.udp_port atualizado.")
 			}
+			components.Pause()
+		case "5":
+			mode := promptAuthMode(cfg.BTUN.Auth)
+			if mode != cfg.BTUN.Auth {
+				cfg.BTUN.Auth = mode
+				if mode == "file" && strings.TrimSpace(cfg.BTUN.AuthFile) == "" {
+					cfg.BTUN.AuthFile = components.Prompt(i18n.T("btun_opt_auth_file"), cfg.BTUN.AuthFile)
+				}
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess("btun.auth atualizado.")
+			}
+			components.Pause()
+		case "6":
+			resp := components.Prompt(i18n.T("btun_opt_auth_file"), cfg.BTUN.AuthFile)
+			cfg.BTUN.AuthFile = resp
+			_ = cfgMgr.Save(cfg)
+			components.PrintSuccess("btun.auth_file atualizado.")
 			components.Pause()
 		case "0":
 			return

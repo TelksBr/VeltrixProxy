@@ -1,7 +1,6 @@
 package menus
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -17,8 +16,7 @@ func TestLimiterMenuOptionNotDuplicated(t *testing.T) {
 	for _, lang := range languages {
 		i18n.SetLanguage(lang)
 
-		limiterBadge := theme.Green + "true" + theme.Reset
-		limLine := fmt.Sprintf("%s6 • %s (Limiter: %s%s)%s", theme.White, i18n.T("adv_opt_limits"), limiterBadge, theme.White, theme.Reset)
+		limLine := advMenuItem("6", i18n.T("adv_opt_limits"), components.FormatBool(true))
 
 		visible := theme.VisibleLen(limLine)
 		contentWidth := width - 4
@@ -48,8 +46,7 @@ func TestDNSTTOptionFormatting(t *testing.T) {
 	for _, lang := range languages {
 		i18n.SetLanguage(lang)
 
-		dnsttBadge := theme.Green + "[ATIVO]" + theme.Reset
-		line := fmt.Sprintf("%s3 • %s (%s)%s", theme.White, i18n.T("adv_opt_dnstt"), dnsttBadge, theme.Reset)
+		line := advMenuItem("8", i18n.T("adv_opt_dnstt"), components.FormatBool(true))
 
 		visible := theme.VisibleLen(line)
 		contentWidth := width - 4
