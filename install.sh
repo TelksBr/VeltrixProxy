@@ -52,7 +52,7 @@ STEP_TITLES=(
   "Sincronização de Relógio do Sistema (NTP)"
   "Plataforma e Releases do GitHub"
   "Baixando e Instalando Binários (proxy & udpgw)"
-  "Otimizações de Kernel, BBR e OpenSSH"
+  "Otimizações de Kernel e BBR"
   "Instalando Menu CLI (vt)"
   "Sincronizando e Reiniciando Serviços Systemd"
 )
@@ -2390,70 +2390,19 @@ EOF
   log_success "Configuração global de locale UTF-8 aplicada (C.UTF-8)."
 }
 
-configure_ssh_tuning() {
-  local sshd_config="/etc/ssh/sshd_config"
-  local sshd_dropin_dir="/etc/ssh/sshd_config.d"
-  local sshd_dropin_conf="${sshd_dropin_dir}/99-proxy.conf"
-  local keys_regex="LogLevel|AcceptEnv|MaxStartups|MaxSessions|MaxAuthTries|LoginGraceTime|UsePAM|UseDNS|GSSAPIAuthentication|TCPKeepAlive|ClientAliveInterval|ClientAliveCountMax|AllowTcpForwarding|GatewayPorts|PermitTunnel|X11Forwarding|Compression|PrintMotd|PrintLastLog"
+remove_ssh_tuning() {
+  run_privileged rm -f /etc/ssh/sshd_config.d/99-proxy.conf \
+                       /etc/ssh/sshd_config.d/99-vtproxy.conf \
+                       /etc/ssh/sshd_config.d/99-veltrix-proxy.conf \
+                       /etc/systemd/system/ssh.service.d/99-proxy-limits.conf \
+                       /etc/systemd/system/sshd.service.d/99-proxy-limits.conf \
+                       /etc/systemd/system/ssh.service.d/99-limits.conf \
+                       /etc/systemd/system/sshd.service.d/99-limits.conf 2>/dev/null || true
+  run_privileged rmdir /etc/systemd/system/ssh.service.d /etc/systemd/system/sshd.service.d 2>/dev/null || true
 
-  # 1. Configura drop-in modular em /etc/ssh/sshd_config.d/
-  if [[ -d /etc/ssh ]]; then
-    run_privileged mkdir -p "$sshd_dropin_dir" 2>/dev/null || true
-    run_privileged rm -f "${sshd_dropin_dir}/99-vtproxy.conf" "${sshd_dropin_dir}/99-veltrix-proxy.conf" 2>/dev/null || true
-
-    cat << 'EOF' | run_privileged tee "$sshd_dropin_conf" >/dev/null
-# VTProxy / VeltrixProxy OpenSSH Optimizations for High Concurrency Tunnels
-LogLevel ERROR
-AcceptEnv LANG LC_*
-MaxStartups 2000:30:5000
-MaxSessions 500
-MaxAuthTries 10
-LoginGraceTime 30
-UsePAM no
-UseDNS no
-GSSAPIAuthentication no
-TCPKeepAlive yes
-ClientAliveInterval 15
-ClientAliveCountMax 3
-AllowTcpForwarding yes
-GatewayPorts yes
-PermitTunnel yes
-X11Forwarding no
-Compression no
-PrintMotd no
-PrintLastLog no
-EOF
-    run_privileged chmod 644 "$sshd_dropin_conf" 2>/dev/null || true
-  fi
-
-  # 2. Garante o Include e remove duplicatas do /etc/ssh/sshd_config principal
-  if [[ -f "$sshd_config" ]]; then
-    if ! grep -qiE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' "$sshd_config"; then
-      safe_sed_inplace "$sshd_config" -e '1i Include /etc/ssh/sshd_config.d/*.conf\n' || true
-    fi
-
-    # Remove qualquer ocorrência duplicada/antiga das chaves gerenciadas de forma case-insensitive
-    safe_sed_inplace "$sshd_config" -e "/^[[:space:]]*(${keys_regex})([[:space:]=]|$)/Id" || true
-  fi
-
-  # 3. Systemd Limits & TasksMax Override para ssh / sshd
-  for svc_dir in /etc/systemd/system/ssh.service.d /etc/systemd/system/sshd.service.d; do
-    run_privileged mkdir -p "$svc_dir" 2>/dev/null || true
-    cat << 'EOF' | run_privileged tee "${svc_dir}/99-proxy-limits.conf" >/dev/null
-[Service]
-LimitNOFILE=1048576
-LimitNPROC=65536
-TasksMax=infinity
-EOF
-  done
-
-  # 4. Validação segura antes de recarregar
-  if sshd -t >/dev/null 2>&1; then
+  if command -v sshd >/dev/null 2>&1 && sshd -t >/dev/null 2>&1; then
     has_systemd && run_privileged systemctl daemon-reload >/dev/null 2>&1 || true
     run_privileged systemctl reload ssh >/dev/null 2>&1 || run_privileged systemctl reload sshd >/dev/null 2>&1 || run_privileged service ssh reload >/dev/null 2>&1 || run_privileged service sshd reload >/dev/null 2>&1 || true
-    log_success "Otimizações do OpenSSH aplicadas com sucesso (MaxStartups 2000, Anti-Ghosting, NoDNS)."
-  else
-    log_warn "Validação do sshd -t encontrou avisos. Mantendo configuração sem forçar reload."
   fi
 }
 
@@ -2653,7 +2602,7 @@ configure_system_tuning() {
   configure_limits
   configure_sysctl
   configure_locale_tuning
-  configure_ssh_tuning
+  remove_ssh_tuning
   configure_btun_iptables
 }
 
@@ -2830,6 +2779,8 @@ run_uninstall() {
                          /etc/systemd/system/proxy-*.service \
                          /etc/systemd/system/udpgw.service \
                          /etc/systemd/system/udpgw-*.service \
+                         /etc/systemd/system/ssh.service.d/99-proxy-limits.conf \
+                         /etc/systemd/system/sshd.service.d/99-proxy-limits.conf \
                          /etc/systemd/system/ssh.service.d/99-limits.conf \
                          /etc/systemd/system/sshd.service.d/99-limits.conf 2>/dev/null || true
     run_privileged rmdir /etc/systemd/system/ssh.service.d /etc/systemd/system/sshd.service.d 2>/dev/null || true
@@ -2852,7 +2803,8 @@ run_uninstall() {
 
   # 3. Restaurar SSH Drop-ins
   log_info "3/7 Restaurando configurações do OpenSSH..."
-  run_privileged rm -f /etc/ssh/sshd_config.d/99-vtproxy.conf \
+  run_privileged rm -f /etc/ssh/sshd_config.d/99-proxy.conf \
+                       /etc/ssh/sshd_config.d/99-vtproxy.conf \
                        /etc/ssh/sshd_config.d/99-veltrix-proxy.conf 2>/dev/null || true
   if command -v systemctl >/dev/null 2>&1; then
     run_privileged systemctl restart ssh sshd 2>/dev/null || true

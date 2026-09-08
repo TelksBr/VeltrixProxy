@@ -126,7 +126,8 @@ type LimitsConfig struct {
 	DefaultUserLimit    int    `json:"default_user_limit"`
 	PasswdFile          string `json:"passwd_file"`
 	ExpireCheckInterval string `json:"expire_check_interval"`
-	KillExpired         bool   `json:"kill_expired"`
+	// KillExpired is a one-shot CLI flag (--kill-expired), not the reaper switch.
+	KillExpired bool `json:"kill_expired"`
 }
 
 // XHTTPConfig define configurações do transporte SplitHTTP (VOID)

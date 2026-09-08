@@ -88,6 +88,8 @@ func removeSystemdUnits() error {
 		"/etc/systemd/system/proxy-*.service",
 		"/etc/systemd/system/udpgw.service",
 		"/etc/systemd/system/udpgw-*.service",
+		"/etc/systemd/system/ssh.service.d/99-proxy-limits.conf",
+		"/etc/systemd/system/sshd.service.d/99-proxy-limits.conf",
 		"/etc/systemd/system/ssh.service.d/99-limits.conf",
 		"/etc/systemd/system/sshd.service.d/99-limits.conf",
 	}
@@ -144,6 +146,7 @@ func removeSecurityLimitsConfigs() error {
 
 func removeSSHDropIns() error {
 	dropInFiles := []string{
+		"/etc/ssh/sshd_config.d/99-proxy.conf",
 		"/etc/ssh/sshd_config.d/99-vtproxy.conf",
 		"/etc/ssh/sshd_config.d/99-veltrix-proxy.conf",
 	}

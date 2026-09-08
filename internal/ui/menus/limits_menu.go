@@ -31,22 +31,21 @@ func ShowLimitsMenu(cfgMgr *config.Manager) {
 
 		line1 := fmt.Sprintf("%s1 • %s: %s", theme.White, i18n.T("limits_opt_enable"), components.FormatBool(cfg.Limits.Enable))
 		line2 := fmt.Sprintf("%s2 • %s: %s%d%s (0=ilimitado)", theme.White, i18n.T("limits_opt_default_limit"), theme.Cyan, cfg.Limits.DefaultUserLimit, theme.White)
-		line3 := fmt.Sprintf("%s3 • %s: %s%s%s (0=desativado, ex: 1m, 5m)", theme.White, i18n.T("limits_opt_expire_check"), theme.Cyan, cfg.Limits.ExpireCheckInterval, theme.White)
+		line3 := fmt.Sprintf("%s3 • %s: %s%s%s", theme.White, i18n.T("limits_opt_expire_check"), theme.Cyan, cfg.Limits.ExpireCheckInterval, theme.Reset)
 		line4 := fmt.Sprintf("%s4 • %s: %s%s%s", theme.White, i18n.T("limits_opt_passwd_file"), theme.Cyan, cfg.Limits.PasswdFile, theme.Reset)
-		line5 := fmt.Sprintf("%s5 • %s: %s", theme.White, i18n.T("limits_opt_kill_expired"), components.FormatBool(cfg.Limits.KillExpired))
 
 		components.PrintBoxLine(line1, w)
 		components.PrintBoxLine(line2, w)
 		components.PrintBoxLine(line3, w)
+		components.PrintBoxLine(fmt.Sprintf("%s   %s%s", theme.Gray, i18n.T("limits_reaper_hint"), theme.Reset), w)
 		components.PrintBoxLine(line4, w)
-		components.PrintBoxLine(line5, w)
 
 		components.PrintBoxDivider(w)
 		backLine := fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset)
 		components.PrintBoxLine(backLine, w)
 		components.PrintBoxFooter(w)
 
-		choice := components.ReadOption("Opção [0-5]")
+		choice := components.ReadOption("Opção [0-4]")
 		switch choice {
 		case "1":
 			applyJSONBoolToggle(cfgMgr, cfg, cfg.Limits.Enable, func(v bool) { cfg.Limits.Enable = v },
@@ -68,7 +67,7 @@ func ShowLimitsMenu(cfgMgr *config.Manager) {
 			components.Pause()
 
 		case "3":
-			resp := components.Prompt("Intervalo de checagem e desconexão de expirados (ex: 1m, 5m, 0 para desativar)", cfg.Limits.ExpireCheckInterval)
+			resp := components.Prompt(i18n.T("limits_expire_prompt"), cfg.Limits.ExpireCheckInterval)
 			if resp != "" {
 				cfg.Limits.ExpireCheckInterval = resp
 				if err := cfgMgr.Save(cfg); err == nil {
@@ -86,12 +85,6 @@ func ShowLimitsMenu(cfgMgr *config.Manager) {
 				}
 			}
 			components.Pause()
-
-		case "5":
-			applyJSONBoolToggle(cfgMgr, cfg, cfg.Limits.KillExpired, func(v bool) { cfg.Limits.KillExpired = v },
-				i18n.T("toggle_kill_expired_on"),
-				i18n.T("toggle_kill_expired_off"),
-				"limits.kill_expired")
 
 		case "0":
 			return

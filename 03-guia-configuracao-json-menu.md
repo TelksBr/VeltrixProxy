@@ -180,8 +180,8 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 | `enable` | `bool` | `true` (se internal) | Ativa o limitador de conexões por usuário (`false` desativa totalmente o limitador, permitindo conexões ilimitadas). |
 | `default_user_limit` | `int` | `0` | Limite padrão de conexões simultâneas por usuário (`0` = ilimitado, a não ser que haja `limit=N` no `/etc/passwd`). |
 | `passwd_file` | `string` | `"/etc/passwd"` | Caminho do `/etc/passwd` onde os limites individuais são lidos (`limit=N` no GECOS). |
-| `expire_check_interval` | `string` ou `int` | `"1m"` | Intervalo da varredura periódica de usuários expirados (`"0"` para desativar). |
-| `kill_expired` | `bool` | `false` | Se `true`, a varredura derruba automaticamente as conexões de usuários vencidos no Linux. |
+| `expire_check_interval` | `string` ou `int` | `"1m"` | Interruptor da varredura periódica (reaper). `"0"` desliga. Qualquer valor `> 0` (ex.: `"1m"`) sobe o reaper: a cada ciclo derruba contas expiradas, travadas ou removidas e, se o limiter estiver ativo, corta conexões acima do limite. |
+| `kill_expired` | `bool` | `false` | **Não controla a varredura.** É a ação única da CLI (`proxy-server --kill-expired`): mata expirados na hora e sai. O JSON lê o campo, mas de propósito não dispara essa ação na subida do serviço. |
 
 ---
 

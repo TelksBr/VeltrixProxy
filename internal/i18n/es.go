@@ -71,10 +71,9 @@ var dictES = map[string]string{
 	"ssh_opt_banner":             "Banner SSH (ssh.banner)",
 	"btun_opt_auth":              "Auth (btun.auth)",
 	"btun_opt_auth_file":         "Archivo auth (btun.auth_file)",
-	"limits_opt_kill_expired":    "Cortar expirados (kill_expired)",
 	"limits_requires_ssh":        "Aviso: el Limiter solo aplica conexiones con ssh.internal=true.",
-	"toggle_kill_expired_on":     "¿Activar corte automático de usuarios expirados?",
-	"toggle_kill_expired_off":    "¿Desactivar corte automático de usuarios expirados?",
+	"limits_reaper_hint":         "0=off; >0 reaper (expirados, bloqueados, limite)",
+	"limits_expire_prompt":       "Intervalo del reaper (ej: 1m, 5m; 0 apaga el barrido)",
 
 	// DNSTT
 	"dnstt_menu_title":          "ADMINISTRADOR DNS TUNNELING (DNSTT)",
@@ -91,7 +90,7 @@ var dictES = map[string]string{
 	"limits_menu_title":          "LÍMITES DE CONEXIÓN & EXPIRACIÓN (LIMITER)",
 	"limits_opt_enable":          "Habilitar Limiter (limits.enable)",
 	"limits_opt_default_limit":   "Límite Predeterminado por Cuenta (0=ilimitado)",
-	"limits_opt_expire_check":    "Verificación Automática de Expirados",
+	"limits_opt_expire_check":    "Intervalo del reaper (expire_check_interval)",
 	"limits_opt_passwd_file":     "Archivo de Límites / Contraseñas (/etc/passwd)",
 
 	// Status
