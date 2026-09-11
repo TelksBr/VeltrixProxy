@@ -57,7 +57,7 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
     "80",
     "443:ssl"
   ],
-  "log_level": "info",
+  "log_level": "error",
   "log_file": "",
   "buffer_size": 32768,
   "max_connections": 0,
@@ -111,6 +111,14 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
     "fallback": "",
     "upstream": "",
     "mtu": 1232
+  },
+
+  "ztun": {
+    "enable": true,
+    "upstream": "",
+    "auth": "shadow",
+    "auth_file": "",
+    "idle": 180
   }
 }
 ```
@@ -125,7 +133,7 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 | :--- | :--- | :--- | :--- |
 | `token` | `string` | `""` | **Obrigatório.** Token de acesso validado na API de licenciamento. |
 | `ports` | `array` | `["80", "443:ssl"]` | Portas de escuta do proxy. Aceita formatos flexíveis (ver seção 5). |
-| `log_level` | `string` | `"info"` | Nível de log: `"debug"`, `"info"`, `"warn"`, `"error"`. |
+| `log_level` | `string` | `"error"` | Nível de log canônico: `"trace"`, `"debug"`, `"info"`, `"warn"`, `"error"`, `"silent"`. Aliases: `verbose`→`trace`, `warning`→`warn`, `off`/`none`→`silent`, `""`→`info`. |
 | `log_file` | `string` | `""` | Caminho do arquivo para salvar o banner de inicialização (opcional). |
 | `buffer_size` | `int` | `32768` | Tamanho do buffer de cópia I/O em bytes (32 KB). |
 | `max_connections` | `int` | `0` | Máximo de conexões simultâneas por porta (`0` = ilimitado). |
@@ -207,6 +215,27 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 | `fallback` | `string` | `""` | Endereço UDP de fallback para tráfego não-DNS na porta 53 (ex.: `127.0.0.1:8888`). |
 | `upstream` | `string` | `""` | Endereço TCP opcional de upstream. Se omitido, utiliza o pipeline em memória do VTProxy. |
 | `mtu` | `int` | `1232` | Tamanho máximo do payload de resposta DNS (EDNS0). |
+
+---
+
+### G. Seção `ztun` (Ztun Binary / ZTM1)
+
+> Motor in-process que classifica o magic `ZTM1` nas **mesmas portas TCP** do proxy (`ports[]`). Não cria listen/UDP próprio.
+
+| Campo | Tipo | Default | Descrição |
+| :--- | :--- | :--- | :--- |
+| `enable` | `bool` | `true` | Liga o motor nativo (Auth + carrier + SMUX nesta fatia). |
+| `upstream` | `string` | `""` | Se preenchido (`host:port`), faz passthrough para um `ztun-tcp` externo e **não** sobe o motor mesmo com `enable: true`. |
+| `auth` | `string` | `"shadow"` | Autenticação: `"shadow"`, `"file"` ou `"allow"` (mesmo vocabulário do SSH/BTUN). |
+| `auth_file` | `string` | `""` | Arquivo `user:password`. Em `file`, vazio cai em `/etc/proxy/users`. Em `shadow`, é fallback se o user não estiver no `/etc/shadow`. |
+| `idle` | `int` | `180` | Reaper de tokens/carriers ociosos em segundos. `≤0` no binário volta para 180. |
+
+**Modos:**
+- Produção: `enable=true` e `upstream=""`.
+- A/B com binário externo: preencher `upstream`.
+- `enable=false` e `upstream=""`: classifica `ZTM1`, loga, **não** encaminha.
+
+Não existem chaves de SMUX/janela/chunk/porta UDP no JSON — constantes do binário.
 
 ---
 

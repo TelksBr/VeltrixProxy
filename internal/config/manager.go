@@ -70,6 +70,15 @@ func (m *Manager) Load() (*Config, error) {
 		needsSave = true
 	}
 
+	// Persiste seção ztun padrão (enable=true) se o JSON antigo ainda não a tiver
+	var rawKeys map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rawKeys); err == nil {
+		if _, ok := rawKeys["ztun"]; !ok {
+			cfg.Ztun = NewDefaultConfig(token).Ztun
+			needsSave = true
+		}
+	}
+
 	m.cfg = cfg
 	if needsSave {
 		_ = m.saveLocked()

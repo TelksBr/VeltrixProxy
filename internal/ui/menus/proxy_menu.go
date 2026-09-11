@@ -302,6 +302,16 @@ func showPortDetails(cfgMgr *config.Manager) {
 		dnsttStatus = theme.Green + "true" + theme.Reset + fmt.Sprintf(" (%s)", dnsttPort)
 	}
 	components.PrintBoxLine(fmt.Sprintf("DNSTT Nativo: %s", dnsttStatus), w)
+	ztunStatus := theme.Red + "false" + theme.Reset
+	if cfg.Ztun.Enable {
+		ztunStatus = theme.Green + "true" + theme.Reset
+		if strings.TrimSpace(cfg.Ztun.Upstream) != "" {
+			ztunStatus += fmt.Sprintf(" (passthrough %s)", cfg.Ztun.Upstream)
+		}
+	} else if strings.TrimSpace(cfg.Ztun.Upstream) != "" {
+		ztunStatus = theme.Yellow + "passthrough" + theme.Reset + fmt.Sprintf(" (%s)", cfg.Ztun.Upstream)
+	}
+	components.PrintBoxLine(fmt.Sprintf("Ztun Binary: %s", ztunStatus), w)
 
 	components.PrintBoxFooter(w)
 	components.Pause()

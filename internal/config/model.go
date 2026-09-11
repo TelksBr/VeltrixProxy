@@ -97,6 +97,7 @@ type Config struct {
 	Limits         LimitsConfig     `json:"limits"`
 	XHTTP          XHTTPConfig      `json:"xhttp"`
 	DNSTT          DNSTTConfig      `json:"dnstt"`
+	Ztun           ZtunConfig       `json:"ztun"`
 }
 
 // SSHConfig define parâmetros do servidor SSH interno/legado
@@ -149,12 +150,21 @@ type DNSTTConfig struct {
 	MTU         int    `json:"mtu"`
 }
 
+// ZtunConfig define o motor Ztun Binary (magic ZTM1 nas mesmas portas TCP do proxy)
+type ZtunConfig struct {
+	Enable   bool   `json:"enable"`
+	Upstream string `json:"upstream"`
+	Auth     string `json:"auth"`
+	AuthFile string `json:"auth_file"`
+	Idle     int    `json:"idle"`
+}
+
 // NewDefaultConfig gera uma configuração com todos os valores padrão recomendados
 func NewDefaultConfig(token string) *Config {
 	return &Config{
 		Token:          token,
 		Ports:          PortList{"80", "443:ssl"},
-		LogLevel:       "info",
+		LogLevel:       "error",
 		LogFile:        "/var/log/proxy/proxy.log",
 		BufferSize:     32768,
 		MaxConnections: 0,
@@ -203,6 +213,13 @@ func NewDefaultConfig(token string) *Config {
 			Fallback:    "",
 			Upstream:    "",
 			MTU:         1232,
+		},
+		Ztun: ZtunConfig{
+			Enable:   true,
+			Upstream: "",
+			Auth:     "shadow",
+			AuthFile: "",
+			Idle:     180,
 		},
 	}
 }

@@ -1629,7 +1629,7 @@ default_cfg = {
   "token": token,
   "ports": ["80", "443:ssl"],
   "disabled_ports": [],
-  "log_level": "info",
+  "log_level": "error",
   "log_file": "/var/log/proxy/proxy.log",
   "buffer_size": 32768,
   "max_connections": 0,
@@ -1667,6 +1667,13 @@ default_cfg = {
     "path": "/ssh",
     "grace": 15,
     "idle": 60
+  },
+  "ztun": {
+    "enable": True,
+    "upstream": "",
+    "auth": "shadow",
+    "auth_file": "",
+    "idle": 180
   }
 }
 os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -1686,7 +1693,7 @@ with open(path, "w", encoding="utf-8") as f:
     "443:ssl"
   ],
   "disabled_ports": [],
-  "log_level": "info",
+  "log_level": "error",
   "log_file": "/var/log/proxy/proxy.log",
   "buffer_size": 32768,
   "max_connections": 0,
@@ -1724,6 +1731,13 @@ with open(path, "w", encoding="utf-8") as f:
     "path": "/ssh",
     "grace": 15,
     "idle": 60
+  },
+  "ztun": {
+    "enable": true,
+    "upstream": "",
+    "auth": "shadow",
+    "auth_file": "",
+    "idle": 180
   }
 }
 EOF
@@ -1749,6 +1763,33 @@ try:
     if sys.argv[1] and (not d.get("token") or d.get("token") != sys.argv[1]):
         d["token"] = sys.argv[1]
         changed = True
+    # Injeta seção ztun ativa em JSONs antigos que ainda não a possuem
+    if "ztun" not in d or not isinstance(d.get("ztun"), dict):
+        d["ztun"] = {
+            "enable": True,
+            "upstream": "",
+            "auth": "shadow",
+            "auth_file": "",
+            "idle": 180
+        }
+        changed = True
+    else:
+        z = d["ztun"]
+        if "enable" not in z:
+            z["enable"] = True
+            changed = True
+        if "upstream" not in z:
+            z["upstream"] = ""
+            changed = True
+        if "auth" not in z or not str(z.get("auth") or "").strip():
+            z["auth"] = "shadow"
+            changed = True
+        if "auth_file" not in z:
+            z["auth_file"] = ""
+            changed = True
+        if "idle" not in z or not isinstance(z.get("idle"), int) or int(z.get("idle") or 0) <= 0:
+            z["idle"] = 180
+            changed = True
     if changed:
         with open(p, "w", encoding="utf-8") as f:
             json.dump(d, f, indent=2, ensure_ascii=False)
@@ -1791,7 +1832,7 @@ config = {
     "token": default_token or "",
     "ports": [],
     "disabled_ports": [],
-    "log_level": "info",
+    "log_level": "error",
     "log_file": "/var/log/proxy/proxy.log",
     "buffer_size": 32768,
     "max_connections": 0,
@@ -1829,6 +1870,13 @@ config = {
         "path": "/ssh",
         "grace": 15,
         "idle": 60
+    },
+    "ztun": {
+        "enable": True,
+        "upstream": "",
+        "auth": "shadow",
+        "auth_file": "",
+        "idle": 180
     }
 }
 

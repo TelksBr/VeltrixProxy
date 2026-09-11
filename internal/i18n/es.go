@@ -58,9 +58,10 @@ var dictES = map[string]string{
 	"adv_opt_limits":             "Límites de Conexión y Expiración",
 	"adv_opt_xhttp":              "Configuración XHTTP (SplitHTTP Streaming)",
 	"adv_opt_dnstt":              "Servidor DNS Tunneling (DNSTT)",
+	"adv_opt_ztun":               "Ztun Binary (ZTM1)",
 	"adv_opt_view_json":          "Ver archivo config.json",
 	"adv_opt_finish":             "Finalizar / Volver",
-	"adv_prompt_range":           "Seleccione la opción [0-8/V]",
+	"adv_prompt_range":           "Seleccione la opción [0-9/V]",
 	"confirm_restart_proxy":      "¿Reiniciar el servicio proxy para aplicar los cambios?",
 	"auth_mode_title":            "Modo de autenticación (shadow / file / allow)",
 	"auth_mode_shadow":           "shadow — contraseñas del sistema (/etc/shadow)",
@@ -74,6 +75,20 @@ var dictES = map[string]string{
 	"limits_requires_ssh":        "Aviso: el Limiter solo aplica conexiones con ssh.internal=true.",
 	"limits_reaper_hint":         "0=off; >0 reaper (expirados, bloqueados, limite)",
 	"limits_expire_prompt":       "Intervalo del reaper (ej: 1m, 5m; 0 apaga el barrido)",
+
+	// Ztun
+	"ztun_menu_title":            "ZTUN BINARY (ZTM1)",
+	"ztun_opt_enable":            "Habilitar Ztun (ztun.enable)",
+	"ztun_opt_upstream":          "Upstream externo (ztun.upstream)",
+	"ztun_opt_auth":              "Auth (ztun.auth)",
+	"ztun_opt_auth_file":         "Archivo auth (ztun.auth_file)",
+	"ztun_opt_idle":              "Idle reaper en segundos (ztun.idle)",
+	"ztun_upstream_hint":         "Vacío=motor nativo. host:port=passthrough (apaga el motor).",
+	"ztun_mode_native":           "Motor nativo",
+	"ztun_mode_passthrough":      "Passthrough externo",
+	"ztun_mode_classify_only":    "Solo clasifica ZTM1 (sin reenviar)",
+	"toggle_ztun_on":             "¿Activar motor Ztun Binary?",
+	"toggle_ztun_off":            "¿Desactivar motor Ztun Binary?",
 
 	// DNSTT
 	"dnstt_menu_title":          "ADMINISTRADOR DNS TUNNELING (DNSTT)",

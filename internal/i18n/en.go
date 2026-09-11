@@ -58,9 +58,10 @@ var dictEN = map[string]string{
 	"adv_opt_limits":             "Connection Limits & Expiration",
 	"adv_opt_xhttp":              "XHTTP / SplitHTTP Streaming Settings",
 	"adv_opt_dnstt":              "DNS Tunneling Server (DNSTT)",
+	"adv_opt_ztun":               "Ztun Binary (ZTM1)",
 	"adv_opt_view_json":          "View config.json file",
 	"adv_opt_finish":             "Finish / Back",
-	"adv_prompt_range":           "Select option [0-8/V]",
+	"adv_prompt_range":           "Select option [0-9/V]",
 	"confirm_restart_proxy":      "Restart the proxy service to apply changes?",
 	"auth_mode_title":            "Authentication mode (shadow / file / allow)",
 	"auth_mode_shadow":           "shadow — system passwords (/etc/shadow)",
@@ -74,6 +75,20 @@ var dictEN = map[string]string{
 	"limits_requires_ssh":        "Warning: Limiter only applies connections when ssh.internal=true.",
 	"limits_reaper_hint":         "0=off; >0 reaper (expired, stuck, over-limit)",
 	"limits_expire_prompt":       "Reaper interval (e.g. 1m, 5m; 0 disables the scan)",
+
+	// Ztun
+	"ztun_menu_title":            "ZTUN BINARY (ZTM1)",
+	"ztun_opt_enable":            "Enable Ztun (ztun.enable)",
+	"ztun_opt_upstream":          "External upstream (ztun.upstream)",
+	"ztun_opt_auth":              "Auth (ztun.auth)",
+	"ztun_opt_auth_file":         "Auth file (ztun.auth_file)",
+	"ztun_opt_idle":              "Idle reaper seconds (ztun.idle)",
+	"ztun_upstream_hint":         "Empty=native engine. host:port=passthrough (disables engine).",
+	"ztun_mode_native":           "Native engine",
+	"ztun_mode_passthrough":      "External passthrough",
+	"ztun_mode_classify_only":    "Classify ZTM1 only (no forward)",
+	"toggle_ztun_on":             "Enable Ztun Binary engine?",
+	"toggle_ztun_off":            "Disable Ztun Binary engine?",
 
 	// DNSTT
 	"dnstt_menu_title":          "DNS TUNNELING MANAGER (DNSTT)",

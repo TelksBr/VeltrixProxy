@@ -36,6 +36,7 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(advMenuItem("6", i18n.T("adv_opt_limits"), components.FormatBool(cfg.Limits.Enable)), w)
 		components.PrintBoxLine(advMenuItem("7", i18n.T("adv_opt_xhttp"), ""), w)
 		components.PrintBoxLine(advMenuItem("8", i18n.T("adv_opt_dnstt"), components.FormatBool(cfg.DNSTT.Enable)), w)
+		components.PrintBoxLine(advMenuItem("9", i18n.T("adv_opt_ztun"), components.FormatBool(cfg.Ztun.Enable)), w)
 		components.PrintBoxLine(advMenuItem("V", i18n.T("adv_opt_view_json"), ""), w)
 
 		components.PrintBoxDivider(w)
@@ -61,6 +62,8 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 			showXHTTPSubmenu(cfgMgr)
 		case "8":
 			ShowDNSTTMenu(cfgMgr)
+		case "9":
+			showZtunSubmenu(cfgMgr)
 		case "v":
 			viewConfigFile(cfgMgr)
 		case "0":
@@ -109,6 +112,36 @@ func promptAuthMode(current string) string {
 		return "file"
 	case "3":
 		return "allow"
+	default:
+		return current
+	}
+}
+
+func promptLogLevel(current string) string {
+	current = config.NormalizeLogLevel(current)
+	fmt.Printf("\n%sNível de log (do mais verboso ao mais quieto)%s\n", theme.Cyan, theme.Reset)
+	fmt.Printf("  Atual: %s%s%s\n\n", theme.Yellow, current, theme.Reset)
+	fmt.Printf("  1 • trace   — classify, copy, preview HTTP, tls-mux\n")
+	fmt.Printf("  2 • debug   — sessão, connector, ztun/xhttp/bhttp-trace\n")
+	fmt.Printf("  3 • info    — startup, auth, listeners\n")
+	fmt.Printf("  4 • warn    — só avisos e erros\n")
+	fmt.Printf("  5 • error   — só erros (padrão de instalação)\n")
+	fmt.Printf("  6 • silent  — sem logs (banner/Fatalf ainda saem)\n")
+	fmt.Printf("  0 • manter atual\n")
+	choice := components.ReadOption(i18n.T("prompt_select_option") + " [0-6]")
+	switch choice {
+	case "1":
+		return "trace"
+	case "2":
+		return "debug"
+	case "3":
+		return "info"
+	case "4":
+		return "warn"
+	case "5":
+		return "error"
+	case "6":
+		return "silent"
 	default:
 		return current
 	}
@@ -233,12 +266,11 @@ func showHttpLogsSubmenu(cfgMgr *config.Manager) {
 				i18n.T("toggle_banner_off"),
 				"display_banner")
 		case "3":
-			fmt.Printf("\nNíveis disponíveis: debug, info, warn, error\n")
-			resp := components.Prompt("Nível de log", cfg.LogLevel)
-			if resp != "" {
-				cfg.LogLevel = resp
+			level := promptLogLevel(cfg.LogLevel)
+			if level != "" && level != cfg.LogLevel {
+				cfg.LogLevel = level
 				_ = cfgMgr.Save(cfg)
-				components.PrintSuccess("Nível de log atualizado.")
+				components.PrintSuccess(fmt.Sprintf("Nível de log atualizado para '%s'.", level))
 			}
 			components.Pause()
 		case "4":
@@ -507,6 +539,96 @@ func showXHTTPSubmenu(cfgMgr *config.Manager) {
 				cfg.XHTTP.Idle = val
 				_ = cfgMgr.Save(cfg)
 				components.PrintSuccess("xhttp.idle atualizado.")
+			}
+			components.Pause()
+		case "0":
+			return
+		}
+	}
+}
+
+func ztunRuntimeMode(cfg *config.Config) string {
+	if strings.TrimSpace(cfg.Ztun.Upstream) != "" {
+		return i18n.T("ztun_mode_passthrough")
+	}
+	if cfg.Ztun.Enable {
+		return i18n.T("ztun_mode_native")
+	}
+	return i18n.T("ztun_mode_classify_only")
+}
+
+func showZtunSubmenu(cfgMgr *config.Manager) {
+	for {
+		cfg, _ := cfgMgr.Get()
+		if cfg.Ztun.Auth == "" {
+			cfg.Ztun.Auth = "shadow"
+		}
+		if cfg.Ztun.Idle <= 0 {
+			cfg.Ztun.Idle = 180
+		}
+
+		w := components.GetBoxWidth()
+		components.ClearScreen()
+		components.PrintBoxHeader(i18n.T("ztun_menu_title"), theme.Cyan, w)
+
+		components.PrintBoxLine(fmt.Sprintf("%s• Modo: %s%s%s", theme.White, theme.Cyan, ztunRuntimeMode(cfg), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s   %s%s", theme.Gray, i18n.T("ztun_upstream_hint"), theme.Reset), w)
+		components.PrintBoxDivider(w)
+
+		components.PrintBoxLine(fmt.Sprintf("%s1 • %s: %s%s", theme.White, i18n.T("ztun_opt_enable"), components.FormatBool(cfg.Ztun.Enable), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • %s: %s%s%s", theme.White, i18n.T("ztun_opt_upstream"), theme.Cyan, displayOrEmpty(cfg.Ztun.Upstream), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • %s: %s%s%s", theme.White, i18n.T("ztun_opt_auth"), theme.Cyan, displayOrEmpty(cfg.Ztun.Auth), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • %s: %s%s%s", theme.White, i18n.T("ztun_opt_auth_file"), theme.Cyan, displayOrEmpty(cfg.Ztun.AuthFile), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s5 • %s: %s%d%s", theme.White, i18n.T("ztun_opt_idle"), theme.Cyan, cfg.Ztun.Idle, theme.Reset), w)
+
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
+		components.PrintBoxFooter(w)
+
+		choice := components.ReadOption("Opção [0-5]")
+		switch choice {
+		case "1":
+			applyJSONBoolToggle(cfgMgr, cfg, cfg.Ztun.Enable, func(v bool) { cfg.Ztun.Enable = v },
+				i18n.T("toggle_ztun_on"),
+				i18n.T("toggle_ztun_off"),
+				"ztun.enable")
+		case "2":
+			resp := components.Prompt(i18n.T("ztun_opt_upstream")+" (ex: 127.0.0.1:9443)", cfg.Ztun.Upstream)
+			cfg.Ztun.Upstream = strings.TrimSpace(resp)
+			if err := cfgMgr.Save(cfg); err == nil {
+				components.PrintSuccess("ztun.upstream atualizado.")
+			} else {
+				components.PrintError(fmt.Sprintf("Erro ao salvar: %v", err))
+			}
+			components.Pause()
+		case "3":
+			mode := promptAuthMode(cfg.Ztun.Auth)
+			if mode != cfg.Ztun.Auth {
+				cfg.Ztun.Auth = mode
+				if mode == "file" && strings.TrimSpace(cfg.Ztun.AuthFile) == "" {
+					cfg.Ztun.AuthFile = components.Prompt(i18n.T("ztun_opt_auth_file"), "/etc/proxy/users")
+				}
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess("ztun.auth atualizado.")
+			}
+			components.Pause()
+		case "4":
+			resp := components.Prompt(i18n.T("ztun_opt_auth_file"), cfg.Ztun.AuthFile)
+			cfg.Ztun.AuthFile = strings.TrimSpace(resp)
+			_ = cfgMgr.Save(cfg)
+			components.PrintSuccess("ztun.auth_file atualizado.")
+			components.Pause()
+		case "5":
+			resp := components.Prompt(i18n.T("ztun_opt_idle")+" (padrão 180)", strconv.Itoa(cfg.Ztun.Idle))
+			if val, err := strconv.Atoi(strings.TrimSpace(resp)); err == nil {
+				if val <= 0 {
+					val = 180
+				}
+				cfg.Ztun.Idle = val
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess(fmt.Sprintf("ztun.idle atualizado para %d.", val))
+			} else {
+				components.PrintError("Valor inválido.")
 			}
 			components.Pause()
 		case "0":
