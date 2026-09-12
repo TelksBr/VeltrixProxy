@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/TelksBr/VeltrixProxy/internal/config"
 	"github.com/TelksBr/VeltrixProxy/internal/proxy"
 	"github.com/TelksBr/VeltrixProxy/internal/system"
 	"github.com/TelksBr/VeltrixProxy/internal/udpgw"
@@ -265,6 +266,23 @@ func formatTwoCols(left string, right string, contentWidth int) string {
 	return theme.PadRightANSI(left, leftCol) + theme.DarkGray + sep + theme.Reset + theme.PadRightANSI(right, rightCol)
 }
 
+// udpgwDashboardInfo retorna status do BadVPN embutido (ou legado externo) para o dashboard.
+func udpgwDashboardInfo(proxyActive bool) (active bool, modeLabel string) {
+	cfgMgr := config.NewManager("")
+	if cfg, err := cfgMgr.Get(); err == nil && cfg != nil {
+		if cfg.UDPGW.Internal {
+			active = proxyActive && cfg.SSH.Internal
+			return active, cfg.UDPGW.PortRangeLabel()
+		}
+		active = udpgw.IsActive()
+		return active, "externo"
+	}
+	if udpgw.IsActive() {
+		return true, "legado"
+	}
+	return false, "-"
+}
+
 // PrintDashboardHeader exibe as informações de sistema e status da VPS
 func PrintDashboardHeader(width int) {
 	if width <= 0 {
@@ -299,22 +317,10 @@ func PrintDashboardHeader(width int) {
 		proxyStatusBadge = theme.BadgeOnline
 	}
 
-	isUDPGWActive := udpgw.IsActive()
-	udpgwPorts := udpgw.ListConfiguredPorts()
+	isUDPGWActive, udpgwMode := udpgwDashboardInfo(isProxyActive)
 	udpgwStatusBadge := theme.BadgeOffline
 	if isUDPGWActive {
 		udpgwStatusBadge = theme.BadgeOnline
-	}
-
-	var portsLabel string
-	if len(udpgwPorts) == 0 {
-		portsLabel = "-"
-	} else if len(udpgwPorts) == 1 {
-		portsLabel = strconv.Itoa(udpgwPorts[0])
-	} else if len(udpgwPorts) == 2 {
-		portsLabel = fmt.Sprintf("%d, %d", udpgwPorts[0], udpgwPorts[1])
-	} else {
-		portsLabel = fmt.Sprintf("%d (+%d)", udpgwPorts[0], len(udpgwPorts)-1)
 	}
 
 	contentWidth := width - 4
@@ -342,12 +348,8 @@ func PrintDashboardHeader(width int) {
 		if leftCol < 25 {
 			udpgwCol = fmt.Sprintf("%sBadVPN:%s %s", theme.Gray, theme.Reset, udpgwStatusBadge)
 		}
-		portTitle := "Portas UDP:"
-		if len(udpgwPorts) <= 1 {
-			portTitle = "Porta UDP:"
-		}
-		udpgwPortCol := fmt.Sprintf("%s%s%s %s%s%s", theme.Gray, portTitle, theme.Reset, theme.Cyan, portsLabel, theme.Reset)
-		PrintBoxLine(formatTwoCols(udpgwCol, udpgwPortCol, contentWidth), width)
+		udpgwModeCol := fmt.Sprintf("%sFaixa:%s %s%s%s", theme.Gray, theme.Reset, theme.Cyan, udpgwMode, theme.Reset)
+		PrintBoxLine(formatTwoCols(udpgwCol, udpgwModeCol, contentWidth), width)
 	} else {
 		// Layout compacto para telas estreitas (< 54 colunas, ex: mobile / split pane)
 		PrintBoxLine(fmt.Sprintf("%sIP:%s %s%s%s", theme.Gray, theme.Reset, theme.White, ip, theme.Reset), width)
@@ -360,7 +362,7 @@ func PrintDashboardHeader(width int) {
 			theme.Gray, theme.Reset, proxyStatusBadge, theme.Cyan, onlines, theme.Reset,
 		), width)
 		PrintBoxLine(fmt.Sprintf("%sBadVPN / UDPGW:%s %s %s(%s)%s",
-			theme.Gray, theme.Reset, udpgwStatusBadge, theme.Cyan, portsLabel, theme.Reset,
+			theme.Gray, theme.Reset, udpgwStatusBadge, theme.Cyan, udpgwMode, theme.Reset,
 		), width)
 	}
 
@@ -425,8 +427,7 @@ func UpdateDashboardMetrics(width int, offsetUp ...int) {
 	ram := system.GetRAMInfo()
 	isProxyActive := system.IsServiceActive(system.ProxyServiceName)
 	onlines := proxy.GetOnlineUsersTotal()
-	isUDPGWActive := udpgw.IsActive()
-	udpgwPorts := udpgw.ListConfiguredPorts()
+	isUDPGWActive, udpgwMode := udpgwDashboardInfo(isProxyActive)
 
 	cpuColor := theme.Green
 	if cpuUsage > 75 {
@@ -452,17 +453,6 @@ func UpdateDashboardMetrics(width int, offsetUp ...int) {
 		udpgwStatusBadge = theme.BadgeOnline
 	}
 
-	var portsLabel string
-	if len(udpgwPorts) == 0 {
-		portsLabel = "-"
-	} else if len(udpgwPorts) == 1 {
-		portsLabel = strconv.Itoa(udpgwPorts[0])
-	} else if len(udpgwPorts) == 2 {
-		portsLabel = fmt.Sprintf("%d, %d", udpgwPorts[0], udpgwPorts[1])
-	} else {
-		portsLabel = fmt.Sprintf("%d (+%d)", udpgwPorts[0], len(udpgwPorts)-1)
-	}
-
 	contentWidth := width - 4
 	if contentWidth < 4 {
 		contentWidth = 4
@@ -484,12 +474,8 @@ func UpdateDashboardMetrics(width int, offsetUp ...int) {
 		if leftCol < 25 {
 			udpgwCol = fmt.Sprintf("%sBadVPN:%s %s", theme.Gray, theme.Reset, udpgwStatusBadge)
 		}
-		portTitle := "Portas UDP:"
-		if len(udpgwPorts) <= 1 {
-			portTitle = "Porta UDP:"
-		}
-		udpgwPortCol := fmt.Sprintf("%s%s%s %s%s%s", theme.Gray, portTitle, theme.Reset, theme.Cyan, portsLabel, theme.Reset)
-		line3 = FormatBoxLine(formatTwoCols(udpgwCol, udpgwPortCol, contentWidth), width)
+		udpgwModeCol := fmt.Sprintf("%sFaixa:%s %s%s%s", theme.Gray, theme.Reset, theme.Cyan, udpgwMode, theme.Reset)
+		line3 = FormatBoxLine(formatTwoCols(udpgwCol, udpgwModeCol, contentWidth), width)
 	} else {
 		line1 = FormatBoxLine(fmt.Sprintf("%sCPU:%s %s%d%%%s %s│ RAM:%s %s%dMB (%d%%)%s",
 			theme.Gray, theme.Reset, cpuColor, cpuUsage, theme.Reset,
@@ -499,7 +485,7 @@ func UpdateDashboardMetrics(width int, offsetUp ...int) {
 			theme.Gray, theme.Reset, proxyStatusBadge, theme.Cyan, onlines, theme.Reset,
 		), width)
 		line3 = FormatBoxLine(fmt.Sprintf("%sBadVPN / UDPGW:%s %s %s(%s)%s",
-			theme.Gray, theme.Reset, udpgwStatusBadge, theme.Cyan, portsLabel, theme.Reset,
+			theme.Gray, theme.Reset, udpgwStatusBadge, theme.Cyan, udpgwMode, theme.Reset,
 		), width)
 	}
 

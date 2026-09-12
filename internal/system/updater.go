@@ -22,7 +22,6 @@ var (
 
 const (
 	ProxyRepo       = "TelksBr/VeltrixProxy"
-	UDPGWRepo       = "TelksBr/VeltrixUPGW"
 	UpdateCacheFile = "/tmp/.vt_update_check.json"
 	UpdateCacheTTL  = 1 * time.Hour
 )
@@ -38,7 +37,6 @@ type ComponentStatus struct {
 // UpdateCheckResult agrupa o status de atualização de todo o sistema
 type UpdateCheckResult struct {
 	Proxy        ComponentStatus `json:"proxy"`
-	UDPGW        ComponentStatus `json:"udpgw"`
 	Menu         ComponentStatus `json:"menu"`
 	HasAnyUpdate bool            `json:"has_any_update"`
 	LastChecked  time.Time       `json:"last_checked"`
@@ -133,17 +131,6 @@ func GetInstalledProxyVersion() string {
 	return "desconhecida"
 }
 
-// GetInstalledUDPGWVersion retorna a versão instalada do udpgw
-func GetInstalledUDPGWVersion() string {
-	if data, err := os.ReadFile("/etc/udpgw-version"); err == nil {
-		v := strings.TrimSpace(string(data))
-		if v != "" {
-			return CleanVersion(v)
-		}
-	}
-	return "desconhecida"
-}
-
 // GetInstalledMenuVersion retorna a versão atual do menu CLI
 func GetInstalledMenuVersion() string {
 	return CurrentMenuVersion
@@ -152,11 +139,6 @@ func GetInstalledMenuVersion() string {
 // FetchRemoteProxyVersion busca a última tag estável de release do proxy
 func FetchRemoteProxyVersion() (string, error) {
 	return fetchLatestGitHubRelease(ProxyRepo)
-}
-
-// FetchRemoteUDPGWVersion busca a última tag de release do UDPGW
-func FetchRemoteUDPGWVersion() (string, error) {
-	return fetchLatestGitHubRelease(UDPGWRepo)
 }
 
 // FetchRemoteMenuVersion busca a versão do menu no GitHub
@@ -326,20 +308,15 @@ func CheckUpdates(force bool) *UpdateCheckResult {
 	}
 
 	installedProxy := GetInstalledProxyVersion()
-	installedUDPGW := GetInstalledUDPGWVersion()
 	installedMenu := GetInstalledMenuVersion()
 
 	var wg sync.WaitGroup
-	var remoteProxy, remoteUDPGW, remoteMenu string
+	var remoteProxy, remoteMenu string
 
-	wg.Add(3)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		remoteProxy, _ = FetchRemoteProxyVersion()
-	}()
-	go func() {
-		defer wg.Done()
-		remoteUDPGW, _ = FetchRemoteUDPGWVersion()
 	}()
 	go func() {
 		defer wg.Done()
@@ -350,11 +327,6 @@ func CheckUpdates(force bool) *UpdateCheckResult {
 	proxyUpdate := false
 	if remoteProxy != "" && IsNewerVersion(remoteProxy, installedProxy) {
 		proxyUpdate = true
-	}
-
-	udpgwUpdate := false
-	if remoteUDPGW != "" && IsNewerVersion(remoteUDPGW, installedUDPGW) {
-		udpgwUpdate = true
 	}
 
 	menuUpdate := false
@@ -369,19 +341,13 @@ func CheckUpdates(force bool) *UpdateCheckResult {
 			RemoteVersion:    remoteProxy,
 			HasUpdate:        proxyUpdate,
 		},
-		UDPGW: ComponentStatus{
-			Name:             "UDP Gateway",
-			InstalledVersion: installedUDPGW,
-			RemoteVersion:    remoteUDPGW,
-			HasUpdate:        udpgwUpdate,
-		},
 		Menu: ComponentStatus{
 			Name:             "Menu CLI (vt)",
 			InstalledVersion: installedMenu,
 			RemoteVersion:    remoteMenu,
 			HasUpdate:        menuUpdate,
 		},
-		HasAnyUpdate: proxyUpdate || udpgwUpdate || menuUpdate,
+		HasAnyUpdate: proxyUpdate || menuUpdate,
 		LastChecked:  time.Now(),
 	}
 

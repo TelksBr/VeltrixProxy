@@ -491,3 +491,74 @@ func GetConfiguredPort() int {
 func SetPort(port int) error {
 	return CreatePort(port)
 }
+
+// HasLegacyUnits indica se ainda existem units/configs do BadVPN externo (VeltrixUPGW).
+func HasLegacyUnits() bool {
+	if len(ListConfiguredPorts()) > 0 {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(SystemdDir, "udpgw.service")); err == nil {
+		return true
+	}
+	if matches, err := filepath.Glob(filepath.Join(SystemdDir, "udpgw-*.service")); err == nil && len(matches) > 0 {
+		return true
+	}
+	if _, err := os.Stat(LegacyConfigFile); err == nil {
+		return true
+	}
+	if matches, err := filepath.Glob(filepath.Join(ConfigDir, "udpgw-*.conf")); err == nil && len(matches) > 0 {
+		return true
+	}
+	return false
+}
+
+// DisableAndRemoveAll para, desabilita e remove todos os serviços/configs do udpgw externo.
+func DisableAndRemoveAll() error {
+	var errs []string
+
+	ports := ListConfiguredPorts()
+	seen := make(map[int]bool, len(ports))
+	for _, p := range ports {
+		seen[p] = true
+		if err := DeletePort(p); err != nil {
+			errs = append(errs, fmt.Sprintf("porta %d: %v", p, err))
+		}
+	}
+
+	// Units órfãs (sem conf correspondente) e serviço legado
+	if matches, err := filepath.Glob(filepath.Join(SystemdDir, "udpgw-*.service")); err == nil {
+		for _, m := range matches {
+			base := filepath.Base(m)
+			name := strings.TrimSuffix(base, ".service")
+			portStr := strings.TrimPrefix(name, "udpgw-")
+			if p, err := strconv.Atoi(portStr); err == nil && seen[p] {
+				continue
+			}
+			_ = system.StopService(name)
+			_ = exec.Command("systemctl", "disable", name).Run()
+			_ = os.Remove(m)
+		}
+	}
+
+	legacyPath := filepath.Join(SystemdDir, "udpgw.service")
+	if _, err := os.Stat(legacyPath); err == nil {
+		_ = system.StopService(LegacyService)
+		_ = exec.Command("systemctl", "disable", LegacyService).Run()
+		_ = os.Remove(legacyPath)
+	}
+
+	_ = os.Remove(LegacyConfigFile)
+	if matches, err := filepath.Glob(filepath.Join(ConfigDir, "udpgw-*.conf")); err == nil {
+		for _, m := range matches {
+			_ = os.Remove(m)
+		}
+	}
+
+	_ = system.DaemonReload()
+	_ = exec.Command("systemctl", "reset-failed").Run()
+
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return nil
+}

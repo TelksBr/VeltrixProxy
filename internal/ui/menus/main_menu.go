@@ -64,7 +64,7 @@ func ShowMainMenu(cfgMgr *config.Manager) {
 		case "1":
 			ShowProxyMenu(cfgMgr)
 		case "2":
-			ShowUDPGWMenu()
+			ShowUDPGWMenu(cfgMgr)
 		case "3":
 			ShowTokensMenu(cfgMgr)
 		case "4":

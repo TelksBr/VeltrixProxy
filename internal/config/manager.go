@@ -70,13 +70,36 @@ func (m *Manager) Load() (*Config, error) {
 		needsSave = true
 	}
 
-	// Persiste seção ztun padrão (enable=true) se o JSON antigo ainda não a tiver
+	// Persiste seções novas (ztun / udpgw) se o JSON antigo ainda não as tiver
 	var rawKeys map[string]json.RawMessage
 	if err := json.Unmarshal(data, &rawKeys); err == nil {
+		defaults := NewDefaultConfig(token)
 		if _, ok := rawKeys["ztun"]; !ok {
-			cfg.Ztun = NewDefaultConfig(token).Ztun
+			cfg.Ztun = defaults.Ztun
 			needsSave = true
 		}
+		if rawUDPGW, ok := rawKeys["udpgw"]; !ok {
+			cfg.UDPGW = defaults.UDPGW
+			needsSave = true
+		} else {
+			var udpgwKeys map[string]json.RawMessage
+			if err := json.Unmarshal(rawUDPGW, &udpgwKeys); err == nil {
+				if _, ok := udpgwKeys["port_min"]; !ok {
+					cfg.UDPGW.PortMin = defaults.UDPGW.PortMin
+					needsSave = true
+				}
+				if _, ok := udpgwKeys["port_max"]; !ok {
+					cfg.UDPGW.PortMax = defaults.UDPGW.PortMax
+					needsSave = true
+				}
+			}
+		}
+	}
+
+	beforeMin, beforeMax := cfg.UDPGW.PortMin, cfg.UDPGW.PortMax
+	cfg.UDPGW.Normalize()
+	if cfg.UDPGW.PortMin != beforeMin || cfg.UDPGW.PortMax != beforeMax {
+		needsSave = true
 	}
 
 	m.cfg = cfg
@@ -104,6 +127,9 @@ func (m *Manager) Get() (*Config, error) {
 func (m *Manager) Save(cfg *Config) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if cfg != nil {
+		cfg.UDPGW.Normalize()
+	}
 	m.cfg = cfg
 	return m.saveLocked()
 }

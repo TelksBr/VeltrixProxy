@@ -40,21 +40,6 @@ func ShowUpdateMenu() {
 		}
 		components.PrintBoxLine(proxyLine, w)
 
-		// UDPGW
-		udpgwBadge := theme.Green + "[" + i18n.T("update_badge_current") + "]" + theme.Reset
-		var udpgwLine string
-		if res.UDPGW.HasUpdate && res.UDPGW.RemoteVersion != "" {
-			udpgwBadge = theme.Yellow + "[" + i18n.T("update_badge_available") + "]" + theme.Reset
-			udpgwLine = fmt.Sprintf("%s• UDP Gateway:  %s%s → %s%s %s",
-				theme.White, theme.Gray, res.UDPGW.InstalledVersion, theme.Green, res.UDPGW.RemoteVersion, udpgwBadge,
-			)
-		} else {
-			udpgwLine = fmt.Sprintf("%s• UDP Gateway:  %sv%s %s",
-				theme.White, theme.Cyan, res.UDPGW.InstalledVersion, udpgwBadge,
-			)
-		}
-		components.PrintBoxLine(udpgwLine, w)
-
 		// Menu VT
 		menuBadge := theme.Green + "[" + i18n.T("update_badge_current") + "]" + theme.Reset
 		var menuLine string
@@ -71,6 +56,7 @@ func ShowUpdateMenu() {
 		components.PrintBoxLine(menuLine, w)
 
 		components.PrintBoxDivider(w)
+		components.PrintBoxLine(fmt.Sprintf("%sℹ %s%s", theme.Gray, i18n.T("update_udpgw_internal_notice"), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%sℹ %s%s", theme.Gray, i18n.T("update_preserve_notice"), theme.Reset), w)
 		components.PrintBoxDivider(w)
 

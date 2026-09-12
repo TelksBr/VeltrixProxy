@@ -98,6 +98,7 @@ type Config struct {
 	XHTTP          XHTTPConfig      `json:"xhttp"`
 	DNSTT          DNSTTConfig      `json:"dnstt"`
 	Ztun           ZtunConfig       `json:"ztun"`
+	UDPGW          UDPGWConfig      `json:"udpgw"`
 }
 
 // SSHConfig define parâmetros do servidor SSH interno/legado
@@ -157,6 +158,43 @@ type ZtunConfig struct {
 	Auth     string `json:"auth"`
 	AuthFile string `json:"auth_file"`
 	Idle     int    `json:"idle"`
+}
+
+// UDPGWConfig define o BadVPN udpgw embutido (intercept via SSH interno)
+type UDPGWConfig struct {
+	Internal bool `json:"internal"`
+	PortMin  int  `json:"port_min"`
+	PortMax  int  `json:"port_max"`
+}
+
+const (
+	DefaultUDPGWPortMin = 7100
+	DefaultUDPGWPortMax = 7900
+)
+
+// Normalize aplica defaults e corrige a faixa de portas do udpgw embutido.
+func (u *UDPGWConfig) Normalize() {
+	if u.PortMin <= 0 {
+		u.PortMin = DefaultUDPGWPortMin
+	}
+	if u.PortMax <= 0 {
+		u.PortMax = DefaultUDPGWPortMax
+	}
+	if u.PortMin > 65535 {
+		u.PortMin = DefaultUDPGWPortMin
+	}
+	if u.PortMax > 65535 {
+		u.PortMax = DefaultUDPGWPortMax
+	}
+	if u.PortMin > u.PortMax {
+		u.PortMin, u.PortMax = u.PortMax, u.PortMin
+	}
+}
+
+// PortRangeLabel retorna a faixa configurada (ex.: "7100-7900").
+func (u UDPGWConfig) PortRangeLabel() string {
+	u.Normalize()
+	return fmt.Sprintf("%d-%d", u.PortMin, u.PortMax)
 }
 
 // NewDefaultConfig gera uma configuração com todos os valores padrão recomendados
@@ -220,6 +258,11 @@ func NewDefaultConfig(token string) *Config {
 			Auth:     "shadow",
 			AuthFile: "",
 			Idle:     180,
+		},
+		UDPGW: UDPGWConfig{
+			Internal: true,
+			PortMin:  DefaultUDPGWPortMin,
+			PortMax:  DefaultUDPGWPortMax,
 		},
 	}
 }

@@ -119,6 +119,12 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
     "auth": "shadow",
     "auth_file": "",
     "idle": 180
+  },
+
+  "udpgw": {
+    "internal": true,
+    "port_min": 7100,
+    "port_max": 7900
   }
 }
 ```
@@ -239,6 +245,27 @@ Não existem chaves de SMUX/janela/chunk/porta UDP no JSON — constantes do bin
 
 ---
 
+### H. Seção `udpgw` (BadVPN embutido)
+
+> Motor in-process: com `ssh.internal=true`, canais SSH `direct-tcpip` para loopback na faixa configurada são tratados dentro do proxy (sem processo `udpgw` separado).
+
+| Campo | Tipo | Default | Descrição |
+| :--- | :--- | :--- | :--- |
+| `internal` | `bool` | `true` | `true` = motor embutido. `false` = o SSH disca `127.0.0.1:<porta>` (VeltrixUPGW / serviço externo). |
+| `port_min` | `int` | `7100` | Início da faixa interceptada em loopback via SSH. |
+| `port_max` | `int` | `7900` | Fim da faixa interceptada em loopback via SSH. |
+
+**Regras:**
+- Só faz sentido com `ssh.internal=true`. Com SSH externo, o motor não sobe.
+- A faixa é configurável (`port_min`/`port_max`); defaults `7100`–`7900`.
+- Não há listen público, metrics nem buffers no JSON.
+- **Não** adicione essas portas em `ports[]` do proxy.
+- Alias flat: `udpgw_internal`, `udpgw_port_min`, `udpgw_port_max`.
+
+No update do instalador, serviços `udpgw*.service` legados são desativados/removidos e `udpgw.internal` é forçado para `true` (com defaults de faixa se ausentes).
+
+---
+
 ## 5. Flexibilidade do Formato JSON
 
 Para que o menu/script em bash/python não quebre com facilidade, o parser aceita variações:
@@ -278,6 +305,9 @@ O menu pode optar por usar campos planos sem objetos aninhados, e o proxy reconh
   "ports": ["80", "443:ssl"],
   "ssh_internal": true,
   "ssh_internal_port": 0,
+  "udpgw_internal": true,
+  "udpgw_port_min": 7100,
+  "udpgw_port_max": 7900,
   "btun_enable": true,
   "default_user_limit": 2,
   "kill_expired": true,

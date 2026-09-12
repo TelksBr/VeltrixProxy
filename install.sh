@@ -43,7 +43,7 @@ SKIP_HEADER=false
 MAX_VERSIONS=10
 PROXY_TOKEN=""
 INSTALL_IP=""
-SKIP_UDPGW=false
+SKIP_UDPGW=true
 
 
 STEP_TITLES=(
@@ -51,7 +51,7 @@ STEP_TITLES=(
   "Dependências (curl, checksum, iptables)"
   "Sincronização de Relógio do Sistema (NTP)"
   "Plataforma e Releases do GitHub"
-  "Baixando e Instalando Binários (proxy & udpgw)"
+  "Baixando e Instalando Binário do Proxy"
   "Otimizações de Kernel e BBR"
   "Instalando Menu CLI (vt)"
   "Sincronizando e Reiniciando Serviços Systemd"
@@ -128,15 +128,16 @@ Uso: $0 [opções]
 Modos:
   (padrão)        Instalação interativa (detecta e atualiza serviços existentes)
   --install       Mesmo que o padrão
-  --update        Atualiza proxy (latest) e udpgw (latest)
+  --update        Atualiza proxy (latest); migra UDPGW para motor interno
   --reinstall     Reinstala binários e menu vt (interativo ou com --latest)
   --uninstall     Remove e desinstala completamente o VTProxy e serviços
 
 Opções:
-  --latest, -L    Usa a versão mais recente do proxy e udpgw (também atualiza o menu)
+  --latest, -L    Usa a versão mais recente do proxy (também atualiza o menu)
   --version TAG   Versão específica do proxy (ex: v2.1.0)
-  --udpgw-version TAG  Versão específica do UDP Gateway (ex: v1.0.1)
-  --no-udpgw           Não instala/atualiza o binário udpgw
+  --with-udpgw         (legado) Ignorado: BadVPN externo é removido; motor interno no proxy
+  --udpgw-version TAG  (legado) Ignorado: não há update separado do VeltrixUPGW
+  --no-udpgw           Padrão — BadVPN é interno no proxy (não instala udpgw externo)
   --binary-only   Instala/atualiza apenas os binários (não instala o menu vt)
   --proxy-token T Token da licença proxy (VT)
   --ip IP         IP da VPS vinculado à licença
@@ -165,7 +166,6 @@ cleanup() {
     log_warn "Instalação interrompida — tentando restaurar serviços parados..."
     has_systemd && run_privileged systemctl daemon-reload 2>/dev/null || true
     restart_proxy_services || true
-    restart_udpgw_server || true
   fi
 }
 trap cleanup EXIT
@@ -179,17 +179,20 @@ parse_args() {
     --uninstall | --remove) MODE="uninstall" ;;
     --latest | -L)
       VERSION="latest"
-      UDPGW_VERSION="latest"
       ;;
     --version)
       shift
       VERSION="${1:-}"
       [[ -n "$VERSION" ]] || { log_error "Use --version TAG"; exit 1; }
       ;;
+    --with-udpgw)
+      log_warn "--with-udpgw ignorado: BadVPN agora é interno no proxy (legado removido no update)."
+      SKIP_UDPGW=true
+      ;;
     --udpgw-version)
       shift
-      UDPGW_VERSION="${1:-}"
-      [[ -n "$UDPGW_VERSION" ]] || { log_error "Use --udpgw-version TAG"; exit 1; }
+      log_warn "--udpgw-version ignorado: não há update separado do VeltrixUPGW."
+      SKIP_UDPGW=true
       ;;
     --no-udpgw) SKIP_UDPGW=true ;;
     --binary-only) BINARY_ONLY=true ;;
@@ -680,9 +683,7 @@ show_current_installation() {
   fi
 
   if [[ -n "$current_udpgw" ]]; then
-    log_info "Versão udpgw instalada: v${current_udpgw}"
-  else
-    log_warn "Nenhuma instalação udpgw detectada em ${INSTALL_DIR}/${UDPGW_BINARY_NAME}"
+    log_info "Binário udpgw legado detectado: v${current_udpgw} (será desativado; BadVPN agora é interno)"
   fi
 }
 
@@ -863,24 +864,16 @@ show_versions_and_select() {
     prompt_version_selection "proxy" "$REPO" RELEASES VERSION
   fi
 
-  if [[ "$SKIP_UDPGW" == true ]]; then
-    UDPGW_VERSION=""
-  elif [[ -n "$UDPGW_VERSION" ]]; then
-    resolve_version_in_list "$UDPGW_VERSION" UDPGW_RELEASES UDPGW_VERSION "udpgw" "$UDPGW_REPO"
-  elif [[ "$ASSUME_YES" == true ]]; then
-    resolve_version_in_list "latest" UDPGW_RELEASES UDPGW_VERSION "udpgw" "$UDPGW_REPO"
-  else
-    prompt_version_selection "udpgw" "$UDPGW_REPO" UDPGW_RELEASES UDPGW_VERSION
-  fi
+  # UDPGW externo não é mais instalado — motor interno no proxy
+  UDPGW_VERSION=""
+  SKIP_UDPGW=true
 }
 
 confirm_installation() {
   [[ "$ASSUME_YES" == true ]] && return 0
 
   echo ""
-  local confirm_msg="Continuar com proxy ${VERSION}"
-  [[ "$SKIP_UDPGW" != true && -n "$UDPGW_VERSION" ]] && confirm_msg+=" e udpgw ${UDPGW_VERSION}"
-  confirm_msg+="?"
+  local confirm_msg="Continuar com proxy ${VERSION} (UDPGW interno)?"
   read -rp "${confirm_msg} (s/N): " answer
   case "${answer,,}" in
   s | sim) ;;
@@ -1387,6 +1380,100 @@ sync_udpgw_service() {
   done
 }
 
+# Desativa BadVPN externo, remove units/binário e ativa udpgw.internal no JSON.
+# Sempre executado em install/update — migração automática para o motor embutido.
+disable_and_remove_legacy_udpgw() {
+  local svc path
+  local removed=0
+  local services=()
+
+  log_info "Migrando BadVPN/UDPGW externo → motor interno do proxy..."
+
+  read_nonempty_lines services < <(list_all_udpgw_services)
+  for svc in "${services[@]}"; do
+    svc="${svc%.service}"
+    run_privileged systemctl stop "$svc" 2>/dev/null || true
+    run_privileged systemctl disable "$svc" 2>/dev/null || true
+    path="/etc/systemd/system/${svc}.service"
+    if [[ -f "$path" ]]; then
+      run_privileged rm -f "$path" || true
+      removed=$((removed + 1))
+    fi
+  done
+
+  for path in /etc/systemd/system/udpgw.service /etc/systemd/system/udpgw-*.service; do
+    [[ -e "$path" ]] || continue
+    [[ -f "$path" ]] || continue
+    svc=$(basename "$path" .service)
+    run_privileged systemctl stop "$svc" 2>/dev/null || true
+    run_privileged systemctl disable "$svc" 2>/dev/null || true
+    run_privileged rm -f "$path" || true
+    removed=$((removed + 1))
+  done
+
+  # Remove binário e configs legados do VeltrixUPGW
+  if [[ -x "${INSTALL_DIR}/${UDPGW_BINARY_NAME}" ]] || [[ -f "${INSTALL_DIR}/${UDPGW_BINARY_NAME}" ]]; then
+    run_privileged rm -f "${INSTALL_DIR}/${UDPGW_BINARY_NAME}" || true
+    log_info "Binário legado ${INSTALL_DIR}/${UDPGW_BINARY_NAME} removido."
+  fi
+  run_privileged rm -f "$UDPGW_VERSION_FILE" 2>/dev/null || true
+  run_privileged rm -rf /etc/udpgw 2>/dev/null || true
+
+  if has_systemd; then
+    run_privileged systemctl daemon-reload 2>/dev/null || true
+    run_privileged systemctl reset-failed 2>/dev/null || true
+  fi
+
+  ensure_udpgw_internal_config
+
+  if [[ $removed -gt 0 ]]; then
+    log_success "BadVPN externo removido (${removed} unit(s)); udpgw.internal=true no config.json."
+  else
+    log_info "udpgw.internal=true garantido no config.json (faixa 7100–7900)."
+  fi
+}
+
+ensure_udpgw_internal_config() {
+  local token="${PROXY_TOKEN:-}"
+  [[ -z "$token" ]] && token=$(load_saved_proxy_token || true)
+  ensure_proxy_json_config "$token"
+
+  if [[ ! -f "$PROXY_JSON_FILE" ]]; then
+    return 0
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    run_privileged python3 -c '
+import json
+p = "/etc/proxyvt/config.json"
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        d = json.load(f)
+    changed = False
+    if "udpgw" not in d or not isinstance(d.get("udpgw"), dict):
+        d["udpgw"] = {"internal": True, "port_min": 7100, "port_max": 7900}
+        changed = True
+    elif d["udpgw"].get("internal") is not True:
+        d["udpgw"]["internal"] = True
+        changed = True
+    if isinstance(d.get("udpgw"), dict):
+        u = d["udpgw"]
+        if not isinstance(u.get("port_min"), int) or int(u.get("port_min") or 0) <= 0:
+            u["port_min"] = 7100
+            changed = True
+        if not isinstance(u.get("port_max"), int) or int(u.get("port_max") or 0) <= 0:
+            u["port_max"] = 7900
+            changed = True
+    if changed:
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(d, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+except Exception:
+    pass
+' 2>/dev/null || true
+  fi
+}
+
 load_saved_proxy_token() {
   local file
   for file in /etc/vtproxy/proxy.token /etc/proxy/token "${HOME:-/root}/.proxy_token"; do
@@ -1674,6 +1761,11 @@ default_cfg = {
     "auth": "shadow",
     "auth_file": "",
     "idle": 180
+  },
+  "udpgw": {
+    "internal": True,
+    "port_min": 7100,
+    "port_max": 7900
   }
 }
 os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -1738,6 +1830,11 @@ with open(path, "w", encoding="utf-8") as f:
     "auth": "shadow",
     "auth_file": "",
     "idle": 180
+  },
+  "udpgw": {
+    "internal": true,
+    "port_min": 7100,
+    "port_max": 7900
   }
 }
 EOF
@@ -1789,6 +1886,24 @@ try:
             changed = True
         if "idle" not in z or not isinstance(z.get("idle"), int) or int(z.get("idle") or 0) <= 0:
             z["idle"] = 180
+            changed = True
+    # Injeta/força udpgw interno (BadVPN embutido no proxy)
+    if "udpgw" not in d or not isinstance(d.get("udpgw"), dict):
+        d["udpgw"] = {"internal": True, "port_min": 7100, "port_max": 7900}
+        changed = True
+    else:
+        u = d["udpgw"]
+        if u.get("internal") is not True:
+            u["internal"] = True
+            changed = True
+        if not isinstance(u.get("port_min"), int) or int(u.get("port_min") or 0) <= 0:
+            u["port_min"] = 7100
+            changed = True
+        if not isinstance(u.get("port_max"), int) or int(u.get("port_max") or 0) <= 0:
+            u["port_max"] = 7900
+            changed = True
+        if int(u.get("port_min") or 0) > int(u.get("port_max") or 0):
+            u["port_min"], u["port_max"] = u["port_max"], u["port_min"]
             changed = True
     if changed:
         with open(p, "w", encoding="utf-8") as f:
@@ -1877,6 +1992,11 @@ config = {
         "auth": "shadow",
         "auth_file": "",
         "idle": 180
+    },
+    "udpgw": {
+        "internal": True,
+        "port_min": 7100,
+        "port_max": 7900
     }
 }
 
@@ -2090,6 +2210,14 @@ if "kill_expired" in config:
     config.pop("kill_expired", None)
 if not config.get("log_file"):
     config["log_file"] = "/var/log/proxy/proxy.log"
+if "udpgw" not in config or not isinstance(config.get("udpgw"), dict):
+    config["udpgw"] = {"internal": True, "port_min": 7100, "port_max": 7900}
+else:
+    config["udpgw"]["internal"] = True
+    if not isinstance(config["udpgw"].get("port_min"), int) or int(config["udpgw"].get("port_min") or 0) <= 0:
+        config["udpgw"]["port_min"] = 7100
+    if not isinstance(config["udpgw"].get("port_max"), int) or int(config["udpgw"].get("port_max") or 0) <= 0:
+        config["udpgw"]["port_max"] = 7900
 
 os.makedirs("/var/log/proxy", exist_ok=True)
 os.makedirs(os.path.dirname(json_path), exist_ok=True)
@@ -2209,7 +2337,8 @@ refresh_existing_services() {
   sync_proxy_service_executables
   strip_legacy_proxy_flags
   [[ -n "$proxy_token" ]] && sync_proxy_service_tokens "$proxy_token"
-  sync_udpgw_service
+  # Sempre migra BadVPN legado → udpgw interno no JSON
+  disable_and_remove_legacy_udpgw
   ensure_service_limit_nofile
   ensure_proxy_service_iptables
 
@@ -2245,14 +2374,8 @@ report_existing_services() {
     log_warn "Processo proxy ativo detectado — reinicie manualmente se não houver unit systemd."
   fi
 
-  if [[ "$SKIP_UDPGW" != true ]]; then
-    if [[ ${#ACTIVE_UDPGW_SERVICES[@]} -gt 0 ]]; then
-      log_warn "${#ACTIVE_UDPGW_SERVICES[@]} serviço(s) udpgw ativo(s): ${ACTIVE_UDPGW_SERVICES[*]//.service/}"
-    elif [[ "$ACTIVE_UDPGW" == true ]]; then
-      log_warn "UDP Gateway ativo detectado — unit files serão atualizados e os serviços reiniciados."
-    else
-      log_warn "Serviço(s) udpgw configurado(s) — unit files serão atualizados se necessário."
-    fi
+  if has_udpgw_service || [[ ${#ACTIVE_UDPGW_SERVICES[@]} -gt 0 ]] || [[ "$ACTIVE_UDPGW" == true ]]; then
+    log_info "BadVPN/UDPGW externo detectado — será removido automaticamente (motor interno no proxy)."
   fi
 }
 
@@ -2782,8 +2905,9 @@ print_finish_message() {
   print_dashboard_center "✅  INSTALAÇÃO CONCLUÍDA COM SUCESSO!" "${GREEN:-\033[0;32m}"
   print_dash_rule
   print_dashboard_item "" "  Versão Proxy:   $VERSION"
+  print_dashboard_item "" "  UDPGW:          interno no proxy (faixa configurável)"
   if [[ -n "$INSTALLED_UDPGW_VERSION" ]]; then
-    print_dashboard_item "" "  Versão UDPgw:   v${INSTALLED_UDPGW_VERSION#v}"
+    print_dashboard_item "" "  UDPgw externo:  v${INSTALLED_UDPGW_VERSION#v} (opcional)"
   fi
   if [[ "$BINARY_ONLY" == false ]]; then
     local rev="-"
@@ -2928,27 +3052,21 @@ main() {
   detect_platform
   capture_active_services
   fetch_releases
-  if [[ "$SKIP_UDPGW" != true ]]; then
-    fetch_udpgw_releases
-  fi
   show_versions_and_select
   confirm_installation
   set_step_status 3 2 "Proxy ${VERSION}"
 
-  # Parar serviços ativos se necessário
+  # Parar serviços ativos se necessário (inclui BadVPN legado)
   if should_manage_services; then
     SERVICES_WERE_STOPPED=true
     stop_proxy_services
     stop_udpgw_server
   fi
 
-  # Step 4: Binários
+  # Step 4: Binários (somente proxy — UDPGW é interno)
   set_step_status 4 1
   download_and_install_binary
-  if [[ "$SKIP_UDPGW" != true && -n "$UDPGW_VERSION" ]]; then
-    download_and_install_udpgw_binary
-  fi
-  set_step_status 4 2 "${VERSION} / v${INSTALLED_UDPGW_VERSION#v}"
+  set_step_status 4 2 "${VERSION}"
 
   # Step 5: Kernel & Sysctl
   set_step_status 5 1
@@ -2963,12 +3081,12 @@ main() {
   [[ -f "$MENU_REV_FILE" ]] && rev_installed=$(tr -d '\r\n' <"$MENU_REV_FILE")
   set_step_status 6 2 "vt rev ${rev_installed}"
 
-  # Step 7: Serviços Systemd
+  # Step 7: Serviços + migração automática BadVPN → udpgw.internal
   set_step_status 7 1
   refresh_existing_services
+  disable_and_remove_legacy_udpgw
   if should_manage_services; then
     restart_proxy_services
-    restart_udpgw_server
   fi
   set_step_status 7 2 "vtproxy OK"
 
