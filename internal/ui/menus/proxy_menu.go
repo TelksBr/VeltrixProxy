@@ -563,7 +563,8 @@ func getLatestProxyBanner(logPath string) string {
 			line := lines[i]
 			if strings.Contains(line, "v2.") || strings.Contains(line, "Versão:") ||
 				strings.Contains(line, "\\ \\ /") || strings.Contains(line, "RAM:") ||
-				strings.Contains(line, "ZTUN-X") || strings.Contains(line, "HCR") {
+				strings.Contains(line, "ZTUN-X") || strings.Contains(line, "HCR") ||
+				strings.Contains(line, "DNSTT") {
 				lastBannerIdx = i
 				for lastBannerIdx > 0 {
 					prev := strings.TrimSpace(lines[lastBannerIdx-1])
