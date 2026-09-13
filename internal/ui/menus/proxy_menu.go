@@ -399,8 +399,22 @@ func showLiveProxyMetricsBanner(cfgMgr *config.Manager) {
 }
 
 func renderLiveBannerFrame(logPath string, isTTY bool) {
-	w := components.GetBoxWidth()
 	termW := components.GetTerminalWidth()
+	w := components.GetBoxWidth()
+	// Segurança extra em painéis tiled (Termius etc.): nunca usar largura >= colunas
+	if termW > 0 && w >= termW {
+		w = termW - 1
+	}
+	if w < 20 {
+		w = 20
+		if termW > 0 && w >= termW {
+			w = termW
+			if w > 1 {
+				w--
+			}
+		}
+	}
+
 	isProxyActive := system.IsServiceActive(system.ProxyServiceName)
 
 	statusBadge := theme.BadgeOnline
@@ -408,18 +422,31 @@ func renderLiveBannerFrame(logPath string, isTTY bool) {
 		statusBadge = theme.BadgeOffline
 	}
 
+	title := "VELTRIX PROXY • MÉTRICAS EM TEMPO REAL"
+	if w < 42 {
+		title = "MÉTRICAS AO VIVO"
+	} else if w < 56 {
+		title = "VELTRIX • MÉTRICAS AO VIVO"
+	}
+
 	var buf strings.Builder
 	// Limpa a tela inteira a cada frame — só \033[H deixava bordas acumulando no topo (raw/SSH).
 	buf.WriteString("\033[2J\033[H\033[?25l")
 
-	buf.WriteString(components.FormatBoxHeader("VELTRIX PROXY • MÉTRICAS EM TEMPO REAL", theme.Cyan, w))
+	buf.WriteString(components.FormatBoxHeader(title, theme.Cyan, w))
 	buf.WriteByte('\n')
 
 	infoLine := fmt.Sprintf("Arquivo: %s%s%s │ Status: %s", theme.Cyan, logPath, theme.Reset, statusBadge)
+	if w < 50 {
+		infoLine = fmt.Sprintf("%s%s%s │ %s", theme.Cyan, logPath, theme.Reset, statusBadge)
+	}
 	buf.WriteString(components.FormatBoxLine(infoLine, w))
 	buf.WriteByte('\n')
 
-	exitLine := fmt.Sprintf("Pressione %s[Enter]%s ou %s[Q]%s para retornar ao menu", theme.Yellow, theme.Reset, theme.Yellow, theme.Reset)
+	exitLine := fmt.Sprintf("Pressione %s[Enter]%s ou %s[Q]%s para retornar", theme.Yellow, theme.Reset, theme.Yellow, theme.Reset)
+	if w < 44 {
+		exitLine = fmt.Sprintf("%s[Enter]%s/%s[Q]%s voltar", theme.Yellow, theme.Reset, theme.Yellow, theme.Reset)
+	}
 	buf.WriteString(components.FormatBoxLine(exitLine, w))
 	buf.WriteByte('\n')
 
@@ -429,9 +456,9 @@ func renderLiveBannerFrame(logPath string, isTTY bool) {
 	banner := getLatestProxyBanner(logPath)
 	if banner == "" {
 		if !isProxyActive {
-			buf.WriteString(fmt.Sprintf("%sℹ O serviço do proxy está OFFLINE. Inicie o proxy para ativar as métricas ao vivo.%s\n", theme.Yellow, theme.Reset))
+			buf.WriteString(fmt.Sprintf("%sℹ Proxy OFFLINE — inicie o serviço.%s\n", theme.Yellow, theme.Reset))
 		} else {
-			buf.WriteString(fmt.Sprintf("%sℹ Aguardando o proxy registrar as primeiras métricas em '%s'...%s\n", theme.Cyan, logPath, theme.Reset))
+			buf.WriteString(fmt.Sprintf("%sℹ Aguardando métricas em '%s'...%s\n", theme.Cyan, logPath, theme.Reset))
 		}
 	} else {
 		sanitized := sanitizeLiveBanner(banner, termW)
@@ -441,7 +468,7 @@ func renderLiveBannerFrame(logPath string, isTTY bool) {
 		}
 	}
 
-	out := buf.String()
+	out := clampFrameToTerminal(buf.String(), termW)
 	if isTTY {
 		// Em modo Raw do terminal, quebras de linha precisam ser CRLF (\r\n) para evitar efeito escada
 		out = strings.ReplaceAll(out, "\r\n", "\n")
@@ -451,18 +478,37 @@ func renderLiveBannerFrame(logPath string, isTTY bool) {
 	_, _ = os.Stdout.WriteString(out)
 }
 
+// clampFrameToTerminal garante que nenhuma linha visível >= largura do terminal (evita wrap+\\n).
+func clampFrameToTerminal(frame string, termWidth int) string {
+	if termWidth <= 1 {
+		return frame
+	}
+	maxCols := termWidth - 1
+	var out strings.Builder
+	lines := strings.Split(frame, "\n")
+	for i, line := range lines {
+		// Preserva escapes puros de controle no início do frame (ex: \033[2J\033[H)
+		if theme.VisibleLen(line) > maxCols {
+			line = theme.TruncateANSI(line, maxCols)
+		}
+		out.WriteString(line)
+		if i < len(lines)-1 {
+			out.WriteByte('\n')
+		}
+	}
+	return out.String()
+}
+
 // sanitizeLiveBanner remove sequências ANSI de cursor/clear e evita wrap que gera linhas fantasmas.
 func sanitizeLiveBanner(banner string, termWidth int) string {
 	banner = cursorControlANSI.ReplaceAllString(banner, "")
 	banner = strings.ReplaceAll(banner, "\r", "")
 
-	if termWidth <= 0 {
+	if termWidth <= 1 {
 		return banner
 	}
+	// Sempre termWidth-1: linha com largura exata + \n = wrap fantasma em painéis pequenos
 	maxCols := termWidth - 1
-	if maxCols < 40 {
-		maxCols = termWidth
-	}
 
 	lines := strings.Split(banner, "\n")
 	for i, line := range lines {

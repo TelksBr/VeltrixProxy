@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/TelksBr/VeltrixProxy/internal/ui/theme"
 )
 
 func TestGetLatestProxyBannerSingle(t *testing.T) {
@@ -128,6 +130,30 @@ func TestGetLatestProxyBannerBoxFormat(t *testing.T) {
 	}
 	if strings.Count(result, "┌") != 1 {
 		t.Errorf("Esperava exatamente 1 topo de caixa, obteve %d em: %q", strings.Count(result, "┌"), result)
+	}
+}
+
+func TestSanitizeLiveBannerNeverFullWidth(t *testing.T) {
+	// Banner com largura tipicamente maior que um painel tiled
+	wide := "┌" + strings.Repeat("─", 70) + "┐"
+	out := sanitizeLiveBanner(wide+"\n│ x │\n", 50)
+	for _, line := range strings.Split(out, "\n") {
+		if line == "" {
+			continue
+		}
+		if theme.VisibleLen(line) >= 50 {
+			t.Errorf("linha com %d cols >= terminal 50 (causa wrap): %q", theme.VisibleLen(line), line)
+		}
+	}
+}
+
+func TestClampFrameToTerminal(t *testing.T) {
+	frame := "\033[2J\033[H" + strings.Repeat("─", 80) + "\nhello\n"
+	out := clampFrameToTerminal(frame, 40)
+	for i, line := range strings.Split(out, "\n") {
+		if theme.VisibleLen(line) >= 40 {
+			t.Errorf("linha %d ainda >= 40 cols: visible=%d", i, theme.VisibleLen(line))
+		}
 	}
 }
 

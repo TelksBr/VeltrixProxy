@@ -74,8 +74,8 @@ func TestGetBoxWidthResponsiveness(t *testing.T) {
 	defer os.Unsetenv("COLUMNS")
 
 	w := GetBoxWidth()
-	if w > 45 {
-		t.Errorf("GetBoxWidth com COLUMNS=45 retornou %d (deveria ser <= 45)", w)
+	if w >= 45 {
+		t.Errorf("GetBoxWidth com COLUMNS=45 retornou %d (deveria ser < 45 para evitar wrap)", w)
 	}
 
 	// Simular COLUMNS normal

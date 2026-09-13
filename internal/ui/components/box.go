@@ -69,21 +69,41 @@ func GetBoxWidth() int {
 	if tw <= 0 {
 		return DefaultBoxWidth
 	}
-	// Em telas estreitas (ex: mobile, split terminal, janelas reduzidas),
-	// ajusta a caixa para caber na tela sem estourar margens
+
+	// Nunca preencher 100% da largura: linha exata + \n causa wrap fantasma (bordas duplicadas).
+	maxAllowed := tw - 1
+	if maxAllowed < 20 {
+		maxAllowed = tw
+	}
+	if maxAllowed < 16 {
+		maxAllowed = 16
+	}
+
+	var w int
+	// Em telas estreitas (ex: mobile, split terminal, janelas reduzidas)
 	if tw <= 66 {
-		w := tw - 2
-		if w < MinBoxWidth {
+		w = tw - 2
+		if w < MinBoxWidth && MinBoxWidth <= maxAllowed {
 			w = MinBoxWidth
 		}
-		return w
+	} else if tw < 78 {
+		// Em telas médias/padrão (67 a 78 colunas)
+		w = tw - 4
+	} else {
+		// Em telas amplas (>= 78 colunas), mantém uma largura harmônica e confortável
+		w = DefaultBoxWidth
 	}
-	// Em telas médias/padrão (67 a 78 colunas)
-	if tw < 78 {
-		return tw - 4
+
+	if w > maxAllowed {
+		w = maxAllowed
 	}
-	// Em telas amplas (>= 78 colunas), mantém uma largura harmônica e confortável
-	return DefaultBoxWidth
+	if w < 16 {
+		w = 16
+		if w > maxAllowed {
+			w = maxAllowed
+		}
+	}
+	return w
 }
 
 // FormatBoxHeader formata o topo da caixa com o título centralizado e a divisória
