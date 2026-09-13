@@ -459,13 +459,13 @@ func getLatestProxyBanner(logPath string) string {
 		lastBannerIdx := -1
 		for i := len(lines) - 1; i >= 0; i-- {
 			line := lines[i]
-			if strings.Contains(line, "v2.") || strings.Contains(line, "\\ \\ /") || strings.Contains(line, "RAM:") {
-				lastBannerIdx = i
-				if lastBannerIdx > 0 && strings.TrimSpace(lines[lastBannerIdx-1]) != "" {
-					lastBannerIdx--
-				}
-				break
+		if strings.Contains(line, "v2.") || strings.Contains(line, "Versão:") || strings.Contains(line, "RAM:") || strings.Contains(line, "ZTUN-X") {
+			lastBannerIdx = i
+			if lastBannerIdx > 0 && strings.TrimSpace(lines[lastBannerIdx-1]) != "" {
+				lastBannerIdx--
 			}
+			break
+		}
 		}
 		if lastBannerIdx >= 0 {
 			lines = lines[lastBannerIdx:]
