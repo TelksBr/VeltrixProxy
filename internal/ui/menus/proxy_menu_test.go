@@ -136,23 +136,13 @@ func TestGetLatestProxyBannerBoxFormat(t *testing.T) {
 func TestSanitizeLiveBannerNeverFullWidth(t *testing.T) {
 	// Banner com largura tipicamente maior que um painel tiled
 	wide := "┌" + strings.Repeat("─", 70) + "┐"
-	out := sanitizeLiveBanner(wide+"\n│ x │\n", 50)
+	out := sanitizeLiveBanner(wide+"\n│ x │\n", 49) // maxCols = term-1
 	for _, line := range strings.Split(out, "\n") {
 		if line == "" {
 			continue
 		}
-		if theme.VisibleLen(line) >= 50 {
-			t.Errorf("linha com %d cols >= terminal 50 (causa wrap): %q", theme.VisibleLen(line), line)
-		}
-	}
-}
-
-func TestClampFrameToTerminal(t *testing.T) {
-	frame := "\033[2J\033[H" + strings.Repeat("─", 80) + "\nhello\n"
-	out := clampFrameToTerminal(frame, 40)
-	for i, line := range strings.Split(out, "\n") {
-		if theme.VisibleLen(line) >= 40 {
-			t.Errorf("linha %d ainda >= 40 cols: visible=%d", i, theme.VisibleLen(line))
+		if theme.VisibleLen(line) > 49 {
+			t.Errorf("linha com %d cols > max 49 (causa wrap): %q", theme.VisibleLen(line), line)
 		}
 	}
 }
@@ -165,6 +155,22 @@ func TestSanitizeLiveBannerStripsCursorControls(t *testing.T) {
 	}
 	if !strings.Contains(out, "┌──┐") {
 		t.Errorf("conteúdo do banner foi perdido: %q", out)
+	}
+}
+
+func TestGetLatestProxyBannerCutsAtBoxEnd(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "proxy.log")
+	content := "┌────┐\n│ A  │\n└────┘\njunk\n┌────┐\n│ B  │\n└────┘\ntrailing\n"
+	if err := os.WriteFile(logFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result := getLatestProxyBanner(logFile)
+	if !strings.Contains(result, "│ B  │") {
+		t.Fatalf("esperava box B, obteve: %q", result)
+	}
+	if strings.Contains(result, "trailing") || strings.Contains(result, "│ A  │") {
+		t.Fatalf("recorte extravasou: %q", result)
 	}
 }
 

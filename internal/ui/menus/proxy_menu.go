@@ -357,14 +357,18 @@ func showLiveProxyMetricsBanner(cfgMgr *config.Manager) {
 		if err == nil {
 			defer func() {
 				_ = term.Restore(fd, oldState)
-				fmt.Print("\033[?25h") // Garante restauração da visibilidade do cursor
 			}()
 		}
 	}
 
+	// Buffer alternativo + sem autowrap: evita bordas no scrollback e wrap fantasma em painéis estreitos.
+	_, _ = os.Stdout.WriteString("\033[?1049h\033[?7l\033[?25l")
+	defer func() {
+		_, _ = os.Stdout.WriteString("\033[?25h\033[?7h\033[?1049l")
+	}()
+
 	exitChan := make(chan struct{})
 
-	// Goroutine que escuta qualquer tecla de saída imediata
 	go func() {
 		var b [1]byte
 		for {
@@ -373,7 +377,6 @@ func showLiveProxyMetricsBanner(cfgMgr *config.Manager) {
 				break
 			}
 			ch := b[0]
-			// Enter (\r, \n), Q/q, Ctrl+C (3), Esc (27), Espaço
 			if ch == '\r' || ch == '\n' || ch == 'q' || ch == 'Q' || ch == 3 || ch == 27 || ch == ' ' {
 				break
 			}
@@ -381,7 +384,6 @@ func showLiveProxyMetricsBanner(cfgMgr *config.Manager) {
 		close(exitChan)
 	}()
 
-	components.ClearScreen()
 	renderLiveBannerFrame(logPath, isTTY)
 
 	ticker := time.NewTicker(1 * time.Second)
@@ -390,7 +392,6 @@ func showLiveProxyMetricsBanner(cfgMgr *config.Manager) {
 	for {
 		select {
 		case <-exitChan:
-			components.ClearScreen()
 			return
 		case <-ticker.C:
 			renderLiveBannerFrame(logPath, isTTY)
@@ -399,116 +400,118 @@ func showLiveProxyMetricsBanner(cfgMgr *config.Manager) {
 }
 
 func renderLiveBannerFrame(logPath string, isTTY bool) {
-	termW := components.GetTerminalWidth()
-	w := components.GetBoxWidth()
-	// Segurança extra em painéis tiled (Termius etc.): nunca usar largura >= colunas
-	if termW > 0 && w >= termW {
-		w = termW - 1
+	termW, termH := liveTerminalSize()
+	maxCols := termW - 1
+	if maxCols < 20 {
+		maxCols = termW
 	}
-	if w < 20 {
-		w = 20
-		if termW > 0 && w >= termW {
-			w = termW
-			if w > 1 {
-				w--
-			}
-		}
+	if maxCols < 16 {
+		maxCols = 16
 	}
 
 	isProxyActive := system.IsServiceActive(system.ProxyServiceName)
-
 	statusBadge := theme.BadgeOnline
 	if !isProxyActive {
 		statusBadge = theme.BadgeOffline
 	}
 
 	title := "VELTRIX PROXY • MÉTRICAS EM TEMPO REAL"
-	if w < 42 {
+	if maxCols < 42 {
 		title = "MÉTRICAS AO VIVO"
-	} else if w < 56 {
+	} else if maxCols < 56 {
 		title = "VELTRIX • MÉTRICAS AO VIVO"
 	}
 
-	var buf strings.Builder
-	// Limpa a tela inteira a cada frame — só \033[H deixava bordas acumulando no topo (raw/SSH).
-	buf.WriteString("\033[2J\033[H\033[?25l")
-
-	buf.WriteString(components.FormatBoxHeader(title, theme.Cyan, w))
-	buf.WriteByte('\n')
-
-	infoLine := fmt.Sprintf("Arquivo: %s%s%s │ Status: %s", theme.Cyan, logPath, theme.Reset, statusBadge)
-	if w < 50 {
-		infoLine = fmt.Sprintf("%s%s%s │ %s", theme.Cyan, logPath, theme.Reset, statusBadge)
-	}
-	buf.WriteString(components.FormatBoxLine(infoLine, w))
-	buf.WriteByte('\n')
-
-	exitLine := fmt.Sprintf("Pressione %s[Enter]%s ou %s[Q]%s para retornar", theme.Yellow, theme.Reset, theme.Yellow, theme.Reset)
-	if w < 44 {
-		exitLine = fmt.Sprintf("%s[Enter]%s/%s[Q]%s voltar", theme.Yellow, theme.Reset, theme.Yellow, theme.Reset)
-	}
-	buf.WriteString(components.FormatBoxLine(exitLine, w))
-	buf.WriteByte('\n')
-
-	buf.WriteString(components.FormatBoxFooter(w))
-	buf.WriteString("\n\n")
+	lines := make([]string, 0, 24)
+	lines = append(lines, theme.Bold+theme.Cyan+title+theme.Reset)
+	lines = append(lines, fmt.Sprintf("Arquivo: %s%s%s  Status: %s", theme.Cyan, logPath, theme.Reset, statusBadge))
+	lines = append(lines, fmt.Sprintf("Pressione %s[Enter]%s ou %s[Q]%s para retornar", theme.Yellow, theme.Reset, theme.Yellow, theme.Reset))
+	lines = append(lines, "")
 
 	banner := getLatestProxyBanner(logPath)
 	if banner == "" {
 		if !isProxyActive {
-			buf.WriteString(fmt.Sprintf("%sℹ Proxy OFFLINE — inicie o serviço.%s\n", theme.Yellow, theme.Reset))
+			lines = append(lines, theme.Yellow+"ℹ Proxy OFFLINE — inicie o serviço."+theme.Reset)
 		} else {
-			buf.WriteString(fmt.Sprintf("%sℹ Aguardando métricas em '%s'...%s\n", theme.Cyan, logPath, theme.Reset))
+			lines = append(lines, fmt.Sprintf("%sℹ Aguardando métricas em '%s'...%s", theme.Cyan, logPath, theme.Reset))
 		}
 	} else {
-		sanitized := sanitizeLiveBanner(banner, termW)
-		buf.WriteString(sanitized)
-		if !strings.HasSuffix(sanitized, "\n") {
-			buf.WriteByte('\n')
+		for _, bl := range strings.Split(sanitizeLiveBanner(banner, maxCols), "\n") {
+			lines = append(lines, bl)
 		}
 	}
 
-	out := clampFrameToTerminal(buf.String(), termW)
-	if isTTY {
-		// Em modo Raw do terminal, quebras de linha precisam ser CRLF (\r\n) para evitar efeito escada
-		out = strings.ReplaceAll(out, "\r\n", "\n")
-		out = strings.ReplaceAll(out, "\n", "\r\n")
+	// Limita à altura do terminal para não rolar o buffer alternativo
+	maxRows := termH - 1
+	if maxRows < 8 {
+		maxRows = 8
+	}
+	if len(lines) > maxRows {
+		lines = lines[:maxRows]
 	}
 
-	_, _ = os.Stdout.WriteString(out)
+	writeLiveFrame(lines, maxCols, isTTY)
 }
 
-// clampFrameToTerminal garante que nenhuma linha visível >= largura do terminal (evita wrap+\\n).
-func clampFrameToTerminal(frame string, termWidth int) string {
-	if termWidth <= 1 {
-		return frame
+func liveTerminalSize() (cols, rows int) {
+	cols = components.GetTerminalWidth()
+	rows = 24
+	fd := int(os.Stdout.Fd())
+	if term.IsTerminal(fd) {
+		if w, h, err := term.GetSize(fd); err == nil {
+			if w > 0 {
+				cols = w
+			}
+			if h > 0 {
+				rows = h
+			}
+		}
 	}
-	maxCols := termWidth - 1
-	var out strings.Builder
-	lines := strings.Split(frame, "\n")
-	for i, line := range lines {
-		// Preserva escapes puros de controle no início do frame (ex: \033[2J\033[H)
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
+	return cols, rows
+}
+
+// writeLiveFrame redesenha o viewport inteiro linha a linha (clear + 2K por linha).
+func writeLiveFrame(lines []string, maxCols int, isTTY bool) {
+	var buf strings.Builder
+	// Home + limpa viewport + limpa scrollback do buffer alternativo
+	buf.WriteString("\033[H\033[2J\033[3J")
+
+	nl := "\n"
+	if isTTY {
+		nl = "\r\n"
+	}
+
+	for _, line := range lines {
+		line = cursorControlANSI.ReplaceAllString(line, "")
+		line = strings.ReplaceAll(line, "\r", "")
+		line = strings.ReplaceAll(line, "\n", " ")
 		if theme.VisibleLen(line) > maxCols {
 			line = theme.TruncateANSI(line, maxCols)
 		}
-		out.WriteString(line)
-		if i < len(lines)-1 {
-			out.WriteByte('\n')
-		}
+		// Apaga o restante da linha (evita restos se o conteúdo encolher)
+		buf.WriteString("\033[2K")
+		buf.WriteString(line)
+		buf.WriteString(nl)
 	}
-	return out.String()
+	buf.WriteString("\033[J")
+
+	_, _ = os.Stdout.WriteString(buf.String())
 }
 
 // sanitizeLiveBanner remove sequências ANSI de cursor/clear e evita wrap que gera linhas fantasmas.
-func sanitizeLiveBanner(banner string, termWidth int) string {
+func sanitizeLiveBanner(banner string, maxCols int) string {
 	banner = cursorControlANSI.ReplaceAllString(banner, "")
 	banner = strings.ReplaceAll(banner, "\r", "")
 
-	if termWidth <= 1 {
-		return banner
+	if maxCols < 1 {
+		maxCols = 1
 	}
-	// Sempre termWidth-1: linha com largura exata + \n = wrap fantasma em painéis pequenos
-	maxCols := termWidth - 1
 
 	lines := strings.Split(banner, "\n")
 	for i, line := range lines {
@@ -529,7 +532,7 @@ func getLatestProxyBanner(logPath string) string {
 	raw = strings.ReplaceAll(raw, "\r", "")
 	lines := strings.Split(raw, "\n")
 
-	// Formato atual: último bloco completo iniciado por borda superior de caixa
+	// Formato atual: último bloco completo ┌ ... └
 	lastBoxTop := -1
 	for i := len(lines) - 1; i >= 0; i-- {
 		if strings.Contains(lines[i], "┌") {
@@ -538,7 +541,14 @@ func getLatestProxyBanner(logPath string) string {
 		}
 	}
 	if lastBoxTop >= 0 {
-		return strings.TrimRight(strings.Join(lines[lastBoxTop:], "\n"), "\n ")
+		end := len(lines)
+		for j := lastBoxTop; j < len(lines); j++ {
+			if strings.Contains(lines[j], "└") {
+				end = j + 1
+				break
+			}
+		}
+		return strings.TrimRight(strings.Join(lines[lastBoxTop:end], "\n"), "\n ")
 	}
 
 	// Fallback legado (ASCII art / marcadores Versão/ZTUN-X)
