@@ -3,6 +3,7 @@ package menus
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,6 +15,9 @@ import (
 	"github.com/TelksBr/VeltrixProxy/internal/ui/components"
 	"github.com/TelksBr/VeltrixProxy/internal/ui/theme"
 )
+
+// cursorControlANSI remove escapes de cursor/tela que quebram o redraw ao vivo.
+var cursorControlANSI = regexp.MustCompile(`\x1b\[[0-9;]*[HJKfABCDsu]|\x1b\[[?0-9;]*[hl]|\x1b\[2J|\x1b\[3J`)
 
 // ShowProxyMenu exibe o menu de gerenciamento do ProxyVT
 func ShowProxyMenu(cfgMgr *config.Manager) {
@@ -396,6 +400,7 @@ func showLiveProxyMetricsBanner(cfgMgr *config.Manager) {
 
 func renderLiveBannerFrame(logPath string, isTTY bool) {
 	w := components.GetBoxWidth()
+	termW := components.GetTerminalWidth()
 	isProxyActive := system.IsServiceActive(system.ProxyServiceName)
 
 	statusBadge := theme.BadgeOnline
@@ -404,18 +409,19 @@ func renderLiveBannerFrame(logPath string, isTTY bool) {
 	}
 
 	var buf strings.Builder
-	buf.WriteString("\033[H\033[?25l") // Cursor Home e oculta o cursor durante render
+	// Limpa a tela inteira a cada frame — só \033[H deixava bordas acumulando no topo (raw/SSH).
+	buf.WriteString("\033[2J\033[H\033[?25l")
 
 	buf.WriteString(components.FormatBoxHeader("VELTRIX PROXY • MÉTRICAS EM TEMPO REAL", theme.Cyan, w))
-	buf.WriteString("\n")
+	buf.WriteByte('\n')
 
 	infoLine := fmt.Sprintf("Arquivo: %s%s%s │ Status: %s", theme.Cyan, logPath, theme.Reset, statusBadge)
 	buf.WriteString(components.FormatBoxLine(infoLine, w))
-	buf.WriteString("\n")
+	buf.WriteByte('\n')
 
 	exitLine := fmt.Sprintf("Pressione %s[Enter]%s ou %s[Q]%s para retornar ao menu", theme.Yellow, theme.Reset, theme.Yellow, theme.Reset)
 	buf.WriteString(components.FormatBoxLine(exitLine, w))
-	buf.WriteString("\n")
+	buf.WriteByte('\n')
 
 	buf.WriteString(components.FormatBoxFooter(w))
 	buf.WriteString("\n\n")
@@ -428,12 +434,12 @@ func renderLiveBannerFrame(logPath string, isTTY bool) {
 			buf.WriteString(fmt.Sprintf("%sℹ Aguardando o proxy registrar as primeiras métricas em '%s'...%s\n", theme.Cyan, logPath, theme.Reset))
 		}
 	} else {
-		buf.WriteString(banner)
-		buf.WriteString("\n")
+		sanitized := sanitizeLiveBanner(banner, termW)
+		buf.WriteString(sanitized)
+		if !strings.HasSuffix(sanitized, "\n") {
+			buf.WriteByte('\n')
+		}
 	}
-
-	// Limpa quaisquer linhas remanescentes abaixo do conteúdo renderizado
-	buf.WriteString("\033[J")
 
 	out := buf.String()
 	if isTTY {
@@ -445,27 +451,75 @@ func renderLiveBannerFrame(logPath string, isTTY bool) {
 	_, _ = os.Stdout.WriteString(out)
 }
 
+// sanitizeLiveBanner remove sequências ANSI de cursor/clear e evita wrap que gera linhas fantasmas.
+func sanitizeLiveBanner(banner string, termWidth int) string {
+	banner = cursorControlANSI.ReplaceAllString(banner, "")
+	banner = strings.ReplaceAll(banner, "\r", "")
+
+	if termWidth <= 0 {
+		return banner
+	}
+	maxCols := termWidth - 1
+	if maxCols < 40 {
+		maxCols = termWidth
+	}
+
+	lines := strings.Split(banner, "\n")
+	for i, line := range lines {
+		if theme.VisibleLen(line) > maxCols {
+			lines[i] = theme.TruncateANSI(line, maxCols)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 func getLatestProxyBanner(logPath string) string {
 	data, err := os.ReadFile(logPath)
 	if err != nil || len(data) == 0 {
 		return ""
 	}
 
-	raw := string(data)
+	raw := cursorControlANSI.ReplaceAllString(string(data), "")
+	raw = strings.ReplaceAll(raw, "\r", "")
 	lines := strings.Split(raw, "\n")
 
-	// Se o arquivo contiver múltiplos banners acumulados (modo append)
+	// Formato atual: último bloco completo iniciado por borda superior de caixa
+	lastBoxTop := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.Contains(lines[i], "┌") {
+			lastBoxTop = i
+			break
+		}
+	}
+	if lastBoxTop >= 0 {
+		return strings.TrimRight(strings.Join(lines[lastBoxTop:], "\n"), "\n ")
+	}
+
+	// Fallback legado (ASCII art / marcadores Versão/ZTUN-X)
 	if len(lines) > 25 {
 		lastBannerIdx := -1
 		for i := len(lines) - 1; i >= 0; i-- {
 			line := lines[i]
-		if strings.Contains(line, "v2.") || strings.Contains(line, "Versão:") || strings.Contains(line, "RAM:") || strings.Contains(line, "ZTUN-X") {
-			lastBannerIdx = i
-			if lastBannerIdx > 0 && strings.TrimSpace(lines[lastBannerIdx-1]) != "" {
-				lastBannerIdx--
+			if strings.Contains(line, "v2.") || strings.Contains(line, "Versão:") ||
+				strings.Contains(line, "\\ \\ /") || strings.Contains(line, "RAM:") ||
+				strings.Contains(line, "ZTUN-X") {
+				lastBannerIdx = i
+				for lastBannerIdx > 0 {
+					prev := strings.TrimSpace(lines[lastBannerIdx-1])
+					if prev == "" {
+						break
+					}
+					if strings.Contains(prev, "┌") {
+						lastBannerIdx--
+						break
+					}
+					lastBannerIdx--
+					if i-lastBannerIdx > 20 {
+						break
+					}
+				}
+				break
 			}
-			break
-		}
 		}
 		if lastBannerIdx >= 0 {
 			lines = lines[lastBannerIdx:]
@@ -474,6 +528,6 @@ func getLatestProxyBanner(logPath string) string {
 		}
 	}
 
-	return strings.TrimRight(strings.Join(lines, "\n"), "\r\n ")
+	return strings.TrimRight(strings.Join(lines, "\n"), "\n ")
 }
 

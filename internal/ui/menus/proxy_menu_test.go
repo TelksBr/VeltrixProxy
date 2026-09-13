@@ -92,26 +92,53 @@ func TestGetLatestProxyBannerNonExistent(t *testing.T) {
 	}
 }
 
-func TestRenderLiveBannerFrameNotDuplicated(t *testing.T) {
-	// Redireciona stdout temporariamente para capturar o render do frame
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
+func TestGetLatestProxyBannerBoxFormat(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "proxy.log")
 
-	renderLiveBannerFrame("/var/log/proxy/proxy.log", false)
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf [4096]byte
-	n, _ := r.Read(buf[:])
-	output := string(buf[:n])
-
-	if strings.Contains(output, "ONLINE ONLINE") {
-		t.Errorf("O status do banner contém 'ONLINE ONLINE' duplicado! Output:\n%s", output)
+	var sb strings.Builder
+	// Banners antigos empilhados
+	for i := 0; i < 3; i++ {
+		sb.WriteString("┌────────────────────────────────────────┐\n")
+		sb.WriteString("│ Versão: v2.3.50          Uptime: 00:00:01 │\n")
+		sb.WriteString("│ RAM: 10.00 MB              CPU: 1.00%  │\n")
+		sb.WriteString("└────────────────────────────────────────┘\n\n")
 	}
-	if strings.Contains(output, "ONLI...") {
-		t.Errorf("A linha de status foi truncada com 'ONLI...'! Output:\n%s", output)
+	// Banner mais recente
+	sb.WriteString("┌────────────────────────────────────────┐\n")
+	sb.WriteString("│ Versão: v2.3.53          Uptime: 00:00:38 │\n")
+	sb.WriteString("│ RAM: 265.61 MB             CPU: 37.02% │\n")
+	sb.WriteString("│ PID: 116837                  CON: 217  │\n")
+	sb.WriteString("│ Network: ↓ 11.15 MB  ↑ 112.01 MB       │\n")
+	sb.WriteString("└────────────────────────────────────────┘\n")
+
+	if err := os.WriteFile(logFile, []byte(sb.String()), 0644); err != nil {
+		t.Fatalf("Erro ao criar arquivo: %v", err)
+	}
+
+	result := getLatestProxyBanner(logFile)
+	if !strings.Contains(result, "v2.3.53") {
+		t.Errorf("Esperava banner v2.3.53, obteve: %q", result)
+	}
+	if !strings.Contains(result, "265.61 MB") {
+		t.Errorf("Esperava RAM do banner recente, obteve: %q", result)
+	}
+	if strings.Contains(result, "v2.3.50") {
+		t.Errorf("Banner antigo ainda presente no recorte: %q", result)
+	}
+	if strings.Count(result, "┌") != 1 {
+		t.Errorf("Esperava exatamente 1 topo de caixa, obteve %d em: %q", strings.Count(result, "┌"), result)
+	}
+}
+
+func TestSanitizeLiveBannerStripsCursorControls(t *testing.T) {
+	in := "\033[H\033[2J┌──┐\n│ ok │\n└──┘"
+	out := sanitizeLiveBanner(in, 80)
+	if strings.Contains(out, "\033[H") || strings.Contains(out, "\033[2J") {
+		t.Errorf("controles de cursor não foram removidos: %q", out)
+	}
+	if !strings.Contains(out, "┌──┐") {
+		t.Errorf("conteúdo do banner foi perdido: %q", out)
 	}
 }
 
