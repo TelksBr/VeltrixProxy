@@ -414,6 +414,15 @@ func renderLiveBannerFrame(logPath string, isTTY bool) {
 		maxCols = 16
 	}
 
+	// Caixa do chrome alinhada ao banner do proxy (62) e limitada ao terminal.
+	boxW := components.DefaultBoxWidth
+	if boxW > maxCols {
+		boxW = maxCols
+	}
+	if boxW < 16 {
+		boxW = maxCols
+	}
+
 	isProxyActive := system.IsServiceActive(system.ProxyServiceName)
 	statusBadge := theme.BadgeOnline
 	if !isProxyActive {
@@ -421,16 +430,31 @@ func renderLiveBannerFrame(logPath string, isTTY bool) {
 	}
 
 	title := "VELTRIX PROXY • MÉTRICAS EM TEMPO REAL"
-	if maxCols < 42 {
+	if boxW < 42 {
 		title = "MÉTRICAS AO VIVO"
-	} else if maxCols < 56 {
+	} else if boxW < 56 {
 		title = "VELTRIX • MÉTRICAS AO VIVO"
 	}
 
-	lines := make([]string, 0, 24)
-	lines = append(lines, theme.Bold+theme.Cyan+title+theme.Reset)
-	lines = append(lines, fmt.Sprintf("Arquivo: %s%s%s  Status: %s", theme.Cyan, logPath, theme.Reset, statusBadge))
-	lines = append(lines, fmt.Sprintf("Pressione %s[Enter]%s ou %s[Q]%s para retornar", theme.Yellow, theme.Reset, theme.Yellow, theme.Reset))
+	lines := make([]string, 0, 28)
+	for _, hl := range strings.Split(components.FormatBoxHeader(title, theme.Cyan, boxW), "\n") {
+		if hl != "" {
+			lines = append(lines, hl)
+		}
+	}
+
+	fileStatus := fmt.Sprintf("Arquivo: %s%s%s", theme.Cyan, logPath, theme.Reset)
+	if theme.VisibleLen(fileStatus)+theme.VisibleLen("  Status: ")+theme.VisibleLen(statusBadge) <= boxW-4 {
+		fileStatus = fmt.Sprintf("%s  Status: %s", fileStatus, statusBadge)
+		lines = append(lines, components.FormatBoxLine(fileStatus, boxW))
+	} else {
+		lines = append(lines, components.FormatBoxLine(fileStatus, boxW))
+		lines = append(lines, components.FormatBoxLine(fmt.Sprintf("Status: %s", statusBadge), boxW))
+	}
+
+	hint := fmt.Sprintf("Pressione %s[Enter]%s ou %s[Q]%s para retornar", theme.Yellow, theme.Reset, theme.Yellow, theme.Reset)
+	lines = append(lines, components.FormatBoxCenterLine(hint, boxW))
+	lines = append(lines, components.FormatBoxFooter(boxW))
 	lines = append(lines, "")
 
 	banner := getLatestProxyBanner(logPath)

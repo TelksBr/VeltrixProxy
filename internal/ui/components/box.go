@@ -217,8 +217,8 @@ func PrintBoxFooter(width int) {
 	fmt.Println(FormatBoxFooter(width))
 }
 
-// PrintBoxCenterLine imprime uma linha de conteúdo centralizada dentro da caixa
-func PrintBoxCenterLine(content string, width int) {
+// FormatBoxCenterLine formata uma linha de conteúdo centralizada dentro da caixa.
+func FormatBoxCenterLine(content string, width int) string {
 	if width <= 0 {
 		width = GetBoxWidth()
 	}
@@ -243,13 +243,18 @@ func PrintBoxCenterLine(content string, width int) {
 	}
 
 	borderCol := theme.DarkGray
-	fmt.Printf("%s│%s %s%s%s %s│%s\n",
+	return fmt.Sprintf("%s│%s %s%s%s %s│%s",
 		borderCol, theme.Reset,
 		strings.Repeat(" ", leftPad),
 		content,
 		strings.Repeat(" ", rightPad),
 		borderCol, theme.Reset,
 	)
+}
+
+// PrintBoxCenterLine imprime uma linha de conteúdo centralizada dentro da caixa
+func PrintBoxCenterLine(content string, width int) {
+	fmt.Println(FormatBoxCenterLine(content, width))
 }
 
 // PrintMenuCredits imprime a linha de rodapé com créditos e contatos oficiais

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/TelksBr/VeltrixProxy/internal/ui/components"
 	"github.com/TelksBr/VeltrixProxy/internal/ui/theme"
 )
 
@@ -155,6 +156,36 @@ func TestSanitizeLiveBannerStripsCursorControls(t *testing.T) {
 	}
 	if !strings.Contains(out, "┌──┐") {
 		t.Errorf("conteúdo do banner foi perdido: %q", out)
+	}
+}
+
+func TestFormatLiveMetricsChromeHasBox(t *testing.T) {
+	title := "VELTRIX PROXY • MÉTRICAS EM TEMPO REAL"
+	header := components.FormatBoxHeader(title, theme.Cyan, components.DefaultBoxWidth)
+	if !strings.Contains(header, "┌") || !strings.Contains(header, "├") {
+		t.Fatalf("header sem bordas: %q", header)
+	}
+	// Título precisa estar entre espaços (centralizado), não colado na borda esquerda │X
+	for _, line := range strings.Split(header, "\n") {
+		if strings.Contains(line, "MÉTRICAS") {
+			plain := theme.StripANSI(line)
+			if !strings.HasPrefix(plain, "│ ") && !strings.HasPrefix(plain, "│") {
+				t.Fatalf("linha de título inesperada: %q", plain)
+			}
+			// Deve haver padding à esquerda do título (centralização)
+			idx := strings.Index(plain, "VELTRIX")
+			if idx < 3 {
+				t.Fatalf("título não parece centralizado (idx=%d): %q", idx, plain)
+			}
+		}
+	}
+	footer := components.FormatBoxFooter(components.DefaultBoxWidth)
+	if !strings.Contains(footer, "└") {
+		t.Fatalf("footer sem borda: %q", footer)
+	}
+	center := components.FormatBoxCenterLine("Pressione [Enter]", components.DefaultBoxWidth)
+	if !strings.Contains(center, "│") {
+		t.Fatalf("linha central sem borda: %q", center)
 	}
 }
 
