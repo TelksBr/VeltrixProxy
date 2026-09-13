@@ -24,6 +24,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.LogFile != "/var/log/proxy/proxy.log" {
 		t.Fatalf("esperado log_file /var/log/proxy/proxy.log, obtido %s", cfg.LogFile)
 	}
+	if !cfg.HCR.Enable || cfg.HCR.Transport != "auto" || !cfg.HCR.TLSInternal {
+		t.Fatalf("esperado HCR padrão enable/auto/tls_internal, obtido %+v", cfg.HCR)
+	}
 }
 
 func TestNormalizeLogLevel(t *testing.T) {
@@ -85,6 +88,53 @@ func TestManagerInjectsMissingZtun(t *testing.T) {
 	}
 	if enable, _ := ztun["enable"].(bool); !enable {
 		t.Fatalf("esperado ztun.enable=true persistido, obtido %+v", ztun)
+	}
+}
+
+func TestManagerInjectsMissingHCR(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+
+	old := `{
+  "token": "TOK",
+  "ports": ["80"],
+  "log_level": "info",
+  "log_file": "/var/log/proxy/proxy.log",
+  "ssh": {"internal": true},
+  "btun": {"enable": true},
+  "ztun": {"enable": true}
+}
+`
+	if err := os.WriteFile(configPath, []byte(old), 0644); err != nil {
+		t.Fatalf("falha ao gravar JSON antigo: %v", err)
+	}
+
+	mgr := NewManager(configPath)
+	cfg, err := mgr.Load()
+	if err != nil {
+		t.Fatalf("erro ao carregar: %v", err)
+	}
+	if !cfg.HCR.Enable || cfg.HCR.Transport != "auto" || !cfg.HCR.TLSInternal || cfg.HCR.MaxSessions != 32 {
+		t.Fatalf("esperado hcr padrão após Load, obtido %+v", cfg.HCR)
+	}
+
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("falha ao reler arquivo: %v", err)
+	}
+	var persisted map[string]interface{}
+	if err := json.Unmarshal(raw, &persisted); err != nil {
+		t.Fatalf("JSON persistido inválido: %v", err)
+	}
+	hcr, ok := persisted["hcr"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("hcr não foi persistido no disco: %s", string(raw))
+	}
+	if enable, _ := hcr["enable"].(bool); !enable {
+		t.Fatalf("esperado hcr.enable=true persistido, obtido %+v", hcr)
+	}
+	if transport, _ := hcr["transport"].(string); transport != "auto" {
+		t.Fatalf("esperado hcr.transport=auto, obtido %+v", hcr)
 	}
 }
 

@@ -98,6 +98,7 @@ type Config struct {
 	XHTTP          XHTTPConfig      `json:"xhttp"`
 	DNSTT          DNSTTConfig      `json:"dnstt"`
 	Ztun           ZtunConfig       `json:"ztun"`
+	HCR            HCRConfig        `json:"hcr"`
 	UDPGW          UDPGWConfig      `json:"udpgw"`
 }
 
@@ -158,6 +159,46 @@ type ZtunConfig struct {
 	Auth     string `json:"auth"`
 	AuthFile string `json:"auth_file"`
 	Idle     int    `json:"idle"`
+}
+
+// HCRConfig define o motor HCR / HTTP Custom Relay (header 62 B, opcodes 1..6)
+type HCRConfig struct {
+	Enable            bool   `json:"enable"`
+	Target            string `json:"target"`
+	Transport         string `json:"transport"`
+	TLSCert           string `json:"tls_cert"`
+	TLSKey            string `json:"tls_key"`
+	TLSInternal       bool   `json:"tls_internal"`
+	MaxSessions       int    `json:"max_sessions"`
+	MaxSourceSessions int    `json:"max_source_sessions"`
+	PollTimeout       int    `json:"poll_timeout"`
+	Idle              int    `json:"idle"`
+	MaxDownloadFrame  int    `json:"max_download_frame"`
+}
+
+// Normalize aplica defaults do bloco HCR.
+func (h *HCRConfig) Normalize() {
+	if strings.TrimSpace(h.Transport) == "" {
+		h.Transport = "auto"
+	}
+	switch strings.ToLower(strings.TrimSpace(h.Transport)) {
+	case "plain", "tls", "auto":
+		h.Transport = strings.ToLower(strings.TrimSpace(h.Transport))
+	default:
+		h.Transport = "auto"
+	}
+	if h.MaxSessions <= 0 {
+		h.MaxSessions = 32
+	}
+	if h.PollTimeout <= 0 {
+		h.PollTimeout = 10
+	}
+	if h.Idle <= 0 {
+		h.Idle = 300
+	}
+	if h.MaxDownloadFrame <= 0 {
+		h.MaxDownloadFrame = 16384
+	}
 }
 
 // UDPGWConfig define o BadVPN udpgw embutido (intercept via SSH interno)
@@ -258,6 +299,19 @@ func NewDefaultConfig(token string) *Config {
 			Auth:     "shadow",
 			AuthFile: "",
 			Idle:     180,
+		},
+		HCR: HCRConfig{
+			Enable:            true,
+			Target:            "",
+			Transport:         "auto",
+			TLSCert:           "",
+			TLSKey:            "",
+			TLSInternal:       true,
+			MaxSessions:       32,
+			MaxSourceSessions: 0,
+			PollTimeout:       10,
+			Idle:              300,
+			MaxDownloadFrame:  16384,
 		},
 		UDPGW: UDPGWConfig{
 			Internal: true,

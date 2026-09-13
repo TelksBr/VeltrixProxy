@@ -1762,6 +1762,19 @@ default_cfg = {
     "auth_file": "",
     "idle": 180
   },
+  "hcr": {
+    "enable": True,
+    "target": "",
+    "transport": "auto",
+    "tls_cert": "",
+    "tls_key": "",
+    "tls_internal": True,
+    "max_sessions": 32,
+    "max_source_sessions": 0,
+    "poll_timeout": 10,
+    "idle": 300,
+    "max_download_frame": 16384
+  },
   "udpgw": {
     "internal": True,
     "port_min": 7100,
@@ -1831,6 +1844,19 @@ with open(path, "w", encoding="utf-8") as f:
     "auth_file": "",
     "idle": 180
   },
+  "hcr": {
+    "enable": true,
+    "target": "",
+    "transport": "auto",
+    "tls_cert": "",
+    "tls_key": "",
+    "tls_internal": true,
+    "max_sessions": 32,
+    "max_source_sessions": 0,
+    "poll_timeout": 10,
+    "idle": 300,
+    "max_download_frame": 16384
+  },
   "udpgw": {
     "internal": true,
     "port_min": 7100,
@@ -1886,6 +1912,44 @@ try:
             changed = True
         if "idle" not in z or not isinstance(z.get("idle"), int) or int(z.get("idle") or 0) <= 0:
             z["idle"] = 180
+            changed = True
+    # Injeta seção hcr (HTTP Custom Relay) em JSONs antigos
+    hcr_defaults = {
+        "enable": True,
+        "target": "",
+        "transport": "auto",
+        "tls_cert": "",
+        "tls_key": "",
+        "tls_internal": True,
+        "max_sessions": 32,
+        "max_source_sessions": 0,
+        "poll_timeout": 10,
+        "idle": 300,
+        "max_download_frame": 16384,
+    }
+    if "hcr" not in d or not isinstance(d.get("hcr"), dict):
+        d["hcr"] = dict(hcr_defaults)
+        changed = True
+    else:
+        h = d["hcr"]
+        for k, v in hcr_defaults.items():
+            if k not in h:
+                h[k] = v
+                changed = True
+        if not str(h.get("transport") or "").strip():
+            h["transport"] = "auto"
+            changed = True
+        if not isinstance(h.get("max_sessions"), int) or int(h.get("max_sessions") or 0) <= 0:
+            h["max_sessions"] = 32
+            changed = True
+        if not isinstance(h.get("poll_timeout"), int) or int(h.get("poll_timeout") or 0) <= 0:
+            h["poll_timeout"] = 10
+            changed = True
+        if not isinstance(h.get("idle"), int) or int(h.get("idle") or 0) <= 0:
+            h["idle"] = 300
+            changed = True
+        if not isinstance(h.get("max_download_frame"), int) or int(h.get("max_download_frame") or 0) <= 0:
+            h["max_download_frame"] = 16384
             changed = True
     # Injeta/força udpgw interno (BadVPN embutido no proxy)
     if "udpgw" not in d or not isinstance(d.get("udpgw"), dict):
@@ -1992,6 +2056,19 @@ config = {
         "auth": "shadow",
         "auth_file": "",
         "idle": 180
+    },
+    "hcr": {
+        "enable": True,
+        "target": "",
+        "transport": "auto",
+        "tls_cert": "",
+        "tls_key": "",
+        "tls_internal": True,
+        "max_sessions": 32,
+        "max_source_sessions": 0,
+        "poll_timeout": 10,
+        "idle": 300,
+        "max_download_frame": 16384
     },
     "udpgw": {
         "internal": True,
@@ -2218,6 +2295,28 @@ else:
         config["udpgw"]["port_min"] = 7100
     if not isinstance(config["udpgw"].get("port_max"), int) or int(config["udpgw"].get("port_max") or 0) <= 0:
         config["udpgw"]["port_max"] = 7900
+
+hcr_defaults = {
+    "enable": True,
+    "target": "",
+    "transport": "auto",
+    "tls_cert": "",
+    "tls_key": "",
+    "tls_internal": True,
+    "max_sessions": 32,
+    "max_source_sessions": 0,
+    "poll_timeout": 10,
+    "idle": 300,
+    "max_download_frame": 16384,
+}
+if "hcr" not in config or not isinstance(config.get("hcr"), dict):
+    config["hcr"] = dict(hcr_defaults)
+else:
+    for k, v in hcr_defaults.items():
+        if k not in config["hcr"]:
+            config["hcr"][k] = v
+    if not str(config["hcr"].get("transport") or "").strip():
+        config["hcr"]["transport"] = "auto"
 
 os.makedirs("/var/log/proxy", exist_ok=True)
 os.makedirs(os.path.dirname(json_path), exist_ok=True)

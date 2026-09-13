@@ -37,6 +37,7 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(advMenuItem("7", i18n.T("adv_opt_xhttp"), ""), w)
 		components.PrintBoxLine(advMenuItem("8", i18n.T("adv_opt_dnstt"), components.FormatBool(cfg.DNSTT.Enable)), w)
 		components.PrintBoxLine(advMenuItem("9", i18n.T("adv_opt_ztun"), components.FormatBool(cfg.Ztun.Enable)), w)
+		components.PrintBoxLine(advMenuItem("A", i18n.T("adv_opt_hcr"), components.FormatBool(cfg.HCR.Enable)), w)
 		components.PrintBoxLine(advMenuItem("V", i18n.T("adv_opt_view_json"), ""), w)
 
 		components.PrintBoxDivider(w)
@@ -64,6 +65,8 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 			ShowDNSTTMenu(cfgMgr)
 		case "9":
 			showZtunSubmenu(cfgMgr)
+		case "a":
+			showHCRSubmenu(cfgMgr)
 		case "v":
 			viewConfigFile(cfgMgr)
 		case "0":
@@ -627,6 +630,111 @@ func showZtunSubmenu(cfgMgr *config.Manager) {
 				cfg.Ztun.Idle = val
 				_ = cfgMgr.Save(cfg)
 				components.PrintSuccess(fmt.Sprintf("ztun.idle atualizado para %d.", val))
+			} else {
+				components.PrintError("Valor inválido.")
+			}
+			components.Pause()
+		case "0":
+			return
+		}
+	}
+}
+
+func showHCRSubmenu(cfgMgr *config.Manager) {
+	for {
+		cfg, _ := cfgMgr.Get()
+		cfg.HCR.Normalize()
+
+		w := components.GetBoxWidth()
+		components.ClearScreen()
+		components.PrintBoxHeader(i18n.T("hcr_menu_title"), theme.Cyan, w)
+
+		components.PrintBoxLine(fmt.Sprintf("%s• Transport: %s%s%s", theme.White, theme.Cyan, cfg.HCR.Transport, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s   %s%s", theme.Gray, i18n.T("hcr_transport_hint"), theme.Reset), w)
+		components.PrintBoxDivider(w)
+
+		components.PrintBoxLine(fmt.Sprintf("%s1 • %s: %s%s", theme.White, i18n.T("hcr_opt_enable"), components.FormatBool(cfg.HCR.Enable), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • %s: %s%s%s", theme.White, i18n.T("hcr_opt_transport"), theme.Cyan, cfg.HCR.Transport, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • %s: %s%s", theme.White, i18n.T("hcr_opt_tls_internal"), components.FormatBool(cfg.HCR.TLSInternal), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • %s: %s%s%s", theme.White, i18n.T("hcr_opt_tls_cert"), theme.Cyan, displayOrEmpty(cfg.HCR.TLSCert), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s5 • %s: %s%s%s", theme.White, i18n.T("hcr_opt_tls_key"), theme.Cyan, displayOrEmpty(cfg.HCR.TLSKey), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s6 • %s: %s%s%s", theme.White, i18n.T("hcr_opt_target"), theme.Cyan, displayOrEmpty(cfg.HCR.Target), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s7 • %s: %s%d%s", theme.White, i18n.T("hcr_opt_max_sessions"), theme.Cyan, cfg.HCR.MaxSessions, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s8 • %s: %s%d%s", theme.White, i18n.T("hcr_opt_poll_timeout"), theme.Cyan, cfg.HCR.PollTimeout, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s9 • %s: %s%d%s", theme.White, i18n.T("hcr_opt_idle"), theme.Cyan, cfg.HCR.Idle, theme.Reset), w)
+
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
+		components.PrintBoxFooter(w)
+
+		choice := components.ReadOption("Opção [0-9]")
+		switch choice {
+		case "1":
+			applyJSONBoolToggle(cfgMgr, cfg, cfg.HCR.Enable, func(v bool) { cfg.HCR.Enable = v },
+				i18n.T("toggle_hcr_on"),
+				i18n.T("toggle_hcr_off"),
+				"hcr.enable")
+		case "2":
+			resp := components.Prompt(i18n.T("hcr_opt_transport")+" [plain|tls|auto]", cfg.HCR.Transport)
+			resp = strings.ToLower(strings.TrimSpace(resp))
+			switch resp {
+			case "plain", "tls", "auto":
+				cfg.HCR.Transport = resp
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess("hcr.transport atualizado.")
+			default:
+				components.PrintError("Use plain, tls ou auto.")
+			}
+			components.Pause()
+		case "3":
+			applyJSONBoolToggle(cfgMgr, cfg, cfg.HCR.TLSInternal, func(v bool) { cfg.HCR.TLSInternal = v },
+				i18n.T("toggle_hcr_tls_internal_on"),
+				i18n.T("toggle_hcr_tls_internal_off"),
+				"hcr.tls_internal")
+		case "4":
+			resp := components.Prompt(i18n.T("hcr_opt_tls_cert"), cfg.HCR.TLSCert)
+			cfg.HCR.TLSCert = strings.TrimSpace(resp)
+			_ = cfgMgr.Save(cfg)
+			components.PrintSuccess("hcr.tls_cert atualizado.")
+			components.Pause()
+		case "5":
+			resp := components.Prompt(i18n.T("hcr_opt_tls_key"), cfg.HCR.TLSKey)
+			cfg.HCR.TLSKey = strings.TrimSpace(resp)
+			_ = cfgMgr.Save(cfg)
+			components.PrintSuccess("hcr.tls_key atualizado.")
+			components.Pause()
+		case "6":
+			resp := components.Prompt(i18n.T("hcr_opt_target")+" (vazio=ssh-internal/ssh-port)", cfg.HCR.Target)
+			cfg.HCR.Target = strings.TrimSpace(resp)
+			_ = cfgMgr.Save(cfg)
+			components.PrintSuccess("hcr.target atualizado.")
+			components.Pause()
+		case "7":
+			resp := components.Prompt(i18n.T("hcr_opt_max_sessions"), strconv.Itoa(cfg.HCR.MaxSessions))
+			if val, err := strconv.Atoi(strings.TrimSpace(resp)); err == nil && val > 0 {
+				cfg.HCR.MaxSessions = val
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess(fmt.Sprintf("hcr.max_sessions=%d", val))
+			} else {
+				components.PrintError("Valor inválido.")
+			}
+			components.Pause()
+		case "8":
+			resp := components.Prompt(i18n.T("hcr_opt_poll_timeout"), strconv.Itoa(cfg.HCR.PollTimeout))
+			if val, err := strconv.Atoi(strings.TrimSpace(resp)); err == nil && val > 0 {
+				cfg.HCR.PollTimeout = val
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess(fmt.Sprintf("hcr.poll_timeout=%d", val))
+			} else {
+				components.PrintError("Valor inválido.")
+			}
+			components.Pause()
+		case "9":
+			resp := components.Prompt(i18n.T("hcr_opt_idle"), strconv.Itoa(cfg.HCR.Idle))
+			if val, err := strconv.Atoi(strings.TrimSpace(resp)); err == nil && val > 0 {
+				cfg.HCR.Idle = val
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess(fmt.Sprintf("hcr.idle=%d", val))
 			} else {
 				components.PrintError("Valor inválido.")
 			}

@@ -121,6 +121,20 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
     "idle": 180
   },
 
+  "hcr": {
+    "enable": true,
+    "target": "",
+    "transport": "auto",
+    "tls_cert": "",
+    "tls_key": "",
+    "tls_internal": true,
+    "max_sessions": 32,
+    "max_source_sessions": 0,
+    "poll_timeout": 10,
+    "idle": 300,
+    "max_download_frame": 16384
+  },
+
   "udpgw": {
     "internal": true,
     "port_min": 7100,
@@ -242,6 +256,27 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 - `enable=false` e `upstream=""`: classifica `ZTM1`, loga, **não** encaminha.
 
 Não existem chaves de SMUX/janela/chunk/porta UDP no JSON — constantes do binário.
+
+---
+
+### G2. Seção `hcr` (HTTP Custom Relay)
+
+> Motor in-process nas **mesmas portas TCP** do proxy. Header 62 B / opcodes `1..6`. Em portas plaintext, `transport=auto|tls` aceita ClientHello `0x16` com cert HCR próprio. Brief: [`hcr-config-menu.md`](hcr-config-menu.md).
+
+| Campo | Tipo | Default | Descrição |
+| :--- | :--- | :--- | :--- |
+| `enable` | `bool` | `true` | Liga o motor HCR. |
+| `target` | `string` | `""` | Dial TCP forçado. Vazio = ssh-internal ou `127.0.0.1:ssh-port`. |
+| `transport` | `string` | `"auto"` | `plain` \| `tls` \| `auto` (sniff `0x16`). |
+| `tls_cert` / `tls_key` | `string` | `""` | Paths PEM; se ambos setados, usam arquivo. |
+| `tls_internal` | `bool` | `true` | Cert ECDSA autoassinado **em memória** quando paths vazios. |
+| `max_sessions` | `int` | `32` | Limite global de sessões. |
+| `max_source_sessions` | `int` | `0` | Limite por IP (`0` = ilimitado). |
+| `poll_timeout` | `int` | `10` | Timeout do ReqPoll em segundos. |
+| `idle` | `int` | `300` | Reaper de sessões ociosas em segundos. |
+| `max_download_frame` | `int` | `16384` | Tamanho máx. de frame de download. |
+
+No **install/update**, a seção `hcr` (e chaves faltantes) é injetada com esses defaults.
 
 ---
 

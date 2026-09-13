@@ -316,6 +316,11 @@ func showPortDetails(cfgMgr *config.Manager) {
 		ztunStatus = theme.Yellow + "passthrough" + theme.Reset + fmt.Sprintf(" (%s)", cfg.Ztun.Upstream)
 	}
 	components.PrintBoxLine(fmt.Sprintf("Ztun Binary: %s", ztunStatus), w)
+	hcrStatus := theme.Red + "false" + theme.Reset
+	if cfg.HCR.Enable {
+		hcrStatus = theme.Green + "true" + theme.Reset + fmt.Sprintf(" (%s)", cfg.HCR.Transport)
+	}
+	components.PrintBoxLine(fmt.Sprintf("HCR Relay: %s", hcrStatus), w)
 
 	components.PrintBoxFooter(w)
 	components.Pause()
@@ -558,7 +563,7 @@ func getLatestProxyBanner(logPath string) string {
 			line := lines[i]
 			if strings.Contains(line, "v2.") || strings.Contains(line, "Versão:") ||
 				strings.Contains(line, "\\ \\ /") || strings.Contains(line, "RAM:") ||
-				strings.Contains(line, "ZTUN-X") {
+				strings.Contains(line, "ZTUN-X") || strings.Contains(line, "HCR") {
 				lastBannerIdx = i
 				for lastBannerIdx > 0 {
 					prev := strings.TrimSpace(lines[lastBannerIdx-1])

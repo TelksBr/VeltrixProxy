@@ -70,13 +70,53 @@ func (m *Manager) Load() (*Config, error) {
 		needsSave = true
 	}
 
-	// Persiste seções novas (ztun / udpgw) se o JSON antigo ainda não as tiver
+	// Persiste seções novas (ztun / hcr / udpgw) se o JSON antigo ainda não as tiver
 	var rawKeys map[string]json.RawMessage
 	if err := json.Unmarshal(data, &rawKeys); err == nil {
 		defaults := NewDefaultConfig(token)
 		if _, ok := rawKeys["ztun"]; !ok {
 			cfg.Ztun = defaults.Ztun
 			needsSave = true
+		}
+		if rawHCR, ok := rawKeys["hcr"]; !ok {
+			cfg.HCR = defaults.HCR
+			needsSave = true
+		} else {
+			var hcrKeys map[string]json.RawMessage
+			if err := json.Unmarshal(rawHCR, &hcrKeys); err == nil {
+				if _, ok := hcrKeys["transport"]; !ok {
+					cfg.HCR.Transport = defaults.HCR.Transport
+					needsSave = true
+				}
+				if _, ok := hcrKeys["tls_internal"]; !ok {
+					cfg.HCR.TLSInternal = defaults.HCR.TLSInternal
+					needsSave = true
+				}
+				if _, ok := hcrKeys["tls_cert"]; !ok {
+					cfg.HCR.TLSCert = defaults.HCR.TLSCert
+					needsSave = true
+				}
+				if _, ok := hcrKeys["tls_key"]; !ok {
+					cfg.HCR.TLSKey = defaults.HCR.TLSKey
+					needsSave = true
+				}
+				if _, ok := hcrKeys["max_sessions"]; !ok {
+					cfg.HCR.MaxSessions = defaults.HCR.MaxSessions
+					needsSave = true
+				}
+				if _, ok := hcrKeys["poll_timeout"]; !ok {
+					cfg.HCR.PollTimeout = defaults.HCR.PollTimeout
+					needsSave = true
+				}
+				if _, ok := hcrKeys["idle"]; !ok {
+					cfg.HCR.Idle = defaults.HCR.Idle
+					needsSave = true
+				}
+				if _, ok := hcrKeys["max_download_frame"]; !ok {
+					cfg.HCR.MaxDownloadFrame = defaults.HCR.MaxDownloadFrame
+					needsSave = true
+				}
+			}
 		}
 		if rawUDPGW, ok := rawKeys["udpgw"]; !ok {
 			cfg.UDPGW = defaults.UDPGW
@@ -99,6 +139,12 @@ func (m *Manager) Load() (*Config, error) {
 	beforeMin, beforeMax := cfg.UDPGW.PortMin, cfg.UDPGW.PortMax
 	cfg.UDPGW.Normalize()
 	if cfg.UDPGW.PortMin != beforeMin || cfg.UDPGW.PortMax != beforeMax {
+		needsSave = true
+	}
+
+	beforeHCR := cfg.HCR
+	cfg.HCR.Normalize()
+	if cfg.HCR != beforeHCR {
 		needsSave = true
 	}
 
