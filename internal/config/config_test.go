@@ -27,6 +27,12 @@ func TestDefaultConfig(t *testing.T) {
 	if !cfg.HCR.Enable || cfg.HCR.Transport != "auto" || !cfg.HCR.TLSInternal {
 		t.Fatalf("esperado HCR padrão enable/auto/tls_internal, obtido %+v", cfg.HCR)
 	}
+	if !cfg.SSH.BannerEnable {
+		t.Fatalf("esperado ssh.banner_enable=true")
+	}
+	if cfg.SSH.BannerFile != "/etc/bannerssh" {
+		t.Fatalf("esperado ssh.banner_file=/etc/bannerssh, obtido %s", cfg.SSH.BannerFile)
+	}
 }
 
 func TestNormalizeLogLevel(t *testing.T) {
@@ -135,6 +141,83 @@ func TestManagerInjectsMissingHCR(t *testing.T) {
 	}
 	if transport, _ := hcr["transport"].(string); transport != "auto" {
 		t.Fatalf("esperado hcr.transport=auto, obtido %+v", hcr)
+	}
+}
+
+func TestManagerInjectsMissingSSHBannerFile(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+
+	old := `{
+  "token": "TOK",
+  "ports": ["80"],
+  "log_level": "info",
+  "log_file": "/var/log/proxy/proxy.log",
+  "ssh": {"internal": true, "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3"}
+}
+`
+	if err := os.WriteFile(configPath, []byte(old), 0644); err != nil {
+		t.Fatalf("falha ao gravar JSON antigo: %v", err)
+	}
+
+	mgr := NewManager(configPath)
+	cfg, err := mgr.Load()
+	if err != nil {
+		t.Fatalf("erro ao carregar: %v", err)
+	}
+	if !cfg.SSH.BannerEnable {
+		t.Fatalf("esperado banner_enable=true após Load")
+	}
+	if cfg.SSH.BannerFile != "/etc/bannerssh" {
+		t.Fatalf("esperado banner_file padrão após Load, obtido %q", cfg.SSH.BannerFile)
+	}
+
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("falha ao reler arquivo: %v", err)
+	}
+	var persisted map[string]interface{}
+	if err := json.Unmarshal(raw, &persisted); err != nil {
+		t.Fatalf("JSON persistido inválido: %v", err)
+	}
+	ssh, ok := persisted["ssh"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("ssh não persistido: %s", string(raw))
+	}
+	if path, _ := ssh["banner_file"].(string); path != "/etc/bannerssh" {
+		t.Fatalf("esperado ssh.banner_file persistido, obtido %+v", ssh)
+	}
+	if enable, _ := ssh["banner_enable"].(bool); !enable {
+		t.Fatalf("esperado ssh.banner_enable=true persistido, obtido %+v", ssh)
+	}
+}
+
+func TestManagerKeepsExplicitSSHBannerEnableFalse(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+
+	old := `{
+  "token": "TOK",
+  "ports": ["80"],
+  "log_level": "info",
+  "log_file": "/var/log/proxy/proxy.log",
+  "ssh": {"internal": true, "banner_enable": false, "banner_file": "/etc/bannerssh"}
+}
+`
+	if err := os.WriteFile(configPath, []byte(old), 0644); err != nil {
+		t.Fatalf("falha ao gravar JSON: %v", err)
+	}
+
+	mgr := NewManager(configPath)
+	cfg, err := mgr.Load()
+	if err != nil {
+		t.Fatalf("erro ao carregar: %v", err)
+	}
+	if cfg.SSH.BannerEnable {
+		t.Fatalf("esperado banner_enable=false preservado, obtido true")
+	}
+	if cfg.SSH.BannerFile != "/etc/bannerssh" {
+		t.Fatalf("esperado banner_file preservado, obtido %q", cfg.SSH.BannerFile)
 	}
 }
 

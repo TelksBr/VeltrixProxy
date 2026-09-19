@@ -349,12 +349,14 @@ func showSSHSubmenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(fmt.Sprintf("%s5 • %s: %s%s%s", theme.White, i18n.T("ssh_opt_auth"), theme.Cyan, displayOrEmpty(cfg.SSH.Auth), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s6 • %s: %s%s%s", theme.White, i18n.T("ssh_opt_auth_file"), theme.Cyan, displayOrEmpty(cfg.SSH.AuthFile), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s7 • %s: %s%s%s", theme.White, i18n.T("ssh_opt_banner"), theme.Cyan, displayOrEmpty(cfg.SSH.Banner), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s8 • %s: %s%s", theme.White, i18n.T("ssh_opt_banner_enable"), components.FormatBool(cfg.SSH.BannerEnable), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s9 • %s: %s%s%s", theme.White, i18n.T("ssh_opt_banner_file"), theme.Cyan, displayOrEmpty(cfg.SSH.BannerFile), theme.Reset), w)
 
 		components.PrintBoxDivider(w)
 		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
 		components.PrintBoxFooter(w)
 
-		choice := components.ReadOption("Opção [0-7]")
+		choice := components.ReadOption("Opção [0-9]")
 		switch choice {
 		case "1":
 			applyJSONBoolToggle(cfgMgr, cfg, cfg.SSH.Internal, func(v bool) { cfg.SSH.Internal = v },
@@ -414,6 +416,19 @@ func showSSHSubmenu(cfgMgr *config.Manager) {
 				cfg.SSH.Banner = resp
 				_ = cfgMgr.Save(cfg)
 				components.PrintSuccess("ssh.banner atualizado.")
+			}
+			components.Pause()
+		case "8":
+			applyJSONBoolToggle(cfgMgr, cfg, cfg.SSH.BannerEnable, func(v bool) { cfg.SSH.BannerEnable = v },
+				i18n.T("toggle_banner_enable_on"),
+				i18n.T("toggle_banner_enable_off"),
+				"ssh.banner_enable")
+		case "9":
+			resp := components.Prompt(i18n.T("ssh_opt_banner_file"), cfg.SSH.BannerFile)
+			if resp != "" {
+				cfg.SSH.BannerFile = strings.TrimSpace(resp)
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess("ssh.banner_file atualizado.")
 			}
 			components.Pause()
 		case "0":

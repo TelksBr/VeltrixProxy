@@ -74,6 +74,22 @@ func (m *Manager) Load() (*Config, error) {
 	var rawKeys map[string]json.RawMessage
 	if err := json.Unmarshal(data, &rawKeys); err == nil {
 		defaults := NewDefaultConfig(token)
+		if rawSSH, ok := rawKeys["ssh"]; ok {
+			var sshKeys map[string]json.RawMessage
+			if err := json.Unmarshal(rawSSH, &sshKeys); err == nil {
+				if _, ok := sshKeys["banner_file"]; !ok {
+					cfg.SSH.BannerFile = defaults.SSH.BannerFile
+					needsSave = true
+				}
+				if _, ok := sshKeys["banner_enable"]; !ok {
+					cfg.SSH.BannerEnable = defaults.SSH.BannerEnable
+					needsSave = true
+				}
+			}
+		} else if cfg.SSH.BannerFile == "" {
+			cfg.SSH.BannerFile = defaults.SSH.BannerFile
+			needsSave = true
+		}
 		if _, ok := rawKeys["ztun"]; !ok {
 			cfg.Ztun = defaults.Ztun
 			needsSave = true

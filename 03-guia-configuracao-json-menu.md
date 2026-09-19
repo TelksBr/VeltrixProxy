@@ -76,7 +76,9 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
     "auth": "shadow",
     "auth_file": "",
     "allow_root": true,
-    "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3"
+    "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3",
+    "banner_enable": true,
+    "banner_file": "/etc/bannerssh"
   },
 
   "btun": {
@@ -179,7 +181,9 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 | `auth` | `string` | `"shadow"` | Mecanismo de autenticação: `"shadow"` (lê `/etc/shadow`), `"file"` ou `"allow"`. |
 | `auth_file` | `string` | `""` | Caminho do arquivo de senhas caso `auth` seja `"file"`. |
 | `allow_root` | `bool` | `true` | Permite login com usuário `root` no SSH interno. |
-| `banner` | `string` | `"SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3"` | Identificador/Banner de versão SSH retornado ao cliente. |
+| `banner` | `string` | `"SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3"` | **ServerVersion** do handshake (`SSH-2.0-...`). Não é o aviso no terminal. |
+| `banner_enable` | `bool` | `true` | Liga/desliga o `USERAUTH_BANNER` sem apagar `banner_file`. |
+| `banner_file` | `string` | `"/etc/bannerssh"` | Diretiva OpenSSH `Banner`: arquivo de texto enviado ao cliente/VPN **antes** do login. Só é enviado se `banner_enable` for `true`. Arquivo ausente não bloqueia autenticação. |
 
 ---
 

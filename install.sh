@@ -1734,7 +1734,9 @@ default_cfg = {
     "auth": "shadow",
     "auth_file": "",
     "allow_root": True,
-    "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3"
+    "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3",
+    "banner_enable": True,
+    "banner_file": "/etc/bannerssh"
   },
   "btun": {
     "enable": True,
@@ -1816,7 +1818,9 @@ with open(path, "w", encoding="utf-8") as f:
     "auth": "shadow",
     "auth_file": "",
     "allow_root": true,
-    "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3"
+    "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3",
+    "banner_enable": true,
+    "banner_file": "/etc/bannerssh"
   },
   "btun": {
     "enable": true,
@@ -1885,6 +1889,16 @@ try:
         changed = True
     if sys.argv[1] and (not d.get("token") or d.get("token") != sys.argv[1]):
         d["token"] = sys.argv[1]
+        changed = True
+    # Injeta ssh.banner_enable + ssh.banner_file (diretiva OpenSSH Banner) em JSONs antigos
+    if "ssh" not in d or not isinstance(d.get("ssh"), dict):
+        d["ssh"] = {}
+        changed = True
+    if "banner_enable" not in d["ssh"]:
+        d["ssh"]["banner_enable"] = True
+        changed = True
+    if "banner_file" not in d["ssh"]:
+        d["ssh"]["banner_file"] = "/etc/bannerssh"
         changed = True
     # Injeta seção ztun ativa em JSONs antigos que ainda não a possuem
     if "ztun" not in d or not isinstance(d.get("ztun"), dict):
@@ -2029,7 +2043,9 @@ config = {
         "auth": "shadow",
         "auth_file": "",
         "allow_root": True,
-        "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3"
+        "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3",
+        "banner_enable": True,
+        "banner_file": "/etc/bannerssh"
     },
     "btun": {
         "enable": True,
@@ -2295,6 +2311,13 @@ else:
         config["udpgw"]["port_min"] = 7100
     if not isinstance(config["udpgw"].get("port_max"), int) or int(config["udpgw"].get("port_max") or 0) <= 0:
         config["udpgw"]["port_max"] = 7900
+
+if "ssh" not in config or not isinstance(config.get("ssh"), dict):
+    config["ssh"] = {}
+if "banner_enable" not in config["ssh"]:
+    config["ssh"]["banner_enable"] = True
+if "banner_file" not in config["ssh"]:
+    config["ssh"]["banner_file"] = "/etc/bannerssh"
 
 hcr_defaults = {
     "enable": True,

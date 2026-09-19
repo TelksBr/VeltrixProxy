@@ -111,6 +111,8 @@ type SSHConfig struct {
 	AuthFile     string `json:"auth_file"`
 	AllowRoot    bool   `json:"allow_root"`
 	Banner       string `json:"banner"`
+	BannerEnable bool   `json:"banner_enable"`
+	BannerFile   string `json:"banner_file"`
 }
 
 // BTUNConfig define parâmetros do servidor UDP / DT-Proto via interface TUN
@@ -262,6 +264,8 @@ func NewDefaultConfig(token string) *Config {
 			AuthFile:     "",
 			AllowRoot:    true,
 			Banner:       "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3",
+			BannerEnable: true,
+			BannerFile:   "/etc/bannerssh",
 		},
 		BTUN: BTUNConfig{
 			Enable:   true,
