@@ -607,6 +607,37 @@ func TestBuildXrayShareLinksVMess(t *testing.T) {
 	}
 }
 
+func TestBuildXrayShareLinksVMessUsesXHTTP(t *testing.T) {
+	if ShareTransportPrompt([]string{"ws", "splithttp"}) != "ws,xhttp" {
+		t.Fatalf("prompt: %s", ShareTransportPrompt([]string{"ws", "splithttp"}))
+	}
+	links, err := BuildXrayShareLinks(XrayShareParams{
+		Address:    "1.2.3.4",
+		SNI:        "cdn.example.com",
+		Port:       443,
+		Path:       "/vtxray",
+		TLS:        true,
+		Protocols:  []string{"vmess"},
+		Transports: []string{"splithttp"},
+	})
+	if err != nil || len(links) != 1 {
+		t.Fatalf("err=%v n=%d", err, len(links))
+	}
+	if links[0].Transport != "xhttp" || strings.Contains(strings.ToLower(links[0].Label), "split") {
+		t.Fatalf("label/transport: %+v", links[0])
+	}
+	raw, err := decodeVMessShare(links[0].URI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw["net"] != "xhttp" || raw["mode"] != "auto" {
+		t.Fatalf("card v2 deve ser xhttp: %#v", raw)
+	}
+	if strings.Contains(links[0].URI, "splithttp") {
+		t.Fatalf("client v2 ainda tem SplitHTTP: %s", links[0].URI)
+	}
+}
+
 func TestBuildXrayShareLinksIPv6AndRejects(t *testing.T) {
 	links, err := BuildXrayShareLinks(XrayShareParams{
 		UUID:       "550e8400-e29b-41d4-a716-446655440000",

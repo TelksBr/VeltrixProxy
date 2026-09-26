@@ -145,7 +145,7 @@ var dictES = map[string]string{
 	"xray_share_protocol":           "Protocolo del enlace",
 	"xray_share_security":           "¿TLS o Direct?",
 	"xray_share_pick":               "Elija",
-	"xray_share_transport":          "Transportes (ws,splithttp)",
+	"xray_share_transport":          "Transportes (ws,xhttp)",
 	"xray_share_path":               "Path configurado",
 	"xray_share_invalid_host":       "Indique el proxy host (IP o dominio del cliente).",
 	"xray_share_invalid_port":       "Puerto inválido.",

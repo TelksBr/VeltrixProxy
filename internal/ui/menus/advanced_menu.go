@@ -966,7 +966,7 @@ func showXrayShareWizard(cfg *config.Config) {
 
 	transports := cfg.Xray.Transports
 	if len(cfg.Xray.Transports) > 1 {
-		resp := components.Prompt(i18n.T("xray_share_transport"), strings.Join(cfg.Xray.Transports, ","))
+		resp := components.Prompt(i18n.T("xray_share_transport"), config.ShareTransportPrompt(cfg.Xray.Transports))
 		picked := intersectXrayList(splitCSV(resp), cfg.Xray.Transports, cfg.Xray.AllowsTransport)
 		if len(picked) > 0 {
 			transports = picked

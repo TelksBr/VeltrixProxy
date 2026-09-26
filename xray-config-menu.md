@@ -71,5 +71,6 @@ Fluxo do wizard:
 Se a porta escolhida **não** estiver em `ports` do proxy, o menu gera o
 link e só avisa (informativo).
 
-`splithttp` vira `type=xhttp` no URI. VLESS é URI padrão; VMess é
+No link do cliente o transporte é **`xhttp`** (nunca `SplitHTTP`): VLESS
+`type=xhttp`, VMess v2 `net=xhttp`. VLESS é URI padrão; VMess é
 `vmess://` + JSON v2 (`aid=0`).

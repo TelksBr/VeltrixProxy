@@ -207,6 +207,24 @@ func shareWireTransport(name string) string {
 	return "ws"
 }
 
+// ShareTransportPrompt maps config names to the client labels (xhttp, not SplitHTTP).
+func ShareTransportPrompt(transports []string) string {
+	out := make([]string, 0, len(transports))
+	seen := map[string]bool{}
+	for _, raw := range transports {
+		name := shareWireTransport(strings.ToLower(strings.TrimSpace(raw)))
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	if len(out) == 0 {
+		return "ws,xhttp"
+	}
+	return strings.Join(out, ",")
+}
+
 func shareLabel(proto, transport string, tls bool) string {
 	sec := "direct"
 	if tls {
@@ -274,6 +292,10 @@ func buildVMessShare(uuid, addr string, port int, path, host, sni, remark, trans
 		"type": "none",
 		"host": host,
 		"path": path,
+	}
+	if transport == "xhttp" {
+		card["net"] = "xhttp"
+		card["mode"] = "auto"
 	}
 	if tls {
 		card["tls"] = "tls"

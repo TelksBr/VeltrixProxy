@@ -145,7 +145,7 @@ var dictPT = map[string]string{
 	"xray_share_protocol":           "Protocolo do link",
 	"xray_share_security":           "TLS ou Direct?",
 	"xray_share_pick":               "Escolha",
-	"xray_share_transport":          "Transportes (ws,splithttp)",
+	"xray_share_transport":          "Transportes (ws,xhttp)",
 	"xray_share_path":               "Path configurado",
 	"xray_share_invalid_host":       "Informe o proxy host (IP ou domínio do cliente).",
 	"xray_share_invalid_port":       "Porta inválida.",
