@@ -1,11 +1,13 @@
 package menus
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/TelksBr/VeltrixProxy/internal/config"
 	"github.com/TelksBr/VeltrixProxy/internal/i18n"
@@ -955,11 +957,16 @@ func showXrayShareWizard(cfg *config.Config) {
 		return
 	}
 	sni := ""
+	pcs := ""
 	if useTLS {
 		sni = strings.TrimSpace(components.Prompt(i18n.T("xray_share_sni"), host))
 		if sni == "" {
 			components.PrintError(i18n.T("xray_share_invalid_sni"))
 			components.Pause()
+			return
+		}
+		var ok bool
+		if pcs, ok = askXraySharePCS(host, sni); !ok {
 			return
 		}
 	}
@@ -980,6 +987,7 @@ func showXrayShareWizard(cfg *config.Config) {
 		Path:       cfg.Xray.Path,
 		Remark:     "Veltrix",
 		TLS:        useTLS,
+		PCS:        pcs,
 		Protocols:  []string{proto},
 		Transports: transports,
 	})
@@ -1006,6 +1014,32 @@ func showXrayShareWizard(cfg *config.Config) {
 		components.PrintWarning(fmt.Sprintf(i18n.T("xray_share_port_inactive"), port, config.FormatPortList(cfg.Ports)))
 	}
 	components.Pause()
+}
+
+// askXraySharePCS returns ok=false when the user aborts after a failed lookup.
+func askXraySharePCS(host, sni string) (string, bool) {
+	if !components.Confirm(i18n.T("xray_share_pcs_ask"), false) {
+		return "", true
+	}
+	domain := system.XrayPCSDomain(host, sni)
+	if domain == "" {
+		components.PrintWarning(i18n.T("xray_share_pcs_no_domain"))
+		return "", components.Confirm(i18n.T("xray_share_pcs_continue"), true)
+	}
+	components.PrintInfo(fmt.Sprintf(i18n.T("xray_share_pcs_fetching"), domain))
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	res, err := system.FetchXrayPCS(ctx, domain)
+	if err != nil {
+		components.PrintWarning(fmt.Sprintf(i18n.T("xray_share_pcs_failed"), domain, err))
+		return "", components.Confirm(i18n.T("xray_share_pcs_continue"), true)
+	}
+	msg := fmt.Sprintf(i18n.T("xray_share_pcs_ok"), res.PCS)
+	if res.ValidTo != "" {
+		msg += fmt.Sprintf(" (%s %s)", i18n.T("xray_share_pcs_valid_to"), res.ValidTo)
+	}
+	components.PrintSuccess(msg)
+	return res.PCS, true
 }
 
 func pickXrayShareProtocol(xray config.XrayConfig) string {

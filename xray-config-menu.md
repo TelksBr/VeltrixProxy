@@ -64,9 +64,14 @@ Fluxo do wizard:
 
 1. **VLESS ou VMess**
 2. **TLS ou Direct** — TLS pede SNI; Direct **não** inclui SNI
-3. **Porta** e **proxy host**
-4. Path = `xray.path` (não se digita)
-5. UUID = fixo `8fc81ef3-0156-4888-a89d-4520c38d7a3a` (não se configura)
+3. **Porta** e **proxy host** (+ SNI se TLS)
+4. **Gerar com pcs? (s/N)** — só no TLS. Se sim, consulta
+   `https://xray.nulled.pp.ua/api/fingerprint?domain=<proxy host>` (usa o
+   SNI se o host for IP) e inclui o SHA-256 do certificado: VLESS
+   `pcs=<hex>`, VMess campo `"pcs"`. Se a API falhar, pergunta se gera
+   sem pcs.
+5. Path = `xray.path` (não se digita)
+6. UUID = fixo `8fc81ef3-0156-4888-a89d-4520c38d7a3a` (não se configura)
 
 Se a porta escolhida **não** estiver em `ports` do proxy, o menu gera o
 link e só avisa (informativo).

@@ -690,6 +690,59 @@ func TestBuildXrayShareLinksDefaultUUIDAndDirect(t *testing.T) {
 	}
 }
 
+func TestBuildXrayShareLinksPCS(t *testing.T) {
+	const pcs = "017e53a24035a56ef5a7688d92526a3907c396f8643163a4df5e4204be141e4e"
+	base := XrayShareParams{
+		Address:    "webportals.cachefly.net",
+		SNI:        "webportals.cachefly.net",
+		Port:       443,
+		Path:       "/vtxray",
+		TLS:        true,
+		PCS:        strings.ToUpper(pcs),
+		Transports: []string{"ws"},
+	}
+
+	vless := base
+	vless.Protocols = []string{"vless"}
+	links, err := BuildXrayShareLinks(vless)
+	if err != nil || len(links) != 1 {
+		t.Fatalf("err=%v n=%d", err, len(links))
+	}
+	if !strings.Contains(links[0].URI, "pcs="+pcs) {
+		t.Fatalf("vless sem pcs: %s", links[0].URI)
+	}
+
+	vmess := base
+	vmess.Protocols = []string{"vmess"}
+	links, err = BuildXrayShareLinks(vmess)
+	if err != nil || len(links) != 1 {
+		t.Fatalf("err=%v n=%d", err, len(links))
+	}
+	card, err := decodeVMessShare(links[0].URI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card["pcs"] != pcs {
+		t.Fatalf("vmess sem pcs: %#v", card)
+	}
+
+	direct := vless
+	direct.TLS = false
+	links, err = BuildXrayShareLinks(direct)
+	if err != nil || len(links) != 1 {
+		t.Fatalf("err=%v n=%d", err, len(links))
+	}
+	if strings.Contains(links[0].URI, "pcs=") {
+		t.Fatalf("direct nao pode ter pcs: %s", links[0].URI)
+	}
+
+	bad := vless
+	bad.PCS = "xyz"
+	if _, err := BuildXrayShareLinks(bad); err == nil {
+		t.Fatal("pcs inválido deveria falhar")
+	}
+}
+
 func decodeVMessShare(uri string) (map[string]string, error) {
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(uri, "vmess://"))
 	if err != nil {

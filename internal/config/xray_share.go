@@ -11,7 +11,10 @@ import (
 	"strings"
 )
 
-var shareUUIDRe = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+var (
+	shareUUIDRe = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	sharePCSRe  = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
 
 // XrayShareParams is the client-side share card. Path comes from xray.path.
 type XrayShareParams struct {
@@ -22,6 +25,7 @@ type XrayShareParams struct {
 	Path       string
 	Remark     string
 	TLS        bool
+	PCS        string // pinned peer cert SHA-256 (hex), TLS only
 	Protocols  []string
 	Transports []string
 }
@@ -155,6 +159,7 @@ func BuildXrayShareLinks(p XrayShareParams) ([]XrayShareLink, error) {
 	}
 
 	sni := ""
+	pcs := ""
 	hostHeader := addr
 	if p.TLS {
 		sni = strings.TrimSpace(p.SNI)
@@ -162,6 +167,10 @@ func BuildXrayShareLinks(p XrayShareParams) ([]XrayShareLink, error) {
 			return nil, fmt.Errorf("sni obrigatório no modo tls")
 		}
 		hostHeader = sni
+		pcs = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(p.PCS), ":", ""))
+		if pcs != "" && !sharePCSRe.MatchString(pcs) {
+			return nil, fmt.Errorf("pcs inválido")
+		}
 	}
 
 	protos := normalizeCSVList(p.Protocols, nil, map[string]bool{"vless": true, "vmess": true})
@@ -182,9 +191,9 @@ func BuildXrayShareLinks(p XrayShareParams) ([]XrayShareLink, error) {
 			var err error
 			switch proto {
 			case "vless":
-				uri, err = buildVLESSShare(uuid, addr, p.Port, path, hostHeader, sni, remark, wire, p.TLS)
+				uri, err = buildVLESSShare(uuid, addr, p.Port, path, hostHeader, sni, pcs, remark, wire, p.TLS)
 			case "vmess":
-				uri, err = buildVMessShare(uuid, addr, p.Port, path, hostHeader, sni, remark, wire, p.TLS)
+				uri, err = buildVMessShare(uuid, addr, p.Port, path, hostHeader, sni, pcs, remark, wire, p.TLS)
 			}
 			if err != nil {
 				return nil, err
@@ -243,7 +252,7 @@ func shareDialHost(addr string, port int) string {
 	return addr + ":" + strconv.Itoa(port)
 }
 
-func buildVLESSShare(uuid, addr string, port int, path, host, sni, remark, transport string, tls bool) (string, error) {
+func buildVLESSShare(uuid, addr string, port int, path, host, sni, pcs, remark, transport string, tls bool) (string, error) {
 	q := url.Values{}
 	q.Set("encryption", "none")
 	q.Set("type", transport)
@@ -257,6 +266,9 @@ func buildVLESSShare(uuid, addr string, port int, path, host, sni, remark, trans
 			q.Set("sni", sni)
 		}
 		q.Set("fp", "chrome")
+		if pcs != "" {
+			q.Set("pcs", pcs)
+		}
 		if transport == "xhttp" {
 			q.Set("alpn", "h2,http/1.1")
 			q.Set("mode", "auto")
@@ -279,7 +291,7 @@ func buildVLESSShare(uuid, addr string, port int, path, host, sni, remark, trans
 	return u.String(), nil
 }
 
-func buildVMessShare(uuid, addr string, port int, path, host, sni, remark, transport string, tls bool) (string, error) {
+func buildVMessShare(uuid, addr string, port int, path, host, sni, pcs, remark, transport string, tls bool) (string, error) {
 	card := map[string]string{
 		"v":    "2",
 		"ps":   remark,
@@ -303,6 +315,9 @@ func buildVMessShare(uuid, addr string, port int, path, host, sni, remark, trans
 			card["sni"] = sni
 		}
 		card["fp"] = "chrome"
+		if pcs != "" {
+			card["pcs"] = pcs
+		}
 		if transport == "xhttp" {
 			card["alpn"] = "h2,http/1.1"
 		}
