@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -509,4 +510,165 @@ func TestEnsureXrayLegacyStub(t *testing.T) {
 		t.Fatalf("JSON existente perdido: %s", after)
 	}
 }
+
+func TestDefaultXraySharePort(t *testing.T) {
+	if got := DefaultXraySharePort(PortList{"80", "443:ssl"}); got != 443 {
+		t.Fatalf("ssl primeiro: %d", got)
+	}
+	if got := DefaultXraySharePortFor(PortList{"80", "443:ssl"}, false); got != 80 {
+		t.Fatalf("direct prefere plain: %d", got)
+	}
+	if got := DefaultXraySharePort(PortList{"8080"}); got != 8080 {
+		t.Fatalf("unica porta: %d", got)
+	}
+	if got := DefaultXraySharePort(nil); got != 443 {
+		t.Fatalf("vazio: %d", got)
+	}
+}
+
+func TestXrayPortConfigured(t *testing.T) {
+	ports := PortList{"80", "443:ssl"}
+	if !XrayPortConfigured(ports, 80) || !XrayPortConfigured(ports, 443) {
+		t.Fatal("80 e 443 deveriam estar ativas")
+	}
+	if XrayPortConfigured(ports, 8443) {
+		t.Fatal("8443 não está no proxy")
+	}
+	if FormatPortList(ports) != "80, 443:ssl" {
+		t.Fatalf("format: %s", FormatPortList(ports))
+	}
+}
+
+func TestBuildXrayShareLinksVLESS(t *testing.T) {
+	links, err := BuildXrayShareLinks(XrayShareParams{
+		UUID:       "8fc81ef3-0156-4888-a89d-4520c38d7a3a",
+		Address:    "1.2.3.4",
+		SNI:        "cdn.example.com",
+		Port:       443,
+		Path:       "/vtxray",
+		Remark:     "Talkera",
+		TLS:        true,
+		Protocols:  []string{"vless"},
+		Transports: []string{"ws", "splithttp"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 2 {
+		t.Fatalf("esperado 2 links, obtido %d", len(links))
+	}
+	ws := links[0].URI
+	if !strings.HasPrefix(ws, "vless://8fc81ef3-0156-4888-a89d-4520c38d7a3a@1.2.3.4:443?") {
+		t.Fatalf("vless ws: %s", ws)
+	}
+	if !strings.Contains(ws, "type=ws") || !strings.Contains(ws, "sni=cdn.example.com") {
+		t.Fatalf("ws sem type/sni: %s", ws)
+	}
+	if !strings.Contains(ws, "path=%2Fvtxray") && !strings.Contains(ws, "path=/vtxray") {
+		t.Fatalf("ws sem path: %s", ws)
+	}
+	xhttp := links[1].URI
+	if !strings.Contains(xhttp, "type=xhttp") || !strings.Contains(xhttp, "mode=auto") {
+		t.Fatalf("xhttp: %s", xhttp)
+	}
+}
+
+func TestBuildXrayShareLinksVMess(t *testing.T) {
+	links, err := BuildXrayShareLinks(XrayShareParams{
+		UUID:       "8fc81ef3-0156-4888-a89d-4520c38d7a3a",
+		Address:    "edge.example.com",
+		SNI:        "edge.example.com",
+		Port:       443,
+		Path:       "/vtxray",
+		Remark:     "vmess-ws",
+		TLS:        true,
+		Protocols:  []string{"vmess"},
+		Transports: []string{"ws"},
+	})
+	if err != nil || len(links) != 1 {
+		t.Fatalf("err=%v links=%d", err, len(links))
+	}
+	uri := links[0].URI
+	if !strings.HasPrefix(uri, "vmess://") {
+		t.Fatalf("prefixo: %s", uri)
+	}
+	raw, err := decodeVMessShare(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw["add"] != "edge.example.com" || raw["port"] != "443" || raw["path"] != "/vtxray" {
+		t.Fatalf("card: %#v", raw)
+	}
+	if raw["net"] != "ws" || raw["tls"] != "tls" || raw["sni"] != "edge.example.com" {
+		t.Fatalf("stream: %#v", raw)
+	}
+	if raw["id"] != "8fc81ef3-0156-4888-a89d-4520c38d7a3a" || raw["aid"] != "0" {
+		t.Fatalf("id/aid: %#v", raw)
+	}
+}
+
+func TestBuildXrayShareLinksIPv6AndRejects(t *testing.T) {
+	links, err := BuildXrayShareLinks(XrayShareParams{
+		UUID:       "550e8400-e29b-41d4-a716-446655440000",
+		Address:    "2001:db8::1",
+		SNI:        "cdn.example.com",
+		Port:       8443,
+		Path:       "vtxray",
+		TLS:        true,
+		Protocols:  []string{"vless"},
+		Transports: []string{"ws"},
+	})
+	if err != nil || len(links) != 1 {
+		t.Fatalf("err=%v n=%d", err, len(links))
+	}
+	if !strings.Contains(links[0].URI, "[2001:db8::1]:8443") {
+		t.Fatalf("ipv6: %s", links[0].URI)
+	}
+	if _, err := BuildXrayShareLinks(XrayShareParams{UUID: "nope", Address: "h", Port: 443, Protocols: []string{"vless"}, Transports: []string{"ws"}}); err == nil {
+		t.Fatal("uuid inválido deveria falhar")
+	}
+	if _, err := BuildXrayShareLinks(XrayShareParams{UUID: "550e8400-e29b-41d4-a716-446655440000", Port: 443, Protocols: []string{"vless"}, Transports: []string{"ws"}}); err == nil {
+		t.Fatal("host vazio deveria falhar")
+	}
+	if _, err := BuildXrayShareLinks(XrayShareParams{Address: "1.2.3.4", Port: 443, TLS: true, Protocols: []string{"vless"}, Transports: []string{"ws"}}); err == nil {
+		t.Fatal("tls sem sni deveria falhar")
+	}
+}
+
+func TestBuildXrayShareLinksDefaultUUIDAndDirect(t *testing.T) {
+	links, err := BuildXrayShareLinks(XrayShareParams{
+		Address:    "1.2.3.4",
+		Port:       80,
+		Path:       "/vtxray",
+		TLS:        false,
+		Protocols:  []string{"vless"},
+		Transports: []string{"ws"},
+	})
+	if err != nil || len(links) != 1 {
+		t.Fatalf("err=%v n=%d", err, len(links))
+	}
+	uri := links[0].URI
+	if !strings.Contains(uri, "vless://"+DefaultXrayShareUUID+"@1.2.3.4:80") {
+		t.Fatalf("uuid padrao: %s", uri)
+	}
+	if strings.Contains(uri, "sni=") || strings.Contains(uri, "security=tls") {
+		t.Fatalf("direct nao pode ter sni/tls: %s", uri)
+	}
+	if !strings.Contains(uri, "security=none") {
+		t.Fatalf("direct sem security=none: %s", uri)
+	}
+}
+
+func decodeVMessShare(uri string) (map[string]string, error) {
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(uri, "vmess://"))
+	if err != nil {
+		return nil, err
+	}
+	var card map[string]string
+	if err := json.Unmarshal(raw, &card); err != nil {
+		return nil, err
+	}
+	return card, nil
+}
+
 

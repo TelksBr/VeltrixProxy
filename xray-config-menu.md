@@ -57,3 +57,19 @@ Arquivo existente **não** é sobrescrito.
 O `install.sh` e o `Manager.Load` do menu **injetam** a seção `xray`
 (e chaves faltantes) em `config.json` antigos, com os defaults acima.
 `legacy.enable=false` explícito é preservado.
+
+## Gerar link (opção 12)
+
+Fluxo do wizard:
+
+1. **VLESS ou VMess**
+2. **TLS ou Direct** — TLS pede SNI; Direct **não** inclui SNI
+3. **Porta** e **proxy host**
+4. Path = `xray.path` (não se digita)
+5. UUID = fixo `8fc81ef3-0156-4888-a89d-4520c38d7a3a` (não se configura)
+
+Se a porta escolhida **não** estiver em `ports` do proxy, o menu gera o
+link e só avisa (informativo).
+
+`splithttp` vira `type=xhttp` no URI. VLESS é URI padrão; VMess é
+`vmess://` + JSON v2 (`aid=0`).

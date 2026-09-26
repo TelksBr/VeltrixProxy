@@ -9,6 +9,7 @@ import (
 const (
 	DefaultXrayPath         = "/vtxray"
 	DefaultXrayLegacyConfig = "/usr/local/etc/xray/config.json"
+	DefaultXrayShareUUID    = "8fc81ef3-0156-4888-a89d-4520c38d7a3a"
 )
 
 // XrayLegacyCandidates is the install-time search order for an existing

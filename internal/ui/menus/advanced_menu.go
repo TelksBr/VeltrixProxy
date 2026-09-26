@@ -840,12 +840,13 @@ func showXraySubmenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(fmt.Sprintf("%s9 • %s: %s%s", theme.White, i18n.T("xray_opt_tls_internal"), components.FormatBool(cfg.Xray.TLS.CertInternal), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s10 • %s: %s%s%s", theme.White, i18n.T("xray_opt_tls_cert"), theme.Cyan, displayOrEmpty(cfg.Xray.TLS.CertFile), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s11 • %s: %s%s%s", theme.White, i18n.T("xray_opt_tls_key"), theme.Cyan, displayOrEmpty(cfg.Xray.TLS.KeyFile), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s12 • %s%s", theme.White, i18n.T("xray_opt_share"), theme.Reset), w)
 
 		components.PrintBoxDivider(w)
 		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
 		components.PrintBoxFooter(w)
 
-		choice := components.ReadOption("Opção [0-11]")
+		choice := components.ReadOption("Opção [0-12]")
 		switch choice {
 		case "1":
 			applyJSONBoolToggle(cfgMgr, cfg, cfg.Xray.Enable, func(v bool) { cfg.Xray.Enable = v },
@@ -914,10 +915,156 @@ func showXraySubmenu(cfgMgr *config.Manager) {
 			_ = cfgMgr.Save(cfg)
 			components.PrintSuccess("xray.tls.key_file atualizado.")
 			components.Pause()
+		case "12":
+			showXrayShareWizard(cfg)
 		case "0":
 			return
 		}
 	}
+}
+
+func showXrayShareWizard(cfg *config.Config) {
+	w := components.GetBoxWidth()
+	components.ClearScreen()
+	components.PrintBoxHeader(i18n.T("xray_share_title"), theme.Cyan, w)
+	components.PrintBoxLine(fmt.Sprintf("%s   %s%s", theme.Gray, i18n.T("xray_share_hint"), theme.Reset), w)
+	components.PrintBoxDivider(w)
+	components.PrintBoxLine(fmt.Sprintf("%s%s: %s%s%s", theme.White, i18n.T("xray_share_path"), theme.Cyan, cfg.Xray.Path, theme.Reset), w)
+	components.PrintBoxFooter(w)
+
+	proto := pickXrayShareProtocol(cfg.Xray)
+	if proto == "" {
+		components.PrintError(i18n.T("xray_share_none"))
+		components.Pause()
+		return
+	}
+	useTLS := pickXrayShareTLS()
+
+	portDefault := strconv.Itoa(config.DefaultXraySharePortFor(cfg.Ports, useTLS))
+	portRaw := strings.TrimSpace(components.Prompt(i18n.T("xray_share_port"), portDefault))
+	port, err := strconv.Atoi(portRaw)
+	if err != nil || port <= 0 || port > 65535 {
+		components.PrintError(i18n.T("xray_share_invalid_port"))
+		components.Pause()
+		return
+	}
+	host := strings.TrimSpace(components.Prompt(i18n.T("xray_share_host"), ""))
+	if host == "" {
+		components.PrintError(i18n.T("xray_share_invalid_host"))
+		components.Pause()
+		return
+	}
+	sni := ""
+	if useTLS {
+		sni = strings.TrimSpace(components.Prompt(i18n.T("xray_share_sni"), host))
+		if sni == "" {
+			components.PrintError(i18n.T("xray_share_invalid_sni"))
+			components.Pause()
+			return
+		}
+	}
+
+	transports := cfg.Xray.Transports
+	if len(cfg.Xray.Transports) > 1 {
+		resp := components.Prompt(i18n.T("xray_share_transport"), strings.Join(cfg.Xray.Transports, ","))
+		picked := intersectXrayList(splitCSV(resp), cfg.Xray.Transports, cfg.Xray.AllowsTransport)
+		if len(picked) > 0 {
+			transports = picked
+		}
+	}
+
+	links, err := config.BuildXrayShareLinks(config.XrayShareParams{
+		Address:    host,
+		SNI:        sni,
+		Port:       port,
+		Path:       cfg.Xray.Path,
+		Remark:     "Veltrix",
+		TLS:        useTLS,
+		Protocols:  []string{proto},
+		Transports: transports,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "sni") {
+			components.PrintError(i18n.T("xray_share_invalid_sni"))
+		} else {
+			components.PrintError(err.Error())
+		}
+		components.Pause()
+		return
+	}
+	if len(links) == 0 {
+		components.PrintError(i18n.T("xray_share_none"))
+		components.Pause()
+		return
+	}
+
+	fmt.Println()
+	for _, link := range links {
+		fmt.Printf("%s%s%s\n%s\n\n", theme.Cyan, link.Label, theme.Reset, link.URI)
+	}
+	if !config.XrayPortConfigured(cfg.Ports, port) {
+		components.PrintWarning(fmt.Sprintf(i18n.T("xray_share_port_inactive"), port, config.FormatPortList(cfg.Ports)))
+	}
+	components.Pause()
+}
+
+func pickXrayShareProtocol(xray config.XrayConfig) string {
+	enabled := append([]string(nil), xray.Protocols...)
+	if len(enabled) == 1 {
+		return enabled[0]
+	}
+	fmt.Printf("\n%s%s%s\n", theme.White, i18n.T("xray_share_protocol"), theme.Reset)
+	fmt.Printf("  %s1 • VLESS%s\n", theme.Cyan, theme.Reset)
+	fmt.Printf("  %s2 • VMess%s\n", theme.Cyan, theme.Reset)
+	switch components.ReadOption(i18n.T("xray_share_pick")) {
+	case "2", "vmess":
+		if xray.AllowsProtocol("vmess") {
+			return "vmess"
+		}
+	case "1", "vless", "":
+		if xray.AllowsProtocol("vless") {
+			return "vless"
+		}
+	}
+	if xray.AllowsProtocol("vless") {
+		return "vless"
+	}
+	if xray.AllowsProtocol("vmess") {
+		return "vmess"
+	}
+	return ""
+}
+
+func pickXrayShareTLS() bool {
+	fmt.Printf("\n%s%s%s\n", theme.White, i18n.T("xray_share_security"), theme.Reset)
+	fmt.Printf("  %s1 • TLS%s\n", theme.Cyan, theme.Reset)
+	fmt.Printf("  %s2 • Direct%s\n", theme.Cyan, theme.Reset)
+	switch components.ReadOption(i18n.T("xray_share_pick")) {
+	case "2", "direct", "none":
+		return false
+	default:
+		return true
+	}
+}
+
+func intersectXrayList(picked, enabled []string, allow func(string) bool) []string {
+	if len(picked) == 0 {
+		return enabled
+	}
+	out := make([]string, 0, len(picked))
+	seen := map[string]bool{}
+	for _, item := range picked {
+		item = strings.ToLower(strings.TrimSpace(item))
+		if item == "xhttp" {
+			item = "splithttp"
+		}
+		if seen[item] || !allow(item) {
+			continue
+		}
+		seen[item] = true
+		out = append(out, item)
+	}
+	return out
 }
 
 func redetectXrayLegacy(cfgMgr *config.Manager, cfg *config.Config) {

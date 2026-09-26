@@ -1,6 +1,7 @@
 package menus
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -79,6 +80,28 @@ func TestXrayOptionFormatting(t *testing.T) {
 		boxLine := components.FormatBoxLine(line, width)
 		if strings.Contains(boxLine, "...") || strings.Contains(boxLine, "…") {
 			t.Errorf("Idioma %s: A opção Xray foi truncada na caixa: %q", lang, boxLine)
+		}
+	}
+}
+
+func TestXrayShareOptionFormatting(t *testing.T) {
+	languages := []i18n.Language{i18n.LangPT, i18n.LangES, i18n.LangEN}
+	width := components.DefaultBoxWidth
+
+	for _, lang := range languages {
+		i18n.SetLanguage(lang)
+
+		line := fmt.Sprintf("%s12 • %s%s", theme.White, i18n.T("xray_opt_share"), theme.Reset)
+
+		visible := theme.VisibleLen(line)
+		contentWidth := width - 4
+		if visible > contentWidth {
+			t.Errorf("Idioma %s: opção share Xray visível (%d) excede contentWidth (%d): %q", lang, visible, contentWidth, line)
+		}
+
+		boxLine := components.FormatBoxLine(line, width)
+		if strings.Contains(boxLine, "...") || strings.Contains(boxLine, "…") {
+			t.Errorf("Idioma %s: A opção share Xray foi truncada na caixa: %q", lang, boxLine)
 		}
 	}
 }

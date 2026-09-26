@@ -329,6 +329,10 @@ instalador detecta um JSON existente (Xray-core, V2Ray, 3x-ui) ou cria
 um stub VLESS+WS `/vtxray` (`0.0.0.0:443`, tag `vless-in`) em
 `/usr/local/etc/xray/config.json`.
 
+O submenu Xray opção **12** gera um link: VLESS ou VMess → TLS ou Direct
+→ porta + host (SNI só se TLS). Path e UUID são os do servidor. Porta
+fora de `ports` só gera aviso.
+
 ---
 
 ### H. Seção `udpgw` (BadVPN embutido)
