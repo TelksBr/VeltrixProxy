@@ -20,18 +20,22 @@ Precedência: **defaults internos → `config.json` → flags CLI**.
   "tls_cert": "",
   "tls_key": "",
   "tls_internal": true,
-  "max_sessions": 32,
-  "max_source_sessions": 0,
-  "poll_timeout": 10,
-  "idle": 300,
-  "max_download_frame": 16384
+  "max_sessions": 128,
+  "max_source_sessions": 128,
+  "max_connections": 2048,
+  "poll_timeout": 8,
+  "idle": 120,
+  "max_download_frame": 6144,
+  "max_replay_bytes": 8388608,
+  "session_stats_interval": 10
 }
 ```
 
 Flags: `--hcr-enable`, `--hcr-target`, `--hcr-transport`, `--hcr-tls-cert`,
 `--hcr-tls-key`, `--hcr-tls-internal`, `--hcr-max-sessions`,
-`--hcr-max-source-sessions`, `--hcr-poll-timeout`, `--hcr-idle`,
-`--hcr-max-download-frame`.
+`--hcr-max-source-sessions`, `--hcr-max-connections`, `--hcr-poll-timeout`,
+`--hcr-idle`, `--hcr-max-download-frame`, `--hcr-max-replay-bytes`,
+`--hcr-session-stats-interval`.
 
 ---
 
@@ -44,11 +48,14 @@ Flags: `--hcr-enable`, `--hcr-target`, `--hcr-transport`, `--hcr-tls-cert`,
 | `transport` | string | `"auto"` | select | `plain` \| `tls` \| `auto` (sniff `0x16`) |
 | `tls_cert` / `tls_key` | string | `""` | path | PEM; se ambos setados, usam arquivo |
 | `tls_internal` | bool | `true` | toggle | Cert ECDSA autoassinado **só em memória** quando paths vazios |
-| `max_sessions` | int | `32` | número | Limite global de sessões |
-| `max_source_sessions` | int | `0` | número | Limite por IP (`0` = ilimitado) |
-| `poll_timeout` | int | `10` | segundos | Timeout do ReqPoll |
-| `idle` | int | `300` | segundos | Reaper de sessões ociosas |
-| `max_download_frame` | int | `16384` | bytes | Tamanho máx. de frame de download |
+| `max_sessions` | int | `128` | número | Limite global de sessões |
+| `max_source_sessions` | int | `128` | número | Limite por IP (`0` = ilimitado) |
+| `max_connections` | int | `2048` | número | TCPs HCR simultâneas |
+| `poll_timeout` | int | `8` | segundos | Timeout do ReqPoll |
+| `idle` | int | `120` | segundos | Reaper de sessões ociosas |
+| `max_download_frame` | int | `6144` | bytes | Tamanho máx. de frame de download |
+| `max_replay_bytes` | int | `8388608` | bytes | Replay sem ACK antes de fechar target |
+| `session_stats_interval` | int | `10` | segundos | Log `hcr session_stats` (`0` = off) |
 
 Em `:ssl` do proxy o TLS é o do proxy; HCR não aninha segundo TLS.
 

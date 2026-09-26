@@ -130,11 +130,31 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
     "tls_cert": "",
     "tls_key": "",
     "tls_internal": true,
-    "max_sessions": 32,
-    "max_source_sessions": 0,
-    "poll_timeout": 10,
-    "idle": 300,
-    "max_download_frame": 16384
+    "max_sessions": 128,
+    "max_source_sessions": 128,
+    "max_connections": 2048,
+    "poll_timeout": 8,
+    "idle": 120,
+    "max_download_frame": 6144,
+    "max_replay_bytes": 8388608,
+    "session_stats_interval": 10
+  },
+
+  "xray": {
+    "enable": true,
+    "path": "/vtxray",
+    "protocols": ["vless", "vmess"],
+    "transports": ["ws", "splithttp"],
+    "tls": {
+      "inherit_port": true,
+      "cert_file": "",
+      "key_file": "",
+      "cert_internal": true
+    },
+    "legacy": {
+      "enable": true,
+      "config_file": "/usr/local/etc/xray/config.json"
+    }
   },
 
   "udpgw": {
@@ -274,13 +294,40 @@ Não existem chaves de SMUX/janela/chunk/porta UDP no JSON — constantes do bin
 | `transport` | `string` | `"auto"` | `plain` \| `tls` \| `auto` (sniff `0x16`). |
 | `tls_cert` / `tls_key` | `string` | `""` | Paths PEM; se ambos setados, usam arquivo. |
 | `tls_internal` | `bool` | `true` | Cert ECDSA autoassinado **em memória** quando paths vazios. |
-| `max_sessions` | `int` | `32` | Limite global de sessões. |
-| `max_source_sessions` | `int` | `0` | Limite por IP (`0` = ilimitado). |
-| `poll_timeout` | `int` | `10` | Timeout do ReqPoll em segundos. |
-| `idle` | `int` | `300` | Reaper de sessões ociosas em segundos. |
-| `max_download_frame` | `int` | `16384` | Tamanho máx. de frame de download. |
+| `max_sessions` | `int` | `128` | Limite global de sessões. |
+| `max_source_sessions` | `int` | `128` | Limite por IP (`0` = ilimitado). |
+| `max_connections` | `int` | `2048` | TCPs HCR simultâneas. |
+| `poll_timeout` | `int` | `8` | Timeout do ReqPoll em segundos. |
+| `idle` | `int` | `120` | Reaper de sessões ociosas em segundos. |
+| `max_download_frame` | `int` | `6144` | Tamanho máx. de frame de download. |
+| `max_replay_bytes` | `int` | `8388608` | Replay sem ACK (8 MiB). |
+| `session_stats_interval` | `int` | `10` | Log periódico de stats (`0` = off). |
 
 No **install/update**, a seção `hcr` (e chaves faltantes) é injetada com esses defaults.
+
+---
+
+### G3. Seção `xray` (VLESS / VMess)
+
+> Motor in-process nas **mesmas portas TCP** do proxy. Path único `/vtxray`;
+> demux WS vs SplitHTTP pelos headers. UUID no `/etc/passwd` (`uuid=`).
+> Brief: [`xray-config-menu.md`](xray-config-menu.md).
+
+| Campo | Tipo | Default | Descrição |
+| :--- | :--- | :--- | :--- |
+| `enable` | `bool` | `true` | Liga o motor Xray. |
+| `path` | `string` | `"/vtxray"` | Prefixo único (WS exato; SplitHTTP = `path/`). |
+| `protocols` | `string[]` | `["vless","vmess"]` | Protocolos no wire. |
+| `transports` | `string[]` | `["ws","splithttp"]` | `ws` e/ou `splithttp`. |
+| `tls.inherit_port` | `bool` | `true` | Usa o TLS da porta do proxy (v1). |
+| `tls.cert_internal` | `bool` | `true` | Certificado interno da porta. |
+| `legacy.enable` | `bool` | `true` | Fallback de UUID do `xray.json` se o UUID não estiver no passwd. |
+| `legacy.config_file` | `string` | detectado ou `"/usr/local/etc/xray/config.json"` | Caminho do JSON de painel/Xray. |
+
+No **install/update**, a seção `xray` é injetada com fallback ativo. O
+instalador detecta um JSON existente (Xray-core, V2Ray, 3x-ui) ou cria
+um stub VLESS+WS `/vtxray` (`0.0.0.0:443`, tag `vless-in`) em
+`/usr/local/etc/xray/config.json`.
 
 ---
 

@@ -99,6 +99,7 @@ type Config struct {
 	DNSTT          DNSTTConfig      `json:"dnstt"`
 	Ztun           ZtunConfig       `json:"ztun"`
 	HCR            HCRConfig        `json:"hcr"`
+	Xray           XrayConfig       `json:"xray"`
 	UDPGW          UDPGWConfig      `json:"udpgw"`
 }
 
@@ -163,19 +164,33 @@ type ZtunConfig struct {
 	Idle     int    `json:"idle"`
 }
 
+const (
+	DefaultHCRMaxSessions            = 128
+	DefaultHCRMaxSourceSessions        = 128
+	DefaultHCRMaxConnections           = 2048
+	DefaultHCRPollTimeout              = 8
+	DefaultHCRIdle                     = 120
+	DefaultHCRMaxDownloadFrame         = 6144
+	DefaultHCRMaxReplayBytes           = 8 * 1024 * 1024
+	DefaultHCRSessionStatsInterval     = 10
+)
+
 // HCRConfig define o motor HCR / HTTP Custom Relay (header 62 B, opcodes 1..6)
 type HCRConfig struct {
-	Enable            bool   `json:"enable"`
-	Target            string `json:"target"`
-	Transport         string `json:"transport"`
-	TLSCert           string `json:"tls_cert"`
-	TLSKey            string `json:"tls_key"`
-	TLSInternal       bool   `json:"tls_internal"`
-	MaxSessions       int    `json:"max_sessions"`
-	MaxSourceSessions int    `json:"max_source_sessions"`
-	PollTimeout       int    `json:"poll_timeout"`
-	Idle              int    `json:"idle"`
-	MaxDownloadFrame  int    `json:"max_download_frame"`
+	Enable               bool   `json:"enable"`
+	Target               string `json:"target"`
+	Transport            string `json:"transport"`
+	TLSCert              string `json:"tls_cert"`
+	TLSKey               string `json:"tls_key"`
+	TLSInternal          bool   `json:"tls_internal"`
+	MaxSessions          int    `json:"max_sessions"`
+	MaxSourceSessions    int    `json:"max_source_sessions"`
+	MaxConnections       int    `json:"max_connections"`
+	PollTimeout          int    `json:"poll_timeout"`
+	Idle                 int    `json:"idle"`
+	MaxDownloadFrame     int    `json:"max_download_frame"`
+	MaxReplayBytes       int    `json:"max_replay_bytes"`
+	SessionStatsInterval int    `json:"session_stats_interval"`
 }
 
 // Normalize aplica defaults do bloco HCR.
@@ -190,16 +205,25 @@ func (h *HCRConfig) Normalize() {
 		h.Transport = "auto"
 	}
 	if h.MaxSessions <= 0 {
-		h.MaxSessions = 32
+		h.MaxSessions = DefaultHCRMaxSessions
+	}
+	if h.MaxConnections <= 0 {
+		h.MaxConnections = DefaultHCRMaxConnections
 	}
 	if h.PollTimeout <= 0 {
-		h.PollTimeout = 10
+		h.PollTimeout = DefaultHCRPollTimeout
 	}
 	if h.Idle <= 0 {
-		h.Idle = 300
+		h.Idle = DefaultHCRIdle
 	}
 	if h.MaxDownloadFrame <= 0 {
-		h.MaxDownloadFrame = 16384
+		h.MaxDownloadFrame = DefaultHCRMaxDownloadFrame
+	}
+	if h.MaxReplayBytes <= 0 {
+		h.MaxReplayBytes = DefaultHCRMaxReplayBytes
+	}
+	if h.SessionStatsInterval < 0 {
+		h.SessionStatsInterval = 0
 	}
 }
 
@@ -305,18 +329,22 @@ func NewDefaultConfig(token string) *Config {
 			Idle:     180,
 		},
 		HCR: HCRConfig{
-			Enable:            true,
-			Target:            "",
-			Transport:         "auto",
-			TLSCert:           "",
-			TLSKey:            "",
-			TLSInternal:       true,
-			MaxSessions:       32,
-			MaxSourceSessions: 0,
-			PollTimeout:       10,
-			Idle:              300,
-			MaxDownloadFrame:  16384,
+			Enable:               true,
+			Target:               "",
+			Transport:            "auto",
+			TLSCert:              "",
+			TLSKey:               "",
+			TLSInternal:          true,
+			MaxSessions:          DefaultHCRMaxSessions,
+			MaxSourceSessions:    DefaultHCRMaxSourceSessions,
+			MaxConnections:       DefaultHCRMaxConnections,
+			PollTimeout:          DefaultHCRPollTimeout,
+			Idle:                 DefaultHCRIdle,
+			MaxDownloadFrame:     DefaultHCRMaxDownloadFrame,
+			MaxReplayBytes:       DefaultHCRMaxReplayBytes,
+			SessionStatsInterval: DefaultHCRSessionStatsInterval,
 		},
+		Xray: defaultXrayConfig(""),
 		UDPGW: UDPGWConfig{
 			Internal: true,
 			PortMin:  DefaultUDPGWPortMin,

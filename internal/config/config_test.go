@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -32,6 +33,12 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if cfg.SSH.BannerFile != "/etc/bannerssh" {
 		t.Fatalf("esperado ssh.banner_file=/etc/bannerssh, obtido %s", cfg.SSH.BannerFile)
+	}
+	if !cfg.Xray.Enable || cfg.Xray.Path != DefaultXrayPath || !cfg.Xray.Legacy.Enable {
+		t.Fatalf("esperado xray enable/path/legacy, obtido %+v", cfg.Xray)
+	}
+	if cfg.Xray.Legacy.ConfigFile == "" {
+		t.Fatalf("esperado xray.legacy.config_file preenchido")
 	}
 }
 
@@ -120,8 +127,18 @@ func TestManagerInjectsMissingHCR(t *testing.T) {
 	if err != nil {
 		t.Fatalf("erro ao carregar: %v", err)
 	}
-	if !cfg.HCR.Enable || cfg.HCR.Transport != "auto" || !cfg.HCR.TLSInternal || cfg.HCR.MaxSessions != 32 {
-		t.Fatalf("esperado hcr padrão após Load, obtido %+v", cfg.HCR)
+	if !cfg.HCR.Enable || cfg.HCR.Transport != "auto" || !cfg.HCR.TLSInternal {
+		t.Fatalf("esperado hcr enable/auto/tls_internal após Load, obtido %+v", cfg.HCR)
+	}
+	if cfg.HCR.MaxSessions != DefaultHCRMaxSessions ||
+		cfg.HCR.MaxSourceSessions != DefaultHCRMaxSourceSessions ||
+		cfg.HCR.MaxConnections != DefaultHCRMaxConnections ||
+		cfg.HCR.PollTimeout != DefaultHCRPollTimeout ||
+		cfg.HCR.Idle != DefaultHCRIdle ||
+		cfg.HCR.MaxDownloadFrame != DefaultHCRMaxDownloadFrame ||
+		cfg.HCR.MaxReplayBytes != DefaultHCRMaxReplayBytes ||
+		cfg.HCR.SessionStatsInterval != DefaultHCRSessionStatsInterval {
+		t.Fatalf("esperado hcr defaults após Load, obtido %+v", cfg.HCR)
 	}
 
 	raw, err := os.ReadFile(configPath)
@@ -141,6 +158,9 @@ func TestManagerInjectsMissingHCR(t *testing.T) {
 	}
 	if transport, _ := hcr["transport"].(string); transport != "auto" {
 		t.Fatalf("esperado hcr.transport=auto, obtido %+v", hcr)
+	}
+	if maxConn, _ := hcr["max_connections"].(float64); int(maxConn) != DefaultHCRMaxConnections {
+		t.Fatalf("esperado hcr.max_connections=%d persistido, obtido %+v", DefaultHCRMaxConnections, hcr)
 	}
 }
 
@@ -341,6 +361,152 @@ func TestZtunConfig(t *testing.T) {
 	}
 	if loaded.Ztun.Enable || loaded.Ztun.Upstream != "127.0.0.1:9443" || loaded.Ztun.Auth != "file" || loaded.Ztun.AuthFile != "/etc/proxy/users" || loaded.Ztun.Idle != 120 {
 		t.Fatalf("valores inesperados em Ztun: %+v", loaded.Ztun)
+	}
+}
+
+func TestManagerInjectsMissingXray(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	legacy := filepath.Join(tempDir, "xray.json")
+	if err := os.WriteFile(legacy, []byte(`{"inbounds":[]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	prev := XrayLegacyCandidates
+	XrayLegacyCandidates = []string{legacy}
+	t.Cleanup(func() { XrayLegacyCandidates = prev })
+
+	old := `{
+  "token": "TOK",
+  "ports": ["80"],
+  "log_level": "info",
+  "log_file": "/var/log/proxy/proxy.log",
+  "ssh": {"internal": true},
+  "hcr": {"enable": true}
+}
+`
+	if err := os.WriteFile(configPath, []byte(old), 0644); err != nil {
+		t.Fatalf("falha ao gravar JSON antigo: %v", err)
+	}
+
+	mgr := NewManager(configPath)
+	cfg, err := mgr.Load()
+	if err != nil {
+		t.Fatalf("erro ao carregar: %v", err)
+	}
+	if !cfg.Xray.Enable || cfg.Xray.Path != DefaultXrayPath || !cfg.Xray.Legacy.Enable {
+		t.Fatalf("esperado xray padrão após Load, obtido %+v", cfg.Xray)
+	}
+	if cfg.Xray.Legacy.ConfigFile != legacy {
+		t.Fatalf("esperado legacy detectado %s, obtido %s", legacy, cfg.Xray.Legacy.ConfigFile)
+	}
+
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted map[string]interface{}
+	if err := json.Unmarshal(raw, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	xray, ok := persisted["xray"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("xray não foi persistido: %s", string(raw))
+	}
+	legacyObj, _ := xray["legacy"].(map[string]interface{})
+	if enable, _ := legacyObj["enable"].(bool); !enable {
+		t.Fatalf("esperado xray.legacy.enable=true, obtido %+v", legacyObj)
+	}
+	if path, _ := legacyObj["config_file"].(string); path != legacy {
+		t.Fatalf("esperado config_file detectado, obtido %+v", legacyObj)
+	}
+}
+
+func TestManagerKeepsExplicitXrayLegacyFalse(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	old := `{
+  "token": "TOK",
+  "ports": ["80"],
+  "log_level": "info",
+  "log_file": "/var/log/proxy/proxy.log",
+  "xray": {
+    "enable": true,
+    "path": "/vtxray",
+    "legacy": {"enable": false, "config_file": "/custom/xray.json"}
+  }
+}
+`
+	if err := os.WriteFile(configPath, []byte(old), 0644); err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewManager(configPath)
+	cfg, err := mgr.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Xray.Legacy.Enable {
+		t.Fatalf("esperado legacy.enable=false preservado")
+	}
+	if cfg.Xray.Legacy.ConfigFile != "/custom/xray.json" {
+		t.Fatalf("esperado config_file preservado, obtido %s", cfg.Xray.Legacy.ConfigFile)
+	}
+}
+
+func TestDetectXrayLegacyConfig(t *testing.T) {
+	tempDir := t.TempDir()
+	hit := filepath.Join(tempDir, "config.json")
+	miss := filepath.Join(tempDir, "missing.json")
+	if err := os.WriteFile(hit, []byte(`{"inbounds":[]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := detectXrayLegacyConfig([]string{miss, hit}, DefaultXrayLegacyConfig)
+	if !ok || got != hit {
+		t.Fatalf("detect=%s ok=%v, esperado %s", got, ok, hit)
+	}
+	got, ok = detectXrayLegacyConfig([]string{miss}, "/fallback.json")
+	if ok || got != "/fallback.json" {
+		t.Fatalf("fallback=%s ok=%v", got, ok)
+	}
+}
+
+func TestEnsureXrayLegacyStub(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "etc", "xray", "config.json")
+	if err := EnsureXrayLegacyStub(path); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]interface{}
+	if err := json.Unmarshal(raw, &root); err != nil {
+		t.Fatalf("stub inválido: %v", err)
+	}
+	inbounds, ok := root["inbounds"].([]interface{})
+	if !ok || len(inbounds) != 1 {
+		t.Fatalf("esperado 1 inbound, obtido %+v", root["inbounds"])
+	}
+	in, _ := inbounds[0].(map[string]interface{})
+	if in["tag"] != "vless-in" || in["protocol"] != "vless" {
+		t.Fatalf("esperado tag vless-in / vless, obtido %+v", in)
+	}
+	if !strings.Contains(string(raw), "/vtxray") || !strings.Contains(string(raw), "8fc81ef3-0156-4888-a89d-4520c38d7a3a") {
+		t.Fatalf("stub sem path /vtxray ou client de exemplo: %s", raw)
+	}
+	original := string(raw)
+	if err := os.WriteFile(path, []byte(`{"inbounds":[{"protocol":"vmess"}]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureXrayLegacyStub(path); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(after) == original {
+		t.Fatal("stub sobrescreveu JSON existente")
+	}
+	if !strings.Contains(string(after), "vmess") {
+		t.Fatalf("JSON existente perdido: %s", after)
 	}
 }
 

@@ -70,7 +70,7 @@ func (m *Manager) Load() (*Config, error) {
 		needsSave = true
 	}
 
-	// Persiste seções novas (ztun / hcr / udpgw) se o JSON antigo ainda não as tiver
+	// Persiste seções novas (ztun / hcr / xray / udpgw) se o JSON antigo ainda não as tiver
 	var rawKeys map[string]json.RawMessage
 	if err := json.Unmarshal(data, &rawKeys); err == nil {
 		defaults := NewDefaultConfig(token)
@@ -120,6 +120,14 @@ func (m *Manager) Load() (*Config, error) {
 					cfg.HCR.MaxSessions = defaults.HCR.MaxSessions
 					needsSave = true
 				}
+				if _, ok := hcrKeys["max_source_sessions"]; !ok {
+					cfg.HCR.MaxSourceSessions = defaults.HCR.MaxSourceSessions
+					needsSave = true
+				}
+				if _, ok := hcrKeys["max_connections"]; !ok {
+					cfg.HCR.MaxConnections = defaults.HCR.MaxConnections
+					needsSave = true
+				}
 				if _, ok := hcrKeys["poll_timeout"]; !ok {
 					cfg.HCR.PollTimeout = defaults.HCR.PollTimeout
 					needsSave = true
@@ -131,6 +139,78 @@ func (m *Manager) Load() (*Config, error) {
 				if _, ok := hcrKeys["max_download_frame"]; !ok {
 					cfg.HCR.MaxDownloadFrame = defaults.HCR.MaxDownloadFrame
 					needsSave = true
+				}
+				if _, ok := hcrKeys["max_replay_bytes"]; !ok {
+					cfg.HCR.MaxReplayBytes = defaults.HCR.MaxReplayBytes
+					needsSave = true
+				}
+				if _, ok := hcrKeys["session_stats_interval"]; !ok {
+					cfg.HCR.SessionStatsInterval = defaults.HCR.SessionStatsInterval
+					needsSave = true
+				}
+			}
+		}
+		if rawXray, ok := rawKeys["xray"]; !ok {
+			cfg.Xray = defaultXrayConfig("")
+			needsSave = true
+		} else {
+			var xrayKeys map[string]json.RawMessage
+			if err := json.Unmarshal(rawXray, &xrayKeys); err == nil {
+				if _, ok := xrayKeys["enable"]; !ok {
+					cfg.Xray.Enable = defaults.Xray.Enable
+					needsSave = true
+				}
+				if _, ok := xrayKeys["path"]; !ok {
+					cfg.Xray.Path = defaults.Xray.Path
+					needsSave = true
+				}
+				if _, ok := xrayKeys["protocols"]; !ok {
+					cfg.Xray.Protocols = append([]string(nil), defaults.Xray.Protocols...)
+					needsSave = true
+				}
+				if _, ok := xrayKeys["transports"]; !ok {
+					cfg.Xray.Transports = append([]string(nil), defaults.Xray.Transports...)
+					needsSave = true
+				}
+				if rawTLS, ok := xrayKeys["tls"]; !ok {
+					cfg.Xray.TLS = defaults.Xray.TLS
+					needsSave = true
+				} else {
+					var tlsKeys map[string]json.RawMessage
+					if err := json.Unmarshal(rawTLS, &tlsKeys); err == nil {
+						if _, ok := tlsKeys["inherit_port"]; !ok {
+							cfg.Xray.TLS.InheritPort = defaults.Xray.TLS.InheritPort
+							needsSave = true
+						}
+						if _, ok := tlsKeys["cert_internal"]; !ok {
+							cfg.Xray.TLS.CertInternal = defaults.Xray.TLS.CertInternal
+							needsSave = true
+						}
+						if _, ok := tlsKeys["cert_file"]; !ok {
+							cfg.Xray.TLS.CertFile = defaults.Xray.TLS.CertFile
+							needsSave = true
+						}
+						if _, ok := tlsKeys["key_file"]; !ok {
+							cfg.Xray.TLS.KeyFile = defaults.Xray.TLS.KeyFile
+							needsSave = true
+						}
+					}
+				}
+				if rawLegacy, ok := xrayKeys["legacy"]; !ok {
+					cfg.Xray.Legacy = defaults.Xray.Legacy
+					needsSave = true
+				} else {
+					var legacyKeys map[string]json.RawMessage
+					if err := json.Unmarshal(rawLegacy, &legacyKeys); err == nil {
+						if _, ok := legacyKeys["enable"]; !ok {
+							cfg.Xray.Legacy.Enable = true
+							needsSave = true
+						}
+						if _, ok := legacyKeys["config_file"]; !ok || strings.TrimSpace(cfg.Xray.Legacy.ConfigFile) == "" {
+							cfg.Xray.Legacy.ConfigFile = defaults.Xray.Legacy.ConfigFile
+							needsSave = true
+						}
+					}
 				}
 			}
 		}
@@ -164,6 +244,12 @@ func (m *Manager) Load() (*Config, error) {
 		needsSave = true
 	}
 
+	beforeXray := cfg.Xray
+	cfg.Xray.Normalize()
+	if !xrayConfigEqual(beforeXray, cfg.Xray) {
+		needsSave = true
+	}
+
 	m.cfg = cfg
 	if needsSave {
 		_ = m.saveLocked()
@@ -191,6 +277,8 @@ func (m *Manager) Save(cfg *Config) error {
 	defer m.mu.Unlock()
 	if cfg != nil {
 		cfg.UDPGW.Normalize()
+		cfg.HCR.Normalize()
+		cfg.Xray.Normalize()
 	}
 	m.cfg = cfg
 	return m.saveLocked()

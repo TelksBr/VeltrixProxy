@@ -321,6 +321,14 @@ func showPortDetails(cfgMgr *config.Manager) {
 		hcrStatus = theme.Green + "true" + theme.Reset + fmt.Sprintf(" (%s)", cfg.HCR.Transport)
 	}
 	components.PrintBoxLine(fmt.Sprintf("HCR Relay: %s", hcrStatus), w)
+	xrayStatus := theme.Red + "false" + theme.Reset
+	if cfg.Xray.Enable {
+		xrayStatus = theme.Green + "true" + theme.Reset + fmt.Sprintf(" (%s)", cfg.Xray.Path)
+		if cfg.Xray.Legacy.Enable {
+			xrayStatus += " legacy"
+		}
+	}
+	components.PrintBoxLine(fmt.Sprintf("Xray: %s", xrayStatus), w)
 
 	components.PrintBoxFooter(w)
 	components.Pause()

@@ -61,6 +61,28 @@ func TestDNSTTOptionFormatting(t *testing.T) {
 	}
 }
 
+func TestXrayOptionFormatting(t *testing.T) {
+	languages := []i18n.Language{i18n.LangPT, i18n.LangES, i18n.LangEN}
+	width := components.DefaultBoxWidth
+
+	for _, lang := range languages {
+		i18n.SetLanguage(lang)
+
+		line := advMenuItem("X", i18n.T("adv_opt_xray"), components.FormatBool(true))
+
+		visible := theme.VisibleLen(line)
+		contentWidth := width - 4
+		if visible > contentWidth {
+			t.Errorf("Idioma %s: opção Xray visível (%d) excede contentWidth (%d): %q", lang, visible, contentWidth, line)
+		}
+
+		boxLine := components.FormatBoxLine(line, width)
+		if strings.Contains(boxLine, "...") || strings.Contains(boxLine, "…") {
+			t.Errorf("Idioma %s: A opção Xray foi truncada na caixa: %q", lang, boxLine)
+		}
+	}
+}
+
 func TestZtunOptionFormatting(t *testing.T) {
 	languages := []i18n.Language{i18n.LangPT, i18n.LangES, i18n.LangEN}
 	width := components.DefaultBoxWidth

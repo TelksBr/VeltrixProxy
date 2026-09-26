@@ -1693,12 +1693,89 @@ PROXY_JSON_DIR="/etc/proxyvt"
 PROXY_JSON_FILE="/etc/proxyvt/config.json"
 PROXY_LOG_DIR="/var/log/proxy"
 PROXY_LOG_FILE="/var/log/proxy/proxy.log"
+XRAY_LEGACY_DEFAULT="/usr/local/etc/xray/config.json"
+
+detect_xray_legacy_config() {
+  local p
+  for p in \
+    "/usr/local/etc/xray/config.json" \
+    "/etc/xray/config.json" \
+    "/usr/local/x-ui/bin/config.json" \
+    "/usr/local/etc/v2ray/config.json" \
+    "/etc/v2ray/config.json" \
+    "/etc/x-ui/x-ui.json"
+  do
+    if [[ -s "$p" ]]; then
+      printf '%s\n' "$p"
+      return 0
+    fi
+  done
+  printf '%s\n' "$XRAY_LEGACY_DEFAULT"
+  return 1
+}
+
+write_xray_legacy_stub() {
+  local path="${1:-$XRAY_LEGACY_DEFAULT}"
+  if [[ -s "$path" ]]; then
+    return 0
+  fi
+  run_privileged mkdir -p "$(dirname "$path")" 2>/dev/null || true
+  cat <<'XRAYSTUB' | run_privileged tee "$path" >/dev/null
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "tag": "vless-in",
+      "listen": "0.0.0.0",
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "8fc81ef3-0156-4888-a89d-4520c38d7a3a",
+            "email": "user@example.com"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "ws",
+        "security": "none",
+        "wsSettings": {
+          "path": "/vtxray"
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "direct",
+      "protocol": "freedom"
+    }
+  ]
+}
+XRAYSTUB
+}
+
+prepare_xray_legacy_config() {
+  local path
+  path="$(detect_xray_legacy_config)" || true
+  if [[ ! -s "$path" ]]; then
+    path="$XRAY_LEGACY_DEFAULT"
+    write_xray_legacy_stub "$path"
+  fi
+  export PROXYVT_XRAY_LEGACY_CONFIG="$path"
+  printf '%s\n' "$path"
+}
 
 ensure_proxy_json_config() {
   local token="${1:-}"
   [[ -z "$token" ]] && token="$PROXY_TOKEN"
   [[ -z "$token" ]] && token=$(load_saved_proxy_token || true)
 
+  prepare_xray_legacy_config >/dev/null || true
   run_privileged mkdir -p "$PROXY_JSON_DIR" "$PROXY_LOG_DIR" 2>/dev/null || true
 
   if [[ ! -f "$PROXY_JSON_FILE" ]]; then
@@ -1712,6 +1789,7 @@ ensure_proxy_json_config() {
 import json, os, sys
 path = "/etc/proxyvt/config.json"
 token = sys.argv[1] if len(sys.argv) > 1 else ""
+legacy_path = os.environ.get("PROXYVT_XRAY_LEGACY_CONFIG") or "/usr/local/etc/xray/config.json"
 default_cfg = {
   "token": token,
   "ports": ["80", "443:ssl"],
@@ -1771,11 +1849,30 @@ default_cfg = {
     "tls_cert": "",
     "tls_key": "",
     "tls_internal": True,
-    "max_sessions": 32,
-    "max_source_sessions": 0,
-    "poll_timeout": 10,
-    "idle": 300,
-    "max_download_frame": 16384
+    "max_sessions": 128,
+    "max_source_sessions": 128,
+    "max_connections": 2048,
+    "poll_timeout": 8,
+    "idle": 120,
+    "max_download_frame": 6144,
+    "max_replay_bytes": 8388608,
+    "session_stats_interval": 10
+  },
+  "xray": {
+    "enable": True,
+    "path": "/vtxray",
+    "protocols": ["vless", "vmess"],
+    "transports": ["ws", "splithttp"],
+    "tls": {
+      "inherit_port": True,
+      "cert_file": "",
+      "key_file": "",
+      "cert_internal": True
+    },
+    "legacy": {
+      "enable": True,
+      "config_file": legacy_path
+    }
   },
   "udpgw": {
     "internal": True,
@@ -1855,11 +1952,30 @@ with open(path, "w", encoding="utf-8") as f:
     "tls_cert": "",
     "tls_key": "",
     "tls_internal": true,
-    "max_sessions": 32,
-    "max_source_sessions": 0,
-    "poll_timeout": 10,
-    "idle": 300,
-    "max_download_frame": 16384
+    "max_sessions": 128,
+    "max_source_sessions": 128,
+    "max_connections": 2048,
+    "poll_timeout": 8,
+    "idle": 120,
+    "max_download_frame": 6144,
+    "max_replay_bytes": 8388608,
+    "session_stats_interval": 10
+  },
+  "xray": {
+    "enable": true,
+    "path": "/vtxray",
+    "protocols": ["vless", "vmess"],
+    "transports": ["ws", "splithttp"],
+    "tls": {
+      "inherit_port": true,
+      "cert_file": "",
+      "key_file": "",
+      "cert_internal": true
+    },
+    "legacy": {
+      "enable": true,
+      "config_file": "${PROXYVT_XRAY_LEGACY_CONFIG:-/usr/local/etc/xray/config.json}"
+    }
   },
   "udpgw": {
     "internal": true,
@@ -1872,7 +1988,7 @@ EOF
 
   if command -v python3 >/dev/null 2>&1 && [[ -f "$PROXY_JSON_FILE" ]]; then
     run_privileged python3 -c '
-import json, sys
+import json, os, sys
 p = "/etc/proxyvt/config.json"
 try:
     with open(p, "r", encoding="utf-8") as f:
@@ -1935,11 +2051,14 @@ try:
         "tls_cert": "",
         "tls_key": "",
         "tls_internal": True,
-        "max_sessions": 32,
-        "max_source_sessions": 0,
-        "poll_timeout": 10,
-        "idle": 300,
-        "max_download_frame": 16384,
+        "max_sessions": 128,
+        "max_source_sessions": 128,
+        "max_connections": 2048,
+        "poll_timeout": 8,
+        "idle": 120,
+        "max_download_frame": 6144,
+        "max_replay_bytes": 8388608,
+        "session_stats_interval": 10,
     }
     if "hcr" not in d or not isinstance(d.get("hcr"), dict):
         d["hcr"] = dict(hcr_defaults)
@@ -1954,17 +2073,87 @@ try:
             h["transport"] = "auto"
             changed = True
         if not isinstance(h.get("max_sessions"), int) or int(h.get("max_sessions") or 0) <= 0:
-            h["max_sessions"] = 32
+            h["max_sessions"] = 128
+            changed = True
+        if "max_source_sessions" not in h:
+            h["max_source_sessions"] = 128
+            changed = True
+        if not isinstance(h.get("max_connections"), int) or int(h.get("max_connections") or 0) <= 0:
+            h["max_connections"] = 2048
             changed = True
         if not isinstance(h.get("poll_timeout"), int) or int(h.get("poll_timeout") or 0) <= 0:
-            h["poll_timeout"] = 10
+            h["poll_timeout"] = 8
             changed = True
         if not isinstance(h.get("idle"), int) or int(h.get("idle") or 0) <= 0:
-            h["idle"] = 300
+            h["idle"] = 120
             changed = True
         if not isinstance(h.get("max_download_frame"), int) or int(h.get("max_download_frame") or 0) <= 0:
-            h["max_download_frame"] = 16384
+            h["max_download_frame"] = 6144
             changed = True
+        if not isinstance(h.get("max_replay_bytes"), int) or int(h.get("max_replay_bytes") or 0) <= 0:
+            h["max_replay_bytes"] = 8388608
+            changed = True
+        if "session_stats_interval" not in h:
+            h["session_stats_interval"] = 10
+            changed = True
+    # Injeta seção xray (VLESS/VMess /vtxray) em JSONs antigos
+    legacy_path = os.environ.get("PROXYVT_XRAY_LEGACY_CONFIG") or "/usr/local/etc/xray/config.json"
+    xray_defaults = {
+        "enable": True,
+        "path": "/vtxray",
+        "protocols": ["vless", "vmess"],
+        "transports": ["ws", "splithttp"],
+        "tls": {
+            "inherit_port": True,
+            "cert_file": "",
+            "key_file": "",
+            "cert_internal": True,
+        },
+        "legacy": {
+            "enable": True,
+            "config_file": legacy_path,
+        },
+    }
+    if "xray" not in d or not isinstance(d.get("xray"), dict):
+        d["xray"] = dict(xray_defaults)
+        changed = True
+    else:
+        x = d["xray"]
+        for k, v in xray_defaults.items():
+            if k not in x:
+                x[k] = v
+                changed = True
+        if not str(x.get("path") or "").strip():
+            x["path"] = "/vtxray"
+            changed = True
+        if not isinstance(x.get("protocols"), list) or not x.get("protocols"):
+            x["protocols"] = ["vless", "vmess"]
+            changed = True
+        if not isinstance(x.get("transports"), list) or not x.get("transports"):
+            x["transports"] = ["ws", "splithttp"]
+            changed = True
+        if "tls" not in x or not isinstance(x.get("tls"), dict):
+            x["tls"] = dict(xray_defaults["tls"])
+            changed = True
+        else:
+            for tk, tv in xray_defaults["tls"].items():
+                if tk not in x["tls"]:
+                    x["tls"][tk] = tv
+                    changed = True
+        if "legacy" not in x or not isinstance(x.get("legacy"), dict):
+            x["legacy"] = dict(xray_defaults["legacy"])
+            changed = True
+        else:
+            if "enable" not in x["legacy"]:
+                x["legacy"]["enable"] = True
+                changed = True
+            current = str(x["legacy"].get("config_file") or "").strip()
+            if not current:
+                x["legacy"]["config_file"] = legacy_path
+                changed = True
+            elif current != legacy_path and current in ("/etc/xray/config.json", "/usr/local/etc/xray/config.json") and os.path.isfile(legacy_path):
+                x["legacy"]["config_file"] = legacy_path
+                changed = True
     # Injeta/força udpgw interno (BadVPN embutido no proxy)
     if "udpgw" not in d or not isinstance(d.get("udpgw"), dict):
         d["udpgw"] = {"internal": True, "port_min": 7100, "port_max": 7900}
@@ -2007,6 +2196,7 @@ migrate_flags_to_json_config() {
 
   log_info "Verificando migração de configurações do proxy para JSON (/etc/proxyvt/config.json)..."
 
+  prepare_xray_legacy_config >/dev/null || true
   run_privileged mkdir -p "$PROXY_JSON_DIR" "$PROXY_LOG_DIR" 2>/dev/null || true
 
   if ! command -v python3 >/dev/null 2>&1; then
@@ -2080,11 +2270,30 @@ config = {
         "tls_cert": "",
         "tls_key": "",
         "tls_internal": True,
-        "max_sessions": 32,
-        "max_source_sessions": 0,
-        "poll_timeout": 10,
-        "idle": 300,
-        "max_download_frame": 16384
+        "max_sessions": 128,
+        "max_source_sessions": 128,
+        "max_connections": 2048,
+        "poll_timeout": 8,
+        "idle": 120,
+        "max_download_frame": 6144,
+        "max_replay_bytes": 8388608,
+        "session_stats_interval": 10
+    },
+    "xray": {
+        "enable": True,
+        "path": "/vtxray",
+        "protocols": ["vless", "vmess"],
+        "transports": ["ws", "splithttp"],
+        "tls": {
+            "inherit_port": True,
+            "cert_file": "",
+            "key_file": "",
+            "cert_internal": True
+        },
+        "legacy": {
+            "enable": True,
+            "config_file": os.environ.get("PROXYVT_XRAY_LEGACY_CONFIG") or "/usr/local/etc/xray/config.json"
+        }
     },
     "udpgw": {
         "internal": True,
@@ -2326,11 +2535,14 @@ hcr_defaults = {
     "tls_cert": "",
     "tls_key": "",
     "tls_internal": True,
-    "max_sessions": 32,
-    "max_source_sessions": 0,
-    "poll_timeout": 10,
-    "idle": 300,
-    "max_download_frame": 16384,
+    "max_sessions": 128,
+    "max_source_sessions": 128,
+    "max_connections": 2048,
+    "poll_timeout": 8,
+    "idle": 120,
+    "max_download_frame": 6144,
+    "max_replay_bytes": 8388608,
+    "session_stats_interval": 10,
 }
 if "hcr" not in config or not isinstance(config.get("hcr"), dict):
     config["hcr"] = dict(hcr_defaults)
@@ -2340,6 +2552,48 @@ else:
             config["hcr"][k] = v
     if not str(config["hcr"].get("transport") or "").strip():
         config["hcr"]["transport"] = "auto"
+
+legacy_path = os.environ.get("PROXYVT_XRAY_LEGACY_CONFIG") or "/usr/local/etc/xray/config.json"
+xray_defaults = {
+    "enable": True,
+    "path": "/vtxray",
+    "protocols": ["vless", "vmess"],
+    "transports": ["ws", "splithttp"],
+    "tls": {
+        "inherit_port": True,
+        "cert_file": "",
+        "key_file": "",
+        "cert_internal": True,
+    },
+    "legacy": {
+        "enable": True,
+        "config_file": legacy_path,
+    },
+}
+if "xray" not in config or not isinstance(config.get("xray"), dict):
+    config["xray"] = dict(xray_defaults)
+else:
+    for k, v in xray_defaults.items():
+        if k not in config["xray"]:
+            config["xray"][k] = v
+    if not str(config["xray"].get("path") or "").strip():
+        config["xray"]["path"] = "/vtxray"
+    if not isinstance(config["xray"].get("protocols"), list) or not config["xray"].get("protocols"):
+        config["xray"]["protocols"] = ["vless", "vmess"]
+    if not isinstance(config["xray"].get("transports"), list) or not config["xray"].get("transports"):
+        config["xray"]["transports"] = ["ws", "splithttp"]
+    if "tls" not in config["xray"] or not isinstance(config["xray"].get("tls"), dict):
+        config["xray"]["tls"] = dict(xray_defaults["tls"])
+    if "legacy" not in config["xray"] or not isinstance(config["xray"].get("legacy"), dict):
+        config["xray"]["legacy"] = dict(xray_defaults["legacy"])
+    else:
+        if "enable" not in config["xray"]["legacy"]:
+            config["xray"]["legacy"]["enable"] = True
+        current = str(config["xray"]["legacy"].get("config_file") or "").strip()
+        if not current:
+            config["xray"]["legacy"]["config_file"] = legacy_path
+        elif current != legacy_path and current in ("/etc/xray/config.json", "/usr/local/etc/xray/config.json") and os.path.isfile(legacy_path):
+            config["xray"]["legacy"]["config_file"] = legacy_path
 
 os.makedirs("/var/log/proxy", exist_ok=True)
 os.makedirs(os.path.dirname(json_path), exist_ok=True)

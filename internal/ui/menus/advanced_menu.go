@@ -38,6 +38,7 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(advMenuItem("8", i18n.T("adv_opt_dnstt"), components.FormatBool(cfg.DNSTT.Enable)), w)
 		components.PrintBoxLine(advMenuItem("9", i18n.T("adv_opt_ztun"), components.FormatBool(cfg.Ztun.Enable)), w)
 		components.PrintBoxLine(advMenuItem("A", i18n.T("adv_opt_hcr"), components.FormatBool(cfg.HCR.Enable)), w)
+		components.PrintBoxLine(advMenuItem("X", i18n.T("adv_opt_xray"), components.FormatBool(cfg.Xray.Enable)), w)
 		components.PrintBoxLine(advMenuItem("V", i18n.T("adv_opt_view_json"), ""), w)
 
 		components.PrintBoxDivider(w)
@@ -67,6 +68,8 @@ func ShowAdvancedMenu(cfgMgr *config.Manager) {
 			showZtunSubmenu(cfgMgr)
 		case "a":
 			showHCRSubmenu(cfgMgr)
+		case "x":
+			showXraySubmenu(cfgMgr)
 		case "v":
 			viewConfigFile(cfgMgr)
 		case "0":
@@ -675,14 +678,19 @@ func showHCRSubmenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(fmt.Sprintf("%s5 • %s: %s%s%s", theme.White, i18n.T("hcr_opt_tls_key"), theme.Cyan, displayOrEmpty(cfg.HCR.TLSKey), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s6 • %s: %s%s%s", theme.White, i18n.T("hcr_opt_target"), theme.Cyan, displayOrEmpty(cfg.HCR.Target), theme.Reset), w)
 		components.PrintBoxLine(fmt.Sprintf("%s7 • %s: %s%d%s", theme.White, i18n.T("hcr_opt_max_sessions"), theme.Cyan, cfg.HCR.MaxSessions, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s8 • %s: %s%d%s", theme.White, i18n.T("hcr_opt_poll_timeout"), theme.Cyan, cfg.HCR.PollTimeout, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s9 • %s: %s%d%s", theme.White, i18n.T("hcr_opt_idle"), theme.Cyan, cfg.HCR.Idle, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s8 • %s: %s%d%s", theme.White, i18n.T("hcr_opt_max_source_sessions"), theme.Cyan, cfg.HCR.MaxSourceSessions, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s9 • %s: %s%d%s", theme.White, i18n.T("hcr_opt_poll_timeout"), theme.Cyan, cfg.HCR.PollTimeout, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s10 • %s: %s%d%s", theme.White, i18n.T("hcr_opt_idle"), theme.Cyan, cfg.HCR.Idle, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s11 • %s: %s%d%s", theme.White, i18n.T("hcr_opt_max_download_frame"), theme.Cyan, cfg.HCR.MaxDownloadFrame, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s12 • %s: %s%d%s", theme.White, i18n.T("hcr_opt_max_connections"), theme.Cyan, cfg.HCR.MaxConnections, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s13 • %s: %s%d%s", theme.White, i18n.T("hcr_opt_max_replay_bytes"), theme.Cyan, cfg.HCR.MaxReplayBytes, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s14 • %s: %s%d%s", theme.White, i18n.T("hcr_opt_session_stats_interval"), theme.Cyan, cfg.HCR.SessionStatsInterval, theme.Reset), w)
 
 		components.PrintBoxDivider(w)
 		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
 		components.PrintBoxFooter(w)
 
-		choice := components.ReadOption("Opção [0-9]")
+		choice := components.ReadOption("Opção [0-14]")
 		switch choice {
 		case "1":
 			applyJSONBoolToggle(cfgMgr, cfg, cfg.HCR.Enable, func(v bool) { cfg.HCR.Enable = v },
@@ -735,6 +743,16 @@ func showHCRSubmenu(cfgMgr *config.Manager) {
 			}
 			components.Pause()
 		case "8":
+			resp := components.Prompt(i18n.T("hcr_opt_max_source_sessions")+" (0=ilimitado)", strconv.Itoa(cfg.HCR.MaxSourceSessions))
+			if val, err := strconv.Atoi(strings.TrimSpace(resp)); err == nil && val >= 0 {
+				cfg.HCR.MaxSourceSessions = val
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess(fmt.Sprintf("hcr.max_source_sessions=%d", val))
+			} else {
+				components.PrintError("Valor inválido.")
+			}
+			components.Pause()
+		case "9":
 			resp := components.Prompt(i18n.T("hcr_opt_poll_timeout"), strconv.Itoa(cfg.HCR.PollTimeout))
 			if val, err := strconv.Atoi(strings.TrimSpace(resp)); err == nil && val > 0 {
 				cfg.HCR.PollTimeout = val
@@ -744,7 +762,7 @@ func showHCRSubmenu(cfgMgr *config.Manager) {
 				components.PrintError("Valor inválido.")
 			}
 			components.Pause()
-		case "9":
+		case "10":
 			resp := components.Prompt(i18n.T("hcr_opt_idle"), strconv.Itoa(cfg.HCR.Idle))
 			if val, err := strconv.Atoi(strings.TrimSpace(resp)); err == nil && val > 0 {
 				cfg.HCR.Idle = val
@@ -754,10 +772,190 @@ func showHCRSubmenu(cfgMgr *config.Manager) {
 				components.PrintError("Valor inválido.")
 			}
 			components.Pause()
+		case "11":
+			resp := components.Prompt(i18n.T("hcr_opt_max_download_frame"), strconv.Itoa(cfg.HCR.MaxDownloadFrame))
+			if val, err := strconv.Atoi(strings.TrimSpace(resp)); err == nil && val > 0 {
+				cfg.HCR.MaxDownloadFrame = val
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess(fmt.Sprintf("hcr.max_download_frame=%d", val))
+			} else {
+				components.PrintError("Valor inválido.")
+			}
+			components.Pause()
+		case "12":
+			resp := components.Prompt(i18n.T("hcr_opt_max_connections"), strconv.Itoa(cfg.HCR.MaxConnections))
+			if val, err := strconv.Atoi(strings.TrimSpace(resp)); err == nil && val > 0 {
+				cfg.HCR.MaxConnections = val
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess(fmt.Sprintf("hcr.max_connections=%d", val))
+			} else {
+				components.PrintError("Valor inválido.")
+			}
+			components.Pause()
+		case "13":
+			resp := components.Prompt(i18n.T("hcr_opt_max_replay_bytes"), strconv.Itoa(cfg.HCR.MaxReplayBytes))
+			if val, err := strconv.Atoi(strings.TrimSpace(resp)); err == nil && val > 0 {
+				cfg.HCR.MaxReplayBytes = val
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess(fmt.Sprintf("hcr.max_replay_bytes=%d", val))
+			} else {
+				components.PrintError("Valor inválido.")
+			}
+			components.Pause()
+		case "14":
+			resp := components.Prompt(i18n.T("hcr_opt_session_stats_interval")+" (0=off)", strconv.Itoa(cfg.HCR.SessionStatsInterval))
+			if val, err := strconv.Atoi(strings.TrimSpace(resp)); err == nil && val >= 0 {
+				cfg.HCR.SessionStatsInterval = val
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess(fmt.Sprintf("hcr.session_stats_interval=%d", val))
+			} else {
+				components.PrintError("Valor inválido.")
+			}
+			components.Pause()
 		case "0":
 			return
 		}
 	}
+}
+
+func showXraySubmenu(cfgMgr *config.Manager) {
+	for {
+		cfg, _ := cfgMgr.Get()
+		cfg.Xray.Normalize()
+
+		w := components.GetBoxWidth()
+		components.ClearScreen()
+		components.PrintBoxHeader(i18n.T("xray_menu_title"), theme.Cyan, w)
+		components.PrintBoxLine(fmt.Sprintf("%s   %s%s", theme.Gray, i18n.T("xray_hint"), theme.Reset), w)
+		components.PrintBoxDivider(w)
+
+		components.PrintBoxLine(fmt.Sprintf("%s1 • %s: %s%s", theme.White, i18n.T("xray_opt_enable"), components.FormatBool(cfg.Xray.Enable), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s2 • %s: %s%s%s", theme.White, i18n.T("xray_opt_path"), theme.Cyan, cfg.Xray.Path, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s3 • %s: %s%s%s", theme.White, i18n.T("xray_opt_protocols"), theme.Cyan, strings.Join(cfg.Xray.Protocols, ","), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s4 • %s: %s%s%s", theme.White, i18n.T("xray_opt_transports"), theme.Cyan, strings.Join(cfg.Xray.Transports, ","), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s5 • %s: %s%s", theme.White, i18n.T("xray_opt_legacy"), components.FormatBool(cfg.Xray.Legacy.Enable), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s6 • %s: %s%s%s", theme.White, i18n.T("xray_opt_legacy_file"), theme.Cyan, displayOrEmpty(cfg.Xray.Legacy.ConfigFile), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("xray_opt_detect"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s8 • %s: %s%s", theme.White, i18n.T("xray_opt_tls_inherit"), components.FormatBool(cfg.Xray.TLS.InheritPort), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s9 • %s: %s%s", theme.White, i18n.T("xray_opt_tls_internal"), components.FormatBool(cfg.Xray.TLS.CertInternal), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s10 • %s: %s%s%s", theme.White, i18n.T("xray_opt_tls_cert"), theme.Cyan, displayOrEmpty(cfg.Xray.TLS.CertFile), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s11 • %s: %s%s%s", theme.White, i18n.T("xray_opt_tls_key"), theme.Cyan, displayOrEmpty(cfg.Xray.TLS.KeyFile), theme.Reset), w)
+
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
+		components.PrintBoxFooter(w)
+
+		choice := components.ReadOption("Opção [0-11]")
+		switch choice {
+		case "1":
+			applyJSONBoolToggle(cfgMgr, cfg, cfg.Xray.Enable, func(v bool) { cfg.Xray.Enable = v },
+				i18n.T("toggle_xray_on"),
+				i18n.T("toggle_xray_off"),
+				"xray.enable")
+		case "2":
+			resp := strings.TrimSpace(components.Prompt(i18n.T("xray_opt_path"), cfg.Xray.Path))
+			if resp != "" {
+				if !strings.HasPrefix(resp, "/") {
+					resp = "/" + resp
+				}
+				cfg.Xray.Path = resp
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess("xray.path atualizado.")
+			}
+			components.Pause()
+		case "3":
+			resp := components.Prompt(i18n.T("xray_opt_protocols")+" (vless,vmess)", strings.Join(cfg.Xray.Protocols, ","))
+			cfg.Xray.Protocols = splitCSV(resp)
+			cfg.Xray.Normalize()
+			_ = cfgMgr.Save(cfg)
+			components.PrintSuccess("xray.protocols atualizado.")
+			components.Pause()
+		case "4":
+			resp := components.Prompt(i18n.T("xray_opt_transports")+" (ws,splithttp)", strings.Join(cfg.Xray.Transports, ","))
+			cfg.Xray.Transports = splitCSV(resp)
+			cfg.Xray.Normalize()
+			_ = cfgMgr.Save(cfg)
+			components.PrintSuccess("xray.transports atualizado.")
+			components.Pause()
+		case "5":
+			applyJSONBoolToggle(cfgMgr, cfg, cfg.Xray.Legacy.Enable, func(v bool) { cfg.Xray.Legacy.Enable = v },
+				i18n.T("toggle_xray_legacy_on"),
+				i18n.T("toggle_xray_legacy_off"),
+				"xray.legacy.enable")
+		case "6":
+			resp := strings.TrimSpace(components.Prompt(i18n.T("xray_opt_legacy_file"), cfg.Xray.Legacy.ConfigFile))
+			if resp != "" {
+				cfg.Xray.Legacy.ConfigFile = resp
+				_ = cfgMgr.Save(cfg)
+				components.PrintSuccess("xray.legacy.config_file atualizado.")
+			}
+			components.Pause()
+		case "7":
+			redetectXrayLegacy(cfgMgr, cfg)
+		case "8":
+			applyJSONBoolToggle(cfgMgr, cfg, cfg.Xray.TLS.InheritPort, func(v bool) { cfg.Xray.TLS.InheritPort = v },
+				i18n.T("toggle_xray_tls_inherit_on"),
+				i18n.T("toggle_xray_tls_inherit_off"),
+				"xray.tls.inherit_port")
+		case "9":
+			applyJSONBoolToggle(cfgMgr, cfg, cfg.Xray.TLS.CertInternal, func(v bool) { cfg.Xray.TLS.CertInternal = v },
+				i18n.T("toggle_xray_tls_internal_on"),
+				i18n.T("toggle_xray_tls_internal_off"),
+				"xray.tls.cert_internal")
+		case "10":
+			resp := strings.TrimSpace(components.Prompt(i18n.T("xray_opt_tls_cert"), cfg.Xray.TLS.CertFile))
+			cfg.Xray.TLS.CertFile = resp
+			_ = cfgMgr.Save(cfg)
+			components.PrintSuccess("xray.tls.cert_file atualizado.")
+			components.Pause()
+		case "11":
+			resp := strings.TrimSpace(components.Prompt(i18n.T("xray_opt_tls_key"), cfg.Xray.TLS.KeyFile))
+			cfg.Xray.TLS.KeyFile = resp
+			_ = cfgMgr.Save(cfg)
+			components.PrintSuccess("xray.tls.key_file atualizado.")
+			components.Pause()
+		case "0":
+			return
+		}
+	}
+}
+
+func redetectXrayLegacy(cfgMgr *config.Manager, cfg *config.Config) {
+	path, found := config.DetectXrayLegacyConfig()
+	if found {
+		cfg.Xray.Legacy.ConfigFile = path
+		cfg.Xray.Legacy.Enable = true
+		_ = cfgMgr.Save(cfg)
+		components.PrintSuccess(fmt.Sprintf("JSON detectado: %s", path))
+		components.Pause()
+		return
+	}
+	path = config.DefaultXrayLegacyConfig
+	if !components.Confirm(fmt.Sprintf(i18n.T("xray_confirm_stub"), path), true) {
+		return
+	}
+	if err := config.EnsureXrayLegacyStub(path); err != nil {
+		components.PrintError(fmt.Sprintf("Falha ao criar stub: %v", err))
+		components.Pause()
+		return
+	}
+	cfg.Xray.Legacy.ConfigFile = path
+	cfg.Xray.Legacy.Enable = true
+	_ = cfgMgr.Save(cfg)
+	components.PrintSuccess(fmt.Sprintf("Stub criado em %s", path))
+	components.Pause()
+}
+
+func splitCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func viewConfigFile(cfgMgr *config.Manager) {
