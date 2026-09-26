@@ -332,7 +332,7 @@ um stub VLESS+WS `/vtxray` (`0.0.0.0:443`, tag `vless-in`) em
 No menu `vt`, **2 Xray → 1 Gerar link** gera um link: **proxy** (vai no
 `@`, VMess `add`) → VLESS ou VMess → TLS ou Direct → porta → **host do
 servidor** (`host=`) → **SNI** só se TLS → no TLS, opcionalmente o **pcs**
-(fingerprint SHA-256 do certificado servido para o SNI, via API). Path e UUID são os
+(fingerprint SHA-256 do certificado do **host do servidor**, via API). Path e UUID são os
 do servidor. Porta fora de `ports` só gera aviso.
 
 ---

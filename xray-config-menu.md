@@ -77,9 +77,9 @@ Exemplo Direct (proxy `104.18.7.41`, host `bhttp.sshproject.com`):
 vless://UUID@104.18.7.41:80?type=ws&security=none&host=bhttp.sshproject.com&path=%2Fvtxray
 ```
 7. **Gerar com pcs? (s/N)** — só no TLS. Se sim, consulta
-   `https://xray.nulled.pp.ua/api/fingerprint?domain=<SNI>` (o cliente
-   valida o certificado servido para o SNI; se faltar, usa host e depois
-   proxy, pulando IPs) e inclui o SHA-256 do certificado: VLESS
+   `https://xray.nulled.pp.ua/api/fingerprint?domain=<host do servidor>`
+   (sempre o host, nunca o proxy nem o SNI; host IP não gera pcs) e inclui
+   o SHA-256 do certificado: VLESS
    `pcs=<hex>`, VMess campo `"pcs"`. Se a API falhar, pergunta se gera
    sem pcs.
 8. Path = `xray.path` (não se digita)

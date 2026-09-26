@@ -286,7 +286,7 @@ var dictPT = map[string]string{
 	"xray_share_pcs_ok":            "pcs: %s",
 	"xray_share_pcs_valid_to":      "válido até",
 	"xray_share_pcs_failed":        "Não foi possível obter o pcs de %s: %v",
-	"xray_share_pcs_no_domain":     "Nenhum domínio disponível para consultar o pcs.",
+	"xray_share_pcs_no_domain":     "O pcs é obtido pelo host do servidor, e ele precisa ser um domínio (não IP).",
 	"xray_share_pcs_continue":      "Gerar o link sem pcs?",
 	"toggle_xray_on":               "Ativar motor Xray?",
 	"toggle_xray_off":              "Desativar motor Xray?",

@@ -242,7 +242,7 @@ func showXrayShareWizard(cfg *config.Config) {
 			return
 		}
 		var ok bool
-		if pcs, ok = askXraySharePCS(sni, host, proxy); !ok {
+		if pcs, ok = askXraySharePCS(host); !ok {
 			return
 		}
 	}
@@ -299,11 +299,11 @@ func showXrayShareWizard(cfg *config.Config) {
 }
 
 // askXraySharePCS returns ok=false when the user aborts after a failed lookup.
-func askXraySharePCS(sni, host, proxy string) (string, bool) {
+func askXraySharePCS(host string) (string, bool) {
 	if !components.Confirm(i18n.T("xray_share_pcs_ask"), false) {
 		return "", true
 	}
-	domain := system.XrayPCSDomain(sni, host, proxy)
+	domain := system.XrayPCSDomain(host)
 	if domain == "" {
 		components.PrintWarning(i18n.T("xray_share_pcs_no_domain"))
 		return "", components.Confirm(i18n.T("xray_share_pcs_continue"), true)

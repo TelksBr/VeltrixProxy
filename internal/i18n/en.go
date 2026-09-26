@@ -286,7 +286,7 @@ var dictEN = map[string]string{
 	"xray_share_pcs_ok":            "pcs: %s",
 	"xray_share_pcs_valid_to":      "valid until",
 	"xray_share_pcs_failed":        "Could not fetch pcs for %s: %v",
-	"xray_share_pcs_no_domain":     "No domain available to fetch the pcs.",
+	"xray_share_pcs_no_domain":     "The pcs is fetched from the server host, which must be a domain (not an IP).",
 	"xray_share_pcs_continue":      "Generate the link without pcs?",
 	"toggle_xray_on":               "Enable Xray engine?",
 	"toggle_xray_off":              "Disable Xray engine?",
