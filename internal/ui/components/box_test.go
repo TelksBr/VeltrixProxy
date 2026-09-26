@@ -16,14 +16,18 @@ func captureOutput(f func()) string {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
+	done := make(chan string)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		done <- buf.String()
+	}()
+
 	f()
 
 	w.Close()
 	os.Stdout = old
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	return buf.String()
+	return <-done
 }
 
 func TestBoxWidthInvariance(t *testing.T) {
@@ -106,25 +110,30 @@ func TestPrintMenuCredits(t *testing.T) {
 
 func TestMainMenuOffsetToDynamicLine(t *testing.T) {
 	for _, w := range []int{42, 50, 54, 62, 70} {
+		menu := []string{
+			"1 • Proxy", "2 • Xray", "3 • DNSTT", "4 • BadVPN / UDPGW", "-",
+			"5 • Usuários", "6 • Token de Licença", "-",
+			"7 • Configurações Avançadas", "8 • Atualizar Sistema", "9 • Idioma", "D • Desinstalar", "-",
+			"0 • Sair",
+		}
+		offset := MainMenuMetricsOffset(len(menu))
 		output := captureOutput(func() {
 			PrintDashboardHeader(w)
-			PrintBoxLine("1 • Menu Proxy", w)
-			PrintBoxLine("2 • Menu BadVPN", w)
-			PrintBoxLine("3 • Gerenciar Tokens", w)
-			PrintBoxLine("4 • Usuários Conectados", w)
-			PrintBoxLine("5 • Atualizar Sistema", w)
-			PrintBoxLine("6 • Mudar Idioma", w)
-			PrintBoxLine("7 • Desinstalar", w)
-			PrintBoxDivider(w)
-			PrintBoxLine("0 • Sair", w)
+			for _, item := range menu {
+				if item == "-" {
+					PrintBoxDivider(w)
+				} else {
+					PrintBoxLine(item, w)
+				}
+			}
 			PrintMenuCredits(w)
 			// Simula o prompt do ReadOption com \n inicial
-			fmt.Printf("\nSelecione uma opção [0-7]: ")
+			fmt.Printf("\nSelecione uma opção [0-9/D]: ")
 		})
 
 		lines := strings.Split(output, "\n")
 		promptIdx := len(lines) - 1
-		targetIdx := promptIdx - MainMenuMetricsOffsetUp
+		targetIdx := promptIdx - offset
 
 		if targetIdx < 0 || targetIdx >= len(lines) {
 			t.Fatalf("Width %d: targetIdx %d out of bounds (total lines=%d)", w, targetIdx, len(lines))
@@ -132,18 +141,17 @@ func TestMainMenuOffsetToDynamicLine(t *testing.T) {
 
 		targetLine := theme.StripANSI(lines[targetIdx])
 		if !strings.Contains(targetLine, "CPU:") || !strings.Contains(targetLine, "RAM:") {
-			t.Errorf("Width %d: Line at offset %d is %q, expected to contain CPU: and RAM:", w, MainMenuMetricsOffsetUp, targetLine)
+			t.Errorf("Width %d: Line at offset %d is %q, expected to contain CPU: and RAM:", w, offset, targetLine)
 		}
 
 		line2 := theme.StripANSI(lines[targetIdx+1])
 		if !strings.Contains(line2, "Proxy VT:") {
-			t.Errorf("Width %d: Line at offset %d is %q, expected to contain Proxy VT:", w, MainMenuMetricsOffsetUp-1, line2)
+			t.Errorf("Width %d: Line at offset %d is %q, expected to contain Proxy VT:", w, offset-1, line2)
 		}
 
 		line3 := theme.StripANSI(lines[targetIdx+2])
 		if !strings.Contains(line3, "BadVPN") {
-			t.Errorf("Width %d: Line at offset %d is %q, expected to contain BadVPN", w, MainMenuMetricsOffsetUp-2, line3)
+			t.Errorf("Width %d: Line at offset %d is %q, expected to contain BadVPN", w, offset-2, line3)
 		}
 	}
 }
-

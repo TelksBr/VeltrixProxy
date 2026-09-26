@@ -29,12 +29,9 @@ func ShowLanguageMenu() {
 	components.PrintBoxLine(fmt.Sprintf("%s2 • English%s%s", theme.White, enBadge, theme.Reset), w)
 	components.PrintBoxLine(fmt.Sprintf("%s3 • Español%s%s", theme.White, esBadge, theme.Reset), w)
 
-	components.PrintBoxDivider(w)
-	components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
-	components.PrintBoxFooter(w)
+	printMenuBack(w)
 
-	choice := components.ReadOption("Opção [0-3]")
-	switch choice {
+	switch readMenuOption("0-3") {
 	case "1":
 		_ = i18n.SetLanguage(i18n.LangPT)
 		components.PrintSuccess("Idioma alterado para Português.")

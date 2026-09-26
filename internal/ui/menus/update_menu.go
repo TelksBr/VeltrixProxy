@@ -60,20 +60,16 @@ func ShowUpdateMenu() {
 		components.PrintBoxLine(fmt.Sprintf("%sℹ %s%s", theme.Gray, i18n.T("update_preserve_notice"), theme.Reset), w)
 		components.PrintBoxDivider(w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • %s%s", theme.White, i18n.T("update_opt_apply"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • %s%s", theme.White, i18n.T("update_opt_check_again"), theme.Reset), w)
+		components.PrintBoxLine(menuItem("1", i18n.T("update_opt_apply"), ""), w)
+		components.PrintBoxLine(menuItem("2", i18n.T("update_opt_check_again"), ""), w)
+		printMenuBack(w)
 
-		components.PrintBoxDivider(w)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
-		components.PrintBoxFooter(w)
-
-		choice := components.ReadOption(i18n.T("prompt_select_option") + " [0-2]")
-		switch choice {
+		switch readMenuOption("0-2") {
 		case "1":
 			runSystemUpdate()
 			return
 		case "2":
-			components.PrintInfo("Consultando últimas versões disponíveis no GitHub...")
+			components.PrintInfo(i18n.T("update_checking"))
 			forceCheck = true
 		case "0", "":
 			return
@@ -101,7 +97,7 @@ func runSystemUpdate() {
 		// Limpa cache de update após atualização
 		_ = os.Remove(system.UpdateCacheFile)
 		components.PrintSuccess(i18n.T("update_success"))
-		components.PrintInfo("Reiniciando menu atualizado...")
+		components.PrintInfo(i18n.T("update_restarting_menu"))
 		time.Sleep(1500 * time.Millisecond)
 
 		vtPath := "/usr/local/bin/vt"

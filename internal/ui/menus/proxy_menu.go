@@ -22,10 +22,8 @@ var cursorControlANSI = regexp.MustCompile(`\x1b\[[0-9;]*[HJKfABCDsu]|\x1b\[[?0-
 // ShowProxyMenu exibe o menu de gerenciamento do ProxyVT
 func ShowProxyMenu(cfgMgr *config.Manager) {
 	for {
-		cfg, err := cfgMgr.Get()
-		if err != nil {
-			components.PrintError(fmt.Sprintf("Erro ao carregar configuração: %v", err))
-			components.Pause()
+		cfg, ok := loadConfigOrWarn(cfgMgr)
+		if !ok {
 			return
 		}
 
@@ -33,187 +31,71 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 		components.ClearScreen()
 		components.PrintBoxHeader(i18n.T("proxy_menu_title"), theme.Cyan, w)
 
-		isProxyActive := system.IsServiceActive(system.ProxyServiceName)
-		proxyBadge := theme.BadgeOffline
-		if isProxyActive {
-			proxyBadge = theme.BadgeOnline
-		}
-
-		// Resumo de Portas
-		var activePortsStr string
+		activePortsStr := i18n.T("proxy_none")
 		if len(cfg.Ports) > 0 {
 			activePortsStr = strings.Join(cfg.Ports, ", ")
-		} else {
-			activePortsStr = "nenhuma"
 		}
-		if cfg.DNSTT.Enable {
-			dnsttPort := cfg.DNSTT.UDP
-			if dnsttPort == "" {
-				dnsttPort = ":53"
-			}
-			activePortsStr += fmt.Sprintf(" │ DNSTT: %s%s%s", theme.Green, dnsttPort, theme.Reset)
-		}
-
-		statusLine := fmt.Sprintf("%sStatus:%s %s %s│ Portas Ativas:%s %s%s%s",
-			theme.Gray, theme.Reset, proxyBadge,
-			theme.DarkGray, theme.Reset, theme.Cyan, activePortsStr, theme.Reset,
+		statusLine := fmt.Sprintf("%s%s:%s %s %s│ %s:%s %s%s%s",
+			theme.Gray, i18n.T("proxy_status"), theme.Reset, serviceBadge(system.IsServiceActive(system.ProxyServiceName)),
+			theme.DarkGray, i18n.T("proxy_ports"), theme.Reset, theme.Cyan, activePortsStr, theme.Reset,
 		)
 		components.PrintBoxLine(statusLine, w)
 		components.PrintBoxDivider(w)
 
-		// Gestão de Portas
-		components.PrintBoxLine(fmt.Sprintf("%s1 • %s%s", theme.White, i18n.T("proxy_opt_add"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • %s%s", theme.White, i18n.T("proxy_opt_remove"), theme.Reset), w)
-
-		dnsttBadge := theme.Red + "[INATIVO]" + theme.Reset
-		if cfg.DNSTT.Enable {
-			dnsttBadge = theme.Green + "[ATIVO]" + theme.Reset
-		}
-		components.PrintBoxLine(fmt.Sprintf("%s3 • %s (%s)%s", theme.White, i18n.T("adv_opt_dnstt"), dnsttBadge, theme.Reset), w)
-
+		components.PrintBoxLine(menuItem("1", i18n.T("proxy_opt_add"), ""), w)
+		components.PrintBoxLine(menuItem("2", i18n.T("proxy_opt_remove"), ""), w)
+		components.PrintBoxLine(menuItem("3", i18n.T("proxy_opt_details"), ""), w)
 		components.PrintBoxDivider(w)
-
-		// Controle do Serviço
-		components.PrintBoxLine(fmt.Sprintf("%s4 • %s%s", theme.White, i18n.T("proxy_opt_start"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s", theme.White, i18n.T("proxy_opt_stop"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s6 • %s%s", theme.White, i18n.T("proxy_opt_restart"), theme.Reset), w)
-
+		components.PrintBoxLine(menuItem("4", i18n.T("proxy_opt_start"), ""), w)
+		components.PrintBoxLine(menuItem("5", i18n.T("proxy_opt_stop"), ""), w)
+		components.PrintBoxLine(menuItem("6", i18n.T("proxy_opt_restart"), ""), w)
 		components.PrintBoxDivider(w)
+		components.PrintBoxLine(menuItem("7", i18n.T("proxy_opt_journal_logs"), ""), w)
+		components.PrintBoxLine(menuItem("8", i18n.T("proxy_opt_file_logs"), ""), w)
+		printMenuBack(w)
 
-		// Configurações & Diagnóstico
-		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("proxy_opt_adv"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s8 • %s%s", theme.White, i18n.T("proxy_opt_http"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s9 • %s%s", theme.White, i18n.T("proxy_opt_details"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%sJ • %s%s", theme.White, i18n.T("proxy_opt_journal_logs"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%sL • %s%s", theme.White, i18n.T("proxy_opt_file_logs"), theme.Reset), w)
-
-		components.PrintBoxDivider(w)
-		backLine := fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("proxy_opt_back"), theme.Reset)
-		components.PrintBoxLine(backLine, w)
-		components.PrintBoxFooter(w)
-
-		choice := strings.ToLower(components.ReadOption(i18n.T("prompt_select_option") + " [0-9/J/L]"))
-		switch choice {
+		switch readMenuOption("0-8") {
 		case "1":
-			portInput := components.Prompt("Digite a porta para adicionar (ex: 80 ou 443:ssl)", "")
-			if portInput != "" {
-				entry, errParse := config.ParsePortEntry(portInput)
-				if errParse != nil {
-					components.PrintError(fmt.Sprintf("Porta inválida: %v", errParse))
-					components.Pause()
-					break
-				}
-
-				inUse, procInfo := system.IsPortInUseByOther("tcp", entry.Port)
-				if inUse {
-					components.PrintWarning(fmt.Sprintf("Atenção: A porta TCP %d já está em uso por '%s'.", entry.Port, procInfo))
-					components.PrintInfo("Adicionar uma porta ocupada por outro serviço pode impedir o serviço proxy de iniciar.")
-					if !components.Confirm("Deseja adicionar a porta mesmo assim?", false) {
-						break
-					}
-				}
-
-				if err := cfgMgr.AddPort(portInput); err == nil {
-					_ = system.RestartService(system.ProxyServiceName)
-					components.PrintSuccess(fmt.Sprintf("Porta %s adicionada e proxy reiniciado.", portInput))
-				} else {
-					components.PrintError(fmt.Sprintf("Erro ao adicionar porta: %v", err))
-				}
-				components.Pause()
-			}
-
+			addPortInteractive(cfgMgr)
 		case "2":
 			removePortInteractive(cfgMgr)
-
-		case "3", "d":
-			ShowDNSTTMenu(cfgMgr)
-
+		case "3":
+			showPortDetails(cfgMgr)
 		case "4":
 			if system.IsServiceActive(system.ProxyServiceName) {
-				components.PrintInfo("O serviço do proxy já está em execução (ONLINE).")
-			} else {
-				conflicts := system.CheckConfiguredPortsConflict(cfg.Ports, cfg.SSH.InternalPort, cfg.DNSTT.Enable, cfg.DNSTT.UDP)
-				if len(conflicts) > 0 {
-					components.PrintWarning("Atenção: Conflito de portas detectado antes da inicialização:")
-					for _, c := range conflicts {
-						fmt.Printf("  • %s\n", c)
-					}
-					fmt.Println()
-					if !components.Confirm("Deseja tentar iniciar o serviço proxy mesmo com portas ocupadas?", false) {
-						components.Pause()
-						break
-					}
-				}
-
+				components.PrintInfo(i18n.T("proxy_already_running"))
+			} else if confirmPortConflicts(cfg, "proxy_confirm_start_conflict") {
 				if err := system.StartService(system.ProxyServiceName); err == nil {
-					components.PrintSuccess("Serviço proxy iniciado com sucesso (ONLINE).")
+					components.PrintSuccess(i18n.T("proxy_started"))
 				} else {
-					components.PrintError(fmt.Sprintf("Falha ao iniciar serviço: %v", err))
+					components.PrintError(i18n.T("proxy_start_failed", err))
 				}
 			}
 			components.Pause()
-
 		case "5":
 			if !system.IsServiceActive(system.ProxyServiceName) {
-				components.PrintInfo("O serviço do proxy já está parado (OFFLINE).")
+				components.PrintInfo(i18n.T("proxy_already_stopped"))
+			} else if err := system.StopService(system.ProxyServiceName); err == nil {
+				components.PrintSuccess(i18n.T("proxy_stopped"))
 			} else {
-				if err := system.StopService(system.ProxyServiceName); err == nil {
-					components.PrintSuccess("Serviço proxy parado com sucesso (OFFLINE).")
-				} else {
-					components.PrintError(fmt.Sprintf("Falha ao parar serviço: %v", err))
-				}
+				components.PrintError(i18n.T("proxy_stop_failed", err))
 			}
 			components.Pause()
-
 		case "6":
-			if !system.IsServiceActive(system.ProxyServiceName) {
-				conflicts := system.CheckConfiguredPortsConflict(cfg.Ports, cfg.SSH.InternalPort, cfg.DNSTT.Enable, cfg.DNSTT.UDP)
-				if len(conflicts) > 0 {
-					components.PrintWarning("Atenção: Conflito de portas detectado antes da inicialização:")
-					for _, c := range conflicts {
-						fmt.Printf("  • %s\n", c)
-					}
-					fmt.Println()
-					if !components.Confirm("Deseja tentar reiniciar o serviço proxy mesmo com portas ocupadas?", false) {
-						components.Pause()
-						break
-					}
+			if system.IsServiceActive(system.ProxyServiceName) || confirmPortConflicts(cfg, "proxy_confirm_restart_conflict") {
+				if err := system.RestartService(system.ProxyServiceName); err == nil {
+					components.PrintSuccess(i18n.T("proxy_restarted"))
+				} else {
+					components.PrintError(i18n.T("proxy_restart_failed", err))
 				}
-			}
-			if err := system.RestartService(system.ProxyServiceName); err == nil {
-				components.PrintSuccess("Serviço proxy reiniciado com sucesso!")
-			} else {
-				components.PrintError(fmt.Sprintf("Falha ao reiniciar: %v", err))
 			}
 			components.Pause()
-
-		case "7":
-			ShowAdvancedMenu(cfgMgr)
-
-		case "8":
-			currentResp := cfg.Response
-			newResp := components.Prompt("Nova resposta HTTP global", currentResp)
-			if newResp != "" && newResp != currentResp {
-				cfg.Response = newResp
-				if err := cfgMgr.Save(cfg); err == nil {
-					_ = system.RestartService(system.ProxyServiceName)
-					components.PrintSuccess(fmt.Sprintf("Resposta HTTP atualizada para '%s'.", newResp))
-				}
-				components.Pause()
-			}
-
-		case "9":
-			showPortDetails(cfgMgr)
-
-		case "j", "10":
+		case "7", "j":
 			handleRealtimeJournalLogs()
-
-		case "l":
+		case "8", "l":
 			showLiveProxyMetricsBanner(cfgMgr)
-
-		case "0":
+		case "0", "":
 			return
-
 		default:
 			components.PrintError(i18n.T("invalid_option"))
 			components.Pause()
@@ -221,31 +103,68 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 	}
 }
 
+// confirmPortConflicts lists busy ports before (re)starting and asks to go on.
+func confirmPortConflicts(cfg *config.Config, confirmKey string) bool {
+	conflicts := system.CheckConfiguredPortsConflict(cfg.Ports, cfg.SSH.InternalPort, cfg.DNSTT.Enable, cfg.DNSTT.UDP)
+	if len(conflicts) == 0 {
+		return true
+	}
+	components.PrintWarning(i18n.T("proxy_conflicts"))
+	for _, c := range conflicts {
+		fmt.Printf("  • %s\n", c)
+	}
+	return components.Confirm(i18n.T(confirmKey), false)
+}
+
+func addPortInteractive(cfgMgr *config.Manager) {
+	portInput := strings.TrimSpace(components.Prompt(i18n.T("proxy_prompt_add_port"), ""))
+	if portInput == "" {
+		return
+	}
+	entry, err := config.ParsePortEntry(portInput)
+	if err != nil {
+		components.PrintError(i18n.T("proxy_invalid_port", err))
+		components.Pause()
+		return
+	}
+	if inUse, procInfo := system.IsPortInUseByOther("tcp", entry.Port); inUse {
+		components.PrintWarning(i18n.T("port_in_use_tcp", entry.Port, procInfo))
+		components.PrintInfo(i18n.T("proxy_port_busy_hint"))
+		if !components.Confirm(i18n.T("confirm_apply_anyway"), false) {
+			return
+		}
+	}
+	if err := cfgMgr.AddPort(portInput); err != nil {
+		components.PrintError(i18n.T("proxy_port_add_failed", err))
+	} else {
+		_ = system.RestartService(system.ProxyServiceName)
+		components.PrintSuccess(i18n.T("proxy_port_added", portInput))
+	}
+	components.Pause()
+}
+
 func removePortInteractive(cfgMgr *config.Manager) {
 	cfg, err := cfgMgr.Get()
 	if err != nil || len(cfg.Ports) == 0 {
-		components.PrintInfo("Nenhuma porta configurada no momento.")
+		components.PrintInfo(i18n.T("proxy_no_ports"))
 		components.Pause()
 		return
 	}
 
 	w := components.GetBoxWidth()
 	components.ClearScreen()
-	components.PrintBoxHeader("REMOVER PORTA DO PROXY", theme.Cyan, w)
+	components.PrintBoxHeader(i18n.T("proxy_remove_title"), theme.Cyan, w)
 
 	for i, p := range cfg.Ports {
 		mode := "HTTP"
 		if strings.HasSuffix(p, ":ssl") {
 			mode = "HTTPS/SSL"
 		}
-		components.PrintBoxLine(fmt.Sprintf("%s%d • Porta %s%s %s(%s)%s", theme.White, i+1, theme.Cyan, p, theme.DarkGray, mode, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s%d • %s %s%s %s(%s)%s", theme.White, i+1, i18n.T("proxy_port_label"), theme.Cyan, p, theme.DarkGray, mode, theme.Reset), w)
 	}
+	printMenuBack(w)
 
-	components.PrintBoxDivider(w)
-	components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset), w)
-	components.PrintBoxFooter(w)
-
-	choice := components.Prompt(fmt.Sprintf("Digite o número da porta para remover [1-%d] ou '0' para cancelar", len(cfg.Ports)), "")
+	choice := components.Prompt(i18n.T("proxy_remove_prompt", len(cfg.Ports)), "")
 	if choice == "" || choice == "0" {
 		return
 	}
@@ -260,9 +179,9 @@ func removePortInteractive(cfgMgr *config.Manager) {
 
 	if err := cfgMgr.RemovePort(targetPort); err == nil {
 		_ = system.RestartService(system.ProxyServiceName)
-		components.PrintSuccess(fmt.Sprintf("Porta %s removida e proxy reiniciado.", targetPort))
+		components.PrintSuccess(i18n.T("proxy_port_removed", targetPort))
 	} else {
-		components.PrintError(fmt.Sprintf("Erro ao remover porta: %v", err))
+		components.PrintError(i18n.T("proxy_port_remove_failed", err))
 	}
 	components.Pause()
 }
@@ -271,64 +190,54 @@ func showPortDetails(cfgMgr *config.Manager) {
 	cfg, _ := cfgMgr.Get()
 	w := components.GetBoxWidth()
 	components.ClearScreen()
-	components.PrintBoxHeader("DETALHES E STATUS DAS PORTAS", theme.Cyan, w)
+	components.PrintBoxHeader(i18n.T("proxy_details_title"), theme.Cyan, w)
 
 	if len(cfg.Ports) == 0 {
-		components.PrintBoxLine(fmt.Sprintf("%sNenhuma porta configurada.%s", theme.DarkGray, theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s%s%s", theme.DarkGray, i18n.T("proxy_no_ports"), theme.Reset), w)
 	} else {
 		for _, p := range cfg.Ports {
-			mode := "HTTP Normal"
+			mode := "HTTP"
 			if strings.HasSuffix(p, ":ssl") {
 				mode = "HTTPS / TLS (SSL)"
 			}
-			components.PrintBoxLine(fmt.Sprintf("Porta %s%s%s: %s | Status: %s", theme.Cyan, p, theme.Reset, mode, theme.BadgeOnline), w)
+			components.PrintBoxLine(fmt.Sprintf("%s %s%s%s: %s", i18n.T("proxy_port_label"), theme.Cyan, p, theme.Reset, mode), w)
 		}
 	}
 
+	detail := func(label, value string) {
+		components.PrintBoxLine(fmt.Sprintf("%s%s:%s %s", theme.Gray, label, theme.Reset, value), w)
+	}
+	withExtra := func(on bool, extra string) string {
+		if on && extra != "" {
+			return featureBadge(true) + " " + valueBadge(extra)
+		}
+		return featureBadge(on)
+	}
+
 	components.PrintBoxDivider(w)
-	components.PrintBoxLine(fmt.Sprintf("Resposta HTTP: %s%s%s", theme.Cyan, cfg.Response, theme.Reset), w)
-	components.PrintBoxLine(fmt.Sprintf("Buffer Size: %s%d bytes%s", theme.Cyan, cfg.BufferSize, theme.Reset), w)
-	components.PrintBoxLine(fmt.Sprintf("SSH Nativo: %s%v%s", theme.Cyan, cfg.SSH.Internal, theme.Reset), w)
+	detail(i18n.T("details_http_response"), valueBadge(cfg.Response))
+	detail("Buffer", valueBadge(fmt.Sprintf("%d bytes", cfg.BufferSize)))
+	detail(i18n.T("details_ssh_native"), featureBadge(cfg.SSH.Internal))
 	if cfg.SSH.Internal {
-		limBadge := theme.Red + "false" + theme.Reset
-		if cfg.Limits.Enable {
-			limBadge = theme.Green + "true" + theme.Reset
-		}
-		components.PrintBoxLine(fmt.Sprintf("Limiter: %s", limBadge), w)
+		detail("Limiter", featureBadge(cfg.Limits.Enable))
 	}
-	components.PrintBoxLine(fmt.Sprintf("BTUN Nativo: %s%v%s", theme.Cyan, cfg.BTUN.Enable, theme.Reset), w)
-	dnsttStatus := theme.Red + "false" + theme.Reset
-	if cfg.DNSTT.Enable {
-		dnsttPort := cfg.DNSTT.UDP
-		if dnsttPort == "" {
-			dnsttPort = ":53"
-		}
-		dnsttStatus = theme.Green + "true" + theme.Reset + fmt.Sprintf(" (%s)", dnsttPort)
+	detail("BTUN", featureBadge(cfg.BTUN.Enable))
+	dnsttPort := cfg.DNSTT.UDP
+	if dnsttPort == "" {
+		dnsttPort = ":53"
 	}
-	components.PrintBoxLine(fmt.Sprintf("DNSTT Nativo: %s", dnsttStatus), w)
-	ztunStatus := theme.Red + "false" + theme.Reset
-	if cfg.Ztun.Enable {
-		ztunStatus = theme.Green + "true" + theme.Reset
-		if strings.TrimSpace(cfg.Ztun.Upstream) != "" {
-			ztunStatus += fmt.Sprintf(" (passthrough %s)", cfg.Ztun.Upstream)
-		}
-	} else if strings.TrimSpace(cfg.Ztun.Upstream) != "" {
-		ztunStatus = theme.Yellow + "passthrough" + theme.Reset + fmt.Sprintf(" (%s)", cfg.Ztun.Upstream)
+	detail("DNSTT", withExtra(cfg.DNSTT.Enable, dnsttPort))
+	ztunStatus := withExtra(cfg.Ztun.Enable, strings.TrimSpace(cfg.Ztun.Upstream))
+	if !cfg.Ztun.Enable && strings.TrimSpace(cfg.Ztun.Upstream) != "" {
+		ztunStatus = theme.Yellow + "passthrough" + theme.Reset + " " + valueBadge(cfg.Ztun.Upstream)
 	}
-	components.PrintBoxLine(fmt.Sprintf("Ztun Binary: %s", ztunStatus), w)
-	hcrStatus := theme.Red + "false" + theme.Reset
-	if cfg.HCR.Enable {
-		hcrStatus = theme.Green + "true" + theme.Reset + fmt.Sprintf(" (%s)", cfg.HCR.Transport)
+	detail("Ztun", ztunStatus)
+	detail("HCR", withExtra(cfg.HCR.Enable, cfg.HCR.Transport))
+	xrayExtra := cfg.Xray.Path
+	if cfg.Xray.Legacy.Enable {
+		xrayExtra += " +legacy"
 	}
-	components.PrintBoxLine(fmt.Sprintf("HCR Relay: %s", hcrStatus), w)
-	xrayStatus := theme.Red + "false" + theme.Reset
-	if cfg.Xray.Enable {
-		xrayStatus = theme.Green + "true" + theme.Reset + fmt.Sprintf(" (%s)", cfg.Xray.Path)
-		if cfg.Xray.Legacy.Enable {
-			xrayStatus += " legacy"
-		}
-	}
-	components.PrintBoxLine(fmt.Sprintf("Xray: %s", xrayStatus), w)
+	detail("Xray", withExtra(cfg.Xray.Enable, xrayExtra))
 
 	components.PrintBoxFooter(w)
 	components.Pause()
@@ -336,18 +245,18 @@ func showPortDetails(cfgMgr *config.Manager) {
 
 func handleRealtimeJournalLogs() {
 	components.ClearScreen()
-	fmt.Printf("%s--- LOGS DO SERVIÇO EM TEMPO REAL (%s via Journalctl) ---%s\n", theme.Cyan, system.ProxyServiceName, theme.Reset)
-	fmt.Printf("%sPressione [Ctrl+C] a qualquer momento para pausar e retornar ao menu.%s\n\n", theme.Yellow, theme.Reset)
+	fmt.Printf("%s--- %s ---%s\n", theme.Cyan, i18n.T("journal_title", system.ProxyServiceName), theme.Reset)
+	fmt.Printf("%s%s%s\n\n", theme.Yellow, i18n.T("journal_hint"), theme.Reset)
 
 	if err := system.StreamServiceJournalLogs(system.ProxyServiceName, 50); err != nil {
-		components.PrintError(fmt.Sprintf("Falha ao acompanhar logs: %v", err))
+		components.PrintError(i18n.T("journal_failed", err))
 		// Fallback para exibição estática caso journalctl em stream não funcione
 		if logs, errStatic := system.GetServiceLogs(system.ProxyServiceName, 50); errStatic == nil && strings.TrimSpace(logs) != "" {
-			fmt.Printf("\n%s--- ÚLTIMAS LINHAS DO JOURNALCTL ---%s\n%s\n", theme.Cyan, theme.Reset, logs)
+			fmt.Printf("\n%s--- %s ---%s\n%s\n", theme.Cyan, i18n.T("journal_last_lines"), theme.Reset, logs)
 		}
 		components.Pause()
 	} else {
-		fmt.Printf("\n%sℹ Acompanhamento de logs encerrado.%s\n", theme.Cyan, theme.Reset)
+		fmt.Printf("\n%sℹ %s%s\n", theme.Cyan, i18n.T("journal_ended"), theme.Reset)
 		time.Sleep(1 * time.Second)
 	}
 }
@@ -437,11 +346,11 @@ func renderLiveBannerFrame(logPath string, isTTY bool) {
 		statusBadge = theme.BadgeOffline
 	}
 
-	title := "VELTRIX PROXY • MÉTRICAS EM TEMPO REAL"
+	title := i18n.T("live_title_long")
 	if boxW < 42 {
-		title = "MÉTRICAS AO VIVO"
+		title = i18n.T("live_title_short")
 	} else if boxW < 56 {
-		title = "VELTRIX • MÉTRICAS AO VIVO"
+		title = i18n.T("live_title_mid")
 	}
 
 	lines := make([]string, 0, 28)
@@ -451,16 +360,16 @@ func renderLiveBannerFrame(logPath string, isTTY bool) {
 		}
 	}
 
-	fileStatus := fmt.Sprintf("Arquivo: %s%s%s", theme.Cyan, logPath, theme.Reset)
-	if theme.VisibleLen(fileStatus)+theme.VisibleLen("  Status: ")+theme.VisibleLen(statusBadge) <= boxW-4 {
-		fileStatus = fmt.Sprintf("%s  Status: %s", fileStatus, statusBadge)
-		lines = append(lines, components.FormatBoxLine(fileStatus, boxW))
+	fileStatus := fmt.Sprintf("%s: %s%s%s", i18n.T("live_file"), theme.Cyan, logPath, theme.Reset)
+	statusPart := fmt.Sprintf("%s: %s", i18n.T("proxy_status"), statusBadge)
+	if theme.VisibleLen(fileStatus)+2+theme.VisibleLen(statusPart) <= boxW-4 {
+		lines = append(lines, components.FormatBoxLine(fileStatus+"  "+statusPart, boxW))
 	} else {
 		lines = append(lines, components.FormatBoxLine(fileStatus, boxW))
-		lines = append(lines, components.FormatBoxLine(fmt.Sprintf("Status: %s", statusBadge), boxW))
+		lines = append(lines, components.FormatBoxLine(statusPart, boxW))
 	}
 
-	hint := fmt.Sprintf("Pressione %s[Enter]%s ou %s[Q]%s para retornar", theme.Yellow, theme.Reset, theme.Yellow, theme.Reset)
+	hint := i18n.T("live_hint", theme.Yellow+"[Enter]"+theme.Reset, theme.Yellow+"[Q]"+theme.Reset)
 	lines = append(lines, components.FormatBoxCenterLine(hint, boxW))
 	lines = append(lines, components.FormatBoxFooter(boxW))
 	lines = append(lines, "")
@@ -468,9 +377,9 @@ func renderLiveBannerFrame(logPath string, isTTY bool) {
 	banner := getLatestProxyBanner(logPath)
 	if banner == "" {
 		if !isProxyActive {
-			lines = append(lines, theme.Yellow+"ℹ Proxy OFFLINE — inicie o serviço."+theme.Reset)
+			lines = append(lines, theme.Yellow+"ℹ "+i18n.T("live_offline")+theme.Reset)
 		} else {
-			lines = append(lines, fmt.Sprintf("%sℹ Aguardando métricas em '%s'...%s", theme.Cyan, logPath, theme.Reset))
+			lines = append(lines, fmt.Sprintf("%sℹ %s%s", theme.Cyan, i18n.T("live_waiting", logPath), theme.Reset))
 		}
 	} else {
 		for _, bl := range strings.Split(sanitizeLiveBanner(banner, maxCols), "\n") {
@@ -624,4 +533,3 @@ func getLatestProxyBanner(logPath string) string {
 
 	return strings.TrimRight(strings.Join(lines, "\n"), "\n ")
 }
-

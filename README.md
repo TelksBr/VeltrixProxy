@@ -51,3 +51,20 @@ vt
 ```
 
 (`main` é symlink para `vt` na instalação padrão.)
+
+Tela inicial:
+
+| Tecla | Menu | Conteúdo |
+|---|---|---|
+| 1 | Proxy | portas, serviço (iniciar/parar/reiniciar), logs e métricas ao vivo |
+| 2 | Xray | gerar link VLESS/VMess, ativar, geral, TLS, JSON legado |
+| 3 | DNSTT | ativar, domínio, chaves, UDP, fallback, upstream, MTU, porta 53 |
+| 4 | BadVPN / UDPGW | motor interno e faixa de portas |
+| 5 | Usuários | conexões online, desconectar, limites e expiração |
+| 6 | Token de Licença | definir e validar |
+| 7 | Configurações Avançadas | protocolos (SSH, BTUN, XHTTP, Ztun, HCR), TLS/SSL, desempenho, HTTP/banner/logs, ver `config.json` |
+| 8 | Atualizar | proxy e menu |
+| 9 | Idioma | PT / EN / ES |
+| D | Desinstalar | remove o VTProxy |
+
+Ao sair de um submenu que alterou o `config.json`, o menu pergunta uma única vez se deve reiniciar o proxy.

@@ -2,7 +2,7 @@ package menus
 
 import (
 	"fmt"
-	"strconv"
+	"strings"
 
 	"github.com/TelksBr/VeltrixProxy/internal/config"
 	"github.com/TelksBr/VeltrixProxy/internal/i18n"
@@ -13,10 +13,8 @@ import (
 // ShowLimitsMenu exibe o submenu de limites e expiração do usuário
 func ShowLimitsMenu(cfgMgr *config.Manager) {
 	for {
-		cfg, err := cfgMgr.Get()
-		if err != nil {
-			components.PrintError(fmt.Sprintf("Erro ao carregar configuração: %v", err))
-			components.Pause()
+		cfg, ok := loadConfigOrWarn(cfgMgr)
+		if !ok {
 			return
 		}
 
@@ -29,66 +27,39 @@ func ShowLimitsMenu(cfgMgr *config.Manager) {
 			components.PrintBoxDivider(w)
 		}
 
-		line1 := fmt.Sprintf("%s1 • %s: %s", theme.White, i18n.T("limits_opt_enable"), components.FormatBool(cfg.Limits.Enable))
-		line2 := fmt.Sprintf("%s2 • %s: %s%d%s (0=ilimitado)", theme.White, i18n.T("limits_opt_default_limit"), theme.Cyan, cfg.Limits.DefaultUserLimit, theme.White)
-		line3 := fmt.Sprintf("%s3 • %s: %s%s%s", theme.White, i18n.T("limits_opt_expire_check"), theme.Cyan, cfg.Limits.ExpireCheckInterval, theme.Reset)
-		line4 := fmt.Sprintf("%s4 • %s: %s%s%s", theme.White, i18n.T("limits_opt_passwd_file"), theme.Cyan, cfg.Limits.PasswdFile, theme.Reset)
-
-		components.PrintBoxLine(line1, w)
-		components.PrintBoxLine(line2, w)
-		components.PrintBoxLine(line3, w)
+		components.PrintBoxLine(menuItem("1", i18n.T("limits_opt_enable"), featureBadge(cfg.Limits.Enable)), w)
+		components.PrintBoxLine(menuItem("2", i18n.T("limits_opt_default_limit"), valueBadge(cfg.Limits.DefaultUserLimit)), w)
+		components.PrintBoxLine(menuItem("3", i18n.T("limits_opt_expire_check"), valueBadge(cfg.Limits.ExpireCheckInterval)), w)
 		components.PrintBoxLine(fmt.Sprintf("%s   %s%s", theme.Gray, i18n.T("limits_reaper_hint"), theme.Reset), w)
-		components.PrintBoxLine(line4, w)
+		components.PrintBoxLine(menuItem("4", i18n.T("limits_opt_passwd_file"), valueBadge(cfg.Limits.PasswdFile)), w)
+		printMenuBack(w)
 
-		components.PrintBoxDivider(w)
-		backLine := fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("back"), theme.Reset)
-		components.PrintBoxLine(backLine, w)
-		components.PrintBoxFooter(w)
-
-		choice := components.ReadOption("Opção [0-4]")
-		switch choice {
+		switch readMenuOption("0-4") {
 		case "1":
 			applyJSONBoolToggle(cfgMgr, cfg, cfg.Limits.Enable, func(v bool) { cfg.Limits.Enable = v },
-				i18n.T("toggle_limits_on"),
-				i18n.T("toggle_limits_off"),
-				"limits.enable")
-
+				i18n.T("toggle_limits_on"), i18n.T("toggle_limits_off"), "limits.enable")
 		case "2":
-			currentVal := strconv.Itoa(cfg.Limits.DefaultUserLimit)
-			resp := components.Prompt("Limite padrão de conexões simultâneas (0=ilimitado)", currentVal)
-			if val, err := strconv.Atoi(resp); err == nil && val >= 0 {
+			if val, ok := promptInt(i18n.T("limits_opt_default_limit"), cfg.Limits.DefaultUserLimit, 0); ok {
 				cfg.Limits.DefaultUserLimit = val
-				if err := cfgMgr.Save(cfg); err == nil {
-					components.PrintSuccess(fmt.Sprintf("default_user_limit atualizado para %d.", val))
-				}
-			} else {
-				components.PrintError("Valor numérico inválido.")
+				saveField(cfgMgr, cfg, "limits.default_user_limit")
 			}
 			components.Pause()
-
 		case "3":
-			resp := components.Prompt(i18n.T("limits_expire_prompt"), cfg.Limits.ExpireCheckInterval)
+			resp := strings.TrimSpace(components.Prompt(i18n.T("limits_expire_prompt"), cfg.Limits.ExpireCheckInterval))
 			if resp != "" {
 				cfg.Limits.ExpireCheckInterval = resp
-				if err := cfgMgr.Save(cfg); err == nil {
-					components.PrintSuccess(fmt.Sprintf("expire_check_interval atualizado para '%s'.", resp))
-				}
+				saveField(cfgMgr, cfg, "limits.expire_check_interval")
 			}
 			components.Pause()
-
 		case "4":
-			resp := components.Prompt("Caminho do arquivo passwd", cfg.Limits.PasswdFile)
+			resp := strings.TrimSpace(components.Prompt(i18n.T("limits_opt_passwd_file"), cfg.Limits.PasswdFile))
 			if resp != "" {
 				cfg.Limits.PasswdFile = resp
-				if err := cfgMgr.Save(cfg); err == nil {
-					components.PrintSuccess(fmt.Sprintf("passwd_file atualizado para '%s'.", resp))
-				}
+				saveField(cfgMgr, cfg, "limits.passwd_file")
 			}
 			components.Pause()
-
-		case "0":
+		case "0", "":
 			return
-
 		default:
 			components.PrintError(i18n.T("invalid_option"))
 			components.Pause()

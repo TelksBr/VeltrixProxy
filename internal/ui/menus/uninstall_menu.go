@@ -51,7 +51,7 @@ func ShowUninstallMenu() {
 	for i, step := range steps {
 		fmt.Printf("%s[%d/%d]%s %s... ", theme.Cyan, i+1, len(steps), theme.Reset, step.Description)
 		if err := step.Action(); err != nil {
-			fmt.Printf("%s[AVISO: %v]%s\n", theme.Yellow, err, theme.Reset)
+			fmt.Printf("%s[%s: %v]%s\n", theme.Yellow, i18n.T("uninstall_step_warn"), err, theme.Reset)
 		} else {
 			fmt.Printf("%s[OK]%s\n", theme.Green, theme.Reset)
 		}
@@ -59,7 +59,7 @@ func ShowUninstallMenu() {
 	}
 
 	fmt.Printf("\n%s✔ %s%s\n\n", theme.Green, i18n.T("uninstall_success"), theme.Reset)
-	fmt.Printf("%sObrigado por utilizar o VeltrixProxy!%s\n\n", theme.Cyan, theme.Reset)
+	fmt.Printf("%s%s%s\n\n", theme.Cyan, i18n.T("exit_message"), theme.Reset)
 	os.Exit(0)
 }
 
@@ -74,4 +74,3 @@ func IsValidUninstallConfirmation(input string) bool {
 		return false
 	}
 }
-

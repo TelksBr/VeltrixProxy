@@ -58,7 +58,7 @@ O `install.sh` e o `Manager.Load` do menu **injetam** a seção `xray`
 (e chaves faltantes) em `config.json` antigos, com os defaults acima.
 `legacy.enable=false` explícito é preservado.
 
-## Gerar link (opção 12)
+## Gerar link (tela inicial → 2 Xray → 1 Gerar link)
 
 Fluxo do wizard:
 

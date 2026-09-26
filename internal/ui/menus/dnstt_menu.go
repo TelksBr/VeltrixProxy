@@ -15,10 +15,8 @@ import (
 // ShowDNSTTMenu gerencia a configuração e ativação do servidor DNS Tunneling (DNSTT)
 func ShowDNSTTMenu(cfgMgr *config.Manager) {
 	for {
-		cfg, err := cfgMgr.Get()
-		if err != nil {
-			components.PrintError(fmt.Sprintf("Erro ao carregar configuração: %v", err))
-			components.Pause()
+		cfg, ok := loadConfigOrWarn(cfgMgr)
+		if !ok {
 			return
 		}
 
@@ -33,83 +31,61 @@ func ShowDNSTTMenu(cfgMgr *config.Manager) {
 			cfg.DNSTT.MTU = 1232
 		}
 
-		// Obtém a chave pública atual se houver chave configurada
-		currentPubkey := ""
-		if cfg.DNSTT.Privkey != "" {
-			if pub, errPub := system.PubkeyFromPrivkeyHex(cfg.DNSTT.Privkey); errPub == nil {
-				currentPubkey = pub
-			}
-		} else if cfg.DNSTT.PrivkeyFile != "" {
-			if privFile, errRead := system.ReadPrivateKeyFromFile(cfg.DNSTT.PrivkeyFile); errRead == nil {
-				if pub, errPub := system.PubkeyFromPrivkeyHex(privFile); errPub == nil {
-					currentPubkey = pub
-				}
-			}
-		}
+		currentPubkey := dnsttCurrentPubkey(cfg)
 
 		w := components.GetBoxWidth()
 		components.ClearScreen()
 		components.PrintBoxHeader(i18n.T("dnstt_menu_title"), theme.Cyan, w)
 
-		// Status Badge
-		statusBadge := theme.BadgeOffline
-		if cfg.DNSTT.Enable {
-			statusBadge = theme.BadgeOnline
-		}
-
 		domainDisplay := cfg.DNSTT.Domain
 		if domainDisplay == "" {
-			domainDisplay = "[Não configurado]"
+			domainDisplay = i18n.T("dnstt_not_configured")
 		}
-
 		pubkeyDisplay := currentPubkey
 		if pubkeyDisplay == "" {
-			pubkeyDisplay = "[Nenhuma chave gerada]"
+			pubkeyDisplay = i18n.T("dnstt_no_key")
 		} else if len(pubkeyDisplay) > 28 {
 			pubkeyDisplay = pubkeyDisplay[:12] + "..." + pubkeyDisplay[len(pubkeyDisplay)-12:]
 		}
-
 		fallbackDisplay := cfg.DNSTT.Fallback
 		if fallbackDisplay == "" {
-			fallbackDisplay = "[Desativado]"
+			fallbackDisplay = i18n.T("dnstt_fallback_off")
 		}
-
 		upstreamDisplay := cfg.DNSTT.Upstream
 		if upstreamDisplay == "" {
-			upstreamDisplay = "[Pipeline Nativo VTProxy]"
+			upstreamDisplay = i18n.T("dnstt_native_pipeline")
 		}
 
-		components.PrintBoxLine(fmt.Sprintf("%s• DNSTT Server:%s %s  │  %sPorta UDP:%s %s%s%s", theme.White, theme.Reset, statusBadge, theme.White, theme.Reset, theme.Cyan, cfg.DNSTT.UDP, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s• Domínio:     %s%s%s", theme.White, theme.Cyan, domainDisplay, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s• Chave Pública:%s %s%s%s", theme.White, theme.Reset, theme.Yellow, pubkeyDisplay, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s• Fallback:    %s%s%s  │  %sMTU:%s %s%d%s", theme.White, theme.Cyan, fallbackDisplay, theme.Reset, theme.White, theme.Reset, theme.Cyan, cfg.DNSTT.MTU, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s• Upstream:    %s%s%s", theme.White, theme.Cyan, upstreamDisplay, theme.Reset), w)
-
+		info := func(label, value string) {
+			components.PrintBoxLine(fmt.Sprintf("%s• %s:%s %s", theme.White, label, theme.Reset, value), w)
+		}
+		info("DNSTT", fmt.Sprintf("%s  %s│ UDP:%s %s", featureBadge(cfg.DNSTT.Enable), theme.DarkGray, theme.Reset, valueBadge(cfg.DNSTT.UDP)))
+		info(i18n.T("dnstt_label_domain"), valueBadge(domainDisplay))
+		info(i18n.T("dnstt_label_pubkey"), theme.Yellow+pubkeyDisplay+theme.Reset)
+		info("Fallback", fmt.Sprintf("%s  %s│ MTU:%s %s", valueBadge(fallbackDisplay), theme.DarkGray, theme.Reset, valueBadge(cfg.DNSTT.MTU)))
+		info("Upstream", valueBadge(upstreamDisplay))
 		components.PrintBoxDivider(w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • %s%s", theme.White, i18n.T("dnstt_opt_toggle"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • %s%s", theme.White, i18n.T("dnstt_opt_domain"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • %s%s", theme.White, i18n.T("dnstt_opt_udp"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s4 • %s%s", theme.White, i18n.T("dnstt_opt_keys"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s5 • %s%s", theme.White, i18n.T("dnstt_opt_fallback"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s6 • %s%s", theme.White, i18n.T("dnstt_opt_upstream"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s7 • %s%s", theme.White, i18n.T("dnstt_opt_mtu"), theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s8 • %s%s", theme.White, i18n.T("dnstt_opt_free_port53"), theme.Reset), w)
-
+		components.PrintBoxLine(menuItem("1", i18n.T("dnstt_opt_toggle"), ""), w)
+		components.PrintBoxLine(menuItem("2", i18n.T("dnstt_opt_domain"), ""), w)
+		components.PrintBoxLine(menuItem("3", i18n.T("dnstt_opt_keys"), ""), w)
 		components.PrintBoxDivider(w)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • %s%s", theme.Red, i18n.T("adv_opt_finish"), theme.Reset), w)
-		components.PrintBoxFooter(w)
+		components.PrintBoxLine(menuItem("4", i18n.T("dnstt_opt_udp"), ""), w)
+		components.PrintBoxLine(menuItem("5", i18n.T("dnstt_opt_fallback"), ""), w)
+		components.PrintBoxLine(menuItem("6", i18n.T("dnstt_opt_upstream"), ""), w)
+		components.PrintBoxLine(menuItem("7", i18n.T("dnstt_opt_mtu"), ""), w)
+		components.PrintBoxLine(menuItem("8", i18n.T("dnstt_opt_free_port53"), ""), w)
+		printMenuBack(w)
 
-		choice := strings.TrimSpace(components.ReadOption("Selecione a opção [0-8]"))
-		switch choice {
+		switch readMenuOption("0-8") {
 		case "1":
 			handleToggleDNSTT(cfgMgr, cfg, currentPubkey)
 		case "2":
 			handleEditDomain(cfgMgr, cfg)
 		case "3":
-			handleEditUDP(cfgMgr, cfg)
-		case "4":
 			handleManageKeys(cfgMgr, cfg)
+		case "4":
+			handleEditUDP(cfgMgr, cfg)
 		case "5":
 			handleEditFallback(cfgMgr, cfg)
 		case "6":
@@ -127,360 +103,275 @@ func ShowDNSTTMenu(cfgMgr *config.Manager) {
 	}
 }
 
+func dnsttCurrentPubkey(cfg *config.Config) string {
+	if cfg.DNSTT.Privkey != "" {
+		if pub, err := system.PubkeyFromPrivkeyHex(cfg.DNSTT.Privkey); err == nil {
+			return pub
+		}
+		return ""
+	}
+	if cfg.DNSTT.PrivkeyFile != "" {
+		if priv, err := system.ReadPrivateKeyFromFile(cfg.DNSTT.PrivkeyFile); err == nil {
+			if pub, err := system.PubkeyFromPrivkeyHex(priv); err == nil {
+				return pub
+			}
+		}
+	}
+	return ""
+}
+
+func dnsttScreenTitle(key string) {
+	components.ClearScreen()
+	fmt.Printf("\n%s=== %s ===%s\n\n", theme.Cyan, i18n.T(key), theme.Reset)
+}
+
+// confirmDNSTTUDPPort warns when the UDP port is busy and, for :53 held by
+// systemd-resolved, offers to free it. Returns whether to proceed.
+func confirmDNSTTUDPPort(port int, confirmKey string) bool {
+	if port <= 0 {
+		return true
+	}
+	inUse, procInfo := system.IsPortInUseByOther("udp", port)
+	if !inUse {
+		return true
+	}
+	components.PrintWarning(i18n.T("port_in_use_udp", port, procInfo))
+	proc := strings.ToLower(procInfo)
+	isResolved := strings.Contains(proc, "resolved") || strings.Contains(proc, "desconhecido")
+	if port == 53 && isResolved && components.Confirm(i18n.T("dnstt_confirm_free53"), true) {
+		err := system.ReleasePort53FromSystemdResolved()
+		if err == nil {
+			components.PrintSuccess(i18n.T("dnstt_port53_freed"))
+			return true
+		}
+		components.PrintError(i18n.T("dnstt_port53_failed", err))
+	}
+	return components.Confirm(i18n.T(confirmKey), false)
+}
+
 func handleToggleDNSTT(cfgMgr *config.Manager, cfg *config.Config, pubkey string) {
-	newStatus, changed := components.ConfirmToggle(
-		i18n.T("toggle_dnstt_on"),
-		i18n.T("toggle_dnstt_off"),
-		cfg.DNSTT.Enable,
-	)
+	newStatus, changed := components.ConfirmToggle(i18n.T("toggle_dnstt_on"), i18n.T("toggle_dnstt_off"), cfg.DNSTT.Enable)
 	if !changed {
 		components.PrintInfo(i18n.T("confirm_no_change", "dnstt.enable", cfg.DNSTT.Enable))
 		components.Pause()
 		return
 	}
 	if newStatus {
-		// Validar se há domínio configurado
 		if strings.TrimSpace(cfg.DNSTT.Domain) == "" {
-			components.PrintWarning("Aviso: Nenhum domínio configurado. O DNSTT requer uma zona NS apontada para esta VPS.")
-			dom := components.Prompt("Digite o domínio do túnel agora (ex: t.seudominio.com)", "")
-			if strings.TrimSpace(dom) != "" {
-				cfg.DNSTT.Domain = strings.TrimSpace(dom)
+			components.PrintWarning(i18n.T("dnstt_warn_no_domain"))
+			if dom := strings.TrimSpace(components.Prompt(i18n.T("dnstt_prompt_domain"), "")); dom != "" {
+				cfg.DNSTT.Domain = dom
 			}
 		}
 
-		// Se não há chaves criadas, gerar par automaticamente
 		if pubkey == "" {
-			components.PrintInfo("Gerando par de chaves Noise Curve25519 automaticamente...")
-			privHex, pubHex, created, err := system.LoadOrCreateDNSTTKeys("", cfg.DNSTT.PrivkeyFile)
+			components.PrintInfo(i18n.T("dnstt_generating_keys"))
+			_, pubHex, created, err := system.LoadOrCreateDNSTTKeys("", cfg.DNSTT.PrivkeyFile)
 			if err != nil {
-				components.PrintError(fmt.Sprintf("Falha ao gerar par de chaves: %v", err))
+				components.PrintError(i18n.T("dnstt_keygen_failed", err))
 				components.Pause()
 				return
 			}
 			if created {
-				components.PrintSuccess(fmt.Sprintf("Chave gerada e salva em %s!", cfg.DNSTT.PrivkeyFile))
-				components.PrintSuccess(fmt.Sprintf("Chave Pública: %s", pubHex))
+				components.PrintSuccess(i18n.T("dnstt_key_saved", cfg.DNSTT.PrivkeyFile))
+				components.PrintSuccess(i18n.T("dnstt_pubkey", pubHex))
 			}
-			_ = privHex
 		}
 
-		// Checagem preventiva de porta UDP (apenas avisa se ocupada por processos externos)
-		udpPort := parsePortFromUDPAddr(cfg.DNSTT.UDP)
-		if udpPort > 0 {
-			inUse, procInfo := system.IsPortInUseByOther("udp", udpPort)
-			if inUse {
-				components.PrintWarning(fmt.Sprintf("Aviso: A porta UDP %d já está em uso por '%s'.", udpPort, procInfo))
-				isResolved := strings.Contains(strings.ToLower(procInfo), "resolved") || strings.Contains(strings.ToLower(procInfo), "desconhecido")
-				if udpPort == 53 && isResolved {
-					if components.Confirm("A porta 53 está ocupada pelo systemd-resolved. Deseja liberar a porta 53 automaticamente desativando o DNSStubListener e liberando no firewall?", true) {
-						if errFree := system.ReleasePort53FromSystemdResolved(); errFree == nil {
-							components.PrintSuccess("Porta 53 UDP liberada com sucesso do systemd-resolved!")
-						} else {
-							components.PrintError(fmt.Sprintf("Falha ao liberar porta 53: %v", errFree))
-							if !components.Confirm("Deseja ativar o DNSTT mesmo assim?", false) {
-								return
-							}
-						}
-					} else if !components.Confirm("Deseja ativar o DNSTT mesmo assim?", false) {
-						return
-					}
-				} else {
-					if !components.Confirm("Deseja ativar o DNSTT mesmo assim?", false) {
-						return
-					}
-				}
-			}
+		if !confirmDNSTTUDPPort(parsePortFromUDPAddr(cfg.DNSTT.UDP), "dnstt_confirm_enable_anyway") {
+			return
 		}
 	}
 
 	cfg.DNSTT.Enable = newStatus
 	if err := cfgMgr.Save(cfg); err != nil {
-		components.PrintError(fmt.Sprintf("Erro ao salvar configuração: %v", err))
+		components.PrintError(i18n.T("save_failed", err))
+	} else if newStatus {
+		components.PrintSuccess(i18n.T("toggle_enabled", "dnstt.enable"))
 	} else {
-		if newStatus {
-			components.PrintSuccess("Servidor DNSTT ATIVADO na configuração.")
-		} else {
-			components.PrintSuccess("Servidor DNSTT DESATIVADO na configuração.")
-		}
-		if system.IsServiceActive(system.ProxyServiceName) {
-			if components.Confirm("Deseja reiniciar o serviço proxy para aplicar a alteração agora?", true) {
-				_ = system.RestartService(system.ProxyServiceName)
-				components.PrintSuccess("Serviço proxy reiniciado.")
-			}
-		}
+		components.PrintSuccess(i18n.T("toggle_disabled", "dnstt.enable"))
 	}
 	components.Pause()
 }
 
 func handleEditDomain(cfgMgr *config.Manager, cfg *config.Config) {
-	components.ClearScreen()
-	fmt.Printf("\n%s=== CONFIGURAR DOMÍNIO DO TÚNEL DNS (DNSTT) ===%s\n\n", theme.Cyan, theme.Reset)
-	fmt.Printf("%sInstrução:%s Configure no seu registrador DNS (ex: Cloudflare):\n", theme.Yellow, theme.Reset)
-	fmt.Printf("1. Registro A:  %sns.seudominio.com%s  -> IP da sua VPS\n", theme.White, theme.Reset)
-	fmt.Printf("2. Registro NS: %st.seudominio.com%s   -> ns.seudominio.com\n\n", theme.White, theme.Reset)
+	dnsttScreenTitle("dnstt_domain_title")
+	fmt.Printf("%s%s%s\n", theme.Yellow, i18n.T("dnstt_domain_instr"), theme.Reset)
+	fmt.Printf("1. A:  %sns.seudominio.com%s  -> %s\n", theme.White, theme.Reset, i18n.T("dnstt_domain_vps_ip"))
+	fmt.Printf("2. NS: %st.seudominio.com%s   -> ns.seudominio.com\n\n", theme.White, theme.Reset)
 
-	newDom := components.Prompt("Domínio do túnel (ex: t.seudominio.com)", cfg.DNSTT.Domain)
+	newDom := strings.TrimSpace(components.Prompt(i18n.T("dnstt_prompt_domain"), cfg.DNSTT.Domain))
 	if newDom != "" && newDom != cfg.DNSTT.Domain {
-		cfg.DNSTT.Domain = strings.TrimSpace(newDom)
-		if err := cfgMgr.Save(cfg); err == nil {
-			components.PrintSuccess(fmt.Sprintf("Domínio atualizado para '%s'.", cfg.DNSTT.Domain))
-			if system.IsServiceActive(system.ProxyServiceName) && cfg.DNSTT.Enable {
-				if components.Confirm("Reiniciar proxy para aplicar novo domínio?", true) {
-					_ = system.RestartService(system.ProxyServiceName)
-				}
-			}
-		} else {
-			components.PrintError(fmt.Sprintf("Erro ao salvar: %v", err))
-		}
+		cfg.DNSTT.Domain = newDom
+		saveField(cfgMgr, cfg, "dnstt.domain")
 		components.Pause()
 	}
 }
 
 func handleEditUDP(cfgMgr *config.Manager, cfg *config.Config) {
-	components.ClearScreen()
-	fmt.Printf("\n%s=== ENDEREÇO / PORTA UDP DE ESCUTA ===%s\n\n", theme.Cyan, theme.Reset)
-	fmt.Printf("%sPadrão:%s :53 (escuta em todas as interfaces na porta 53)\n", theme.Gray, theme.Reset)
-	fmt.Printf("%sOutro exemplo:%s 0.0.0.0:5300\n\n", theme.Gray, theme.Reset)
+	dnsttScreenTitle("dnstt_udp_title")
+	fmt.Printf("%s%s%s\n\n", theme.Gray, i18n.T("dnstt_udp_hint"), theme.Reset)
 
-	newUDP := components.Prompt("Endereço/Porta UDP de escuta", cfg.DNSTT.UDP)
-	clean := strings.TrimSpace(newUDP)
-	if clean != "" && clean != cfg.DNSTT.UDP {
-		port := parsePortFromUDPAddr(clean)
-		if port > 0 {
-			inUse, procInfo := system.IsPortInUseByOther("udp", port)
-			if inUse {
-				components.PrintWarning(fmt.Sprintf("Aviso: A porta UDP %d já está em uso por '%s'.", port, procInfo))
-				isResolved := strings.Contains(strings.ToLower(procInfo), "resolved") || strings.Contains(strings.ToLower(procInfo), "desconhecido")
-				if port == 53 && isResolved {
-					if components.Confirm("Deseja tentar liberar a porta 53 desativando o DNSStubListener do systemd-resolved agora?", true) {
-						if errFree := system.ReleasePort53FromSystemdResolved(); errFree == nil {
-							components.PrintSuccess("Porta 53 UDP liberada com sucesso!")
-						} else {
-							components.PrintError(fmt.Sprintf("Falha ao liberar porta 53: %v", errFree))
-							if !components.Confirm("Deseja aplicar esta porta mesmo assim?", false) {
-								return
-							}
-						}
-					} else if !components.Confirm("Deseja aplicar mesmo assim?", false) {
-						return
-					}
-				} else if !components.Confirm("Deseja aplicar mesmo assim?", false) {
-					return
-				}
-			}
-		}
-		cfg.DNSTT.UDP = clean
-		if err := cfgMgr.Save(cfg); err == nil {
-			components.PrintSuccess(fmt.Sprintf("Endereço UDP atualizado para '%s'.", clean))
-			if system.IsServiceActive(system.ProxyServiceName) && cfg.DNSTT.Enable {
-				if components.Confirm("Reiniciar proxy para aplicar novo listener UDP?", true) {
-					_ = system.RestartService(system.ProxyServiceName)
-				}
-			}
-		}
-		components.Pause()
+	clean := strings.TrimSpace(components.Prompt(i18n.T("dnstt_prompt_udp"), cfg.DNSTT.UDP))
+	if clean == "" || clean == cfg.DNSTT.UDP {
+		return
 	}
+	if !confirmDNSTTUDPPort(parsePortFromUDPAddr(clean), "confirm_apply_anyway") {
+		return
+	}
+	cfg.DNSTT.UDP = clean
+	saveField(cfgMgr, cfg, "dnstt.udp")
+	components.Pause()
 }
 
 func handleFreePort53() {
-	components.ClearScreen()
-	fmt.Printf("\n%s=== LIBERAR PORTA 53 UDP (SYSTEMD-RESOLVED & FIREWALL) ===%s\n\n", theme.Cyan, theme.Reset)
-	fmt.Printf("%sAção que será executada no sistema:%s\n", theme.Yellow, theme.Reset)
-	fmt.Println("1. Configurar 'DNSStubListener=no' em /etc/systemd/resolved.conf")
-	fmt.Println("2. Reiniciar o serviço systemd-resolved")
-	fmt.Println("3. Atualizar link simbólico de /etc/resolv.conf para o resolvedor upstream")
-	fmt.Println("4. Liberar a porta 53/udp no firewall (UFW e iptables)")
+	dnsttScreenTitle("dnstt_free53_title")
+	fmt.Printf("%s%s%s\n", theme.Yellow, i18n.T("dnstt_free53_actions"), theme.Reset)
+	fmt.Println(i18n.T("dnstt_free53_steps"))
 	fmt.Println()
 
-	inUse, proc := system.IsPortInUseByOther("udp", 53)
-	if !inUse {
-		components.PrintSuccess("A porta UDP 53 já está livre de processos conflitantes no sistema.")
-		if !components.Confirm("Deseja aplicar as configurações de firewall e systemd-resolved mesmo assim?", true) {
+	if inUse, proc := system.IsPortInUseByOther("udp", 53); !inUse {
+		components.PrintSuccess(i18n.T("dnstt_free53_already_free"))
+		if !components.Confirm(i18n.T("dnstt_free53_confirm_anyway"), true) {
 			return
 		}
 	} else {
-		fmt.Printf("Status atual: %sPorta 53 em uso por '%s'%s\n\n", theme.Yellow, proc, theme.Reset)
-		if !components.Confirm("Deseja prosseguir com a liberação automática?", true) {
+		fmt.Printf("%s%s%s\n\n", theme.Yellow, i18n.T("port_in_use_udp", 53, proc), theme.Reset)
+		if !components.Confirm(i18n.T("dnstt_free53_confirm"), true) {
 			return
 		}
 	}
 
-	components.PrintInfo("Aplicando configurações no systemd-resolved e firewall...")
+	components.PrintInfo(i18n.T("dnstt_free53_applying"))
 	if err := system.ReleasePort53FromSystemdResolved(); err != nil {
-		components.PrintError(fmt.Sprintf("Erro ao liberar porta 53: %v", err))
+		components.PrintError(i18n.T("dnstt_port53_failed", err))
 	} else {
-		components.PrintSuccess("Porta 53 UDP liberada com sucesso! O DNSTT agora pode escutar na porta :53.")
+		components.PrintSuccess(i18n.T("dnstt_free53_done"))
 	}
 	components.Pause()
 }
 
 func handleManageKeys(cfgMgr *config.Manager, cfg *config.Config) {
 	for {
-		// Carrega par de chaves ativo
 		privHex, pubHex, _, _ := system.LoadOrCreateDNSTTKeys(cfg.DNSTT.Privkey, cfg.DNSTT.PrivkeyFile)
 
 		w := components.GetBoxWidth()
 		components.ClearScreen()
-		components.PrintBoxHeader("GERENCIAMENTO DE CHAVES CRIPTOGRÁFICAS (DNSTT)", theme.Cyan, w)
-
-		components.PrintBoxLine(fmt.Sprintf("%sProtocolo: Noise_NK_25519_ChaChaPoly_BLAKE2s (Curve25519)%s", theme.Gray, theme.Reset), w)
+		components.PrintBoxHeader(i18n.T("dnstt_keys_title"), theme.Cyan, w)
+		components.PrintBoxLine(fmt.Sprintf("%sNoise_NK_25519_ChaChaPoly_BLAKE2s (Curve25519)%s", theme.Gray, theme.Reset), w)
 		components.PrintBoxDivider(w)
 
 		if pubHex != "" {
-			components.PrintBoxLine(fmt.Sprintf("%sCHAVE PÚBLICA (UTILIZADA NOS APLICATIVOS CLIENTES):%s", theme.Green, theme.Reset), w)
+			components.PrintBoxLine(fmt.Sprintf("%s%s%s", theme.Green, i18n.T("dnstt_keys_pub_header"), theme.Reset), w)
 			components.PrintBoxLine(fmt.Sprintf("%s%s%s", theme.Yellow, pubHex, theme.Reset), w)
 			components.PrintBoxDivider(w)
 
 			fileInfo := cfg.DNSTT.PrivkeyFile
 			if fileInfo == "" {
-				fileInfo = "[Configurado diretamente no config.json]"
+				fileInfo = i18n.T("dnstt_keys_in_json")
 			}
-			components.PrintBoxLine(fmt.Sprintf("Arquivo Privkey: %s%s%s", theme.Cyan, fileInfo, theme.Reset), w)
+			components.PrintBoxLine(fmt.Sprintf("privkey_file: %s", valueBadge(fileInfo)), w)
 
-			maskedPriv := "[Oculta]"
+			maskedPriv := i18n.T("dnstt_keys_hidden")
 			if len(privHex) >= 8 {
 				maskedPriv = privHex[:4] + "..." + privHex[len(privHex)-4:]
 			}
-			components.PrintBoxLine(fmt.Sprintf("Chave Privada:   %s%s%s", theme.DarkGray, maskedPriv, theme.Reset), w)
+			components.PrintBoxLine(fmt.Sprintf("privkey:      %s%s%s", theme.DarkGray, maskedPriv, theme.Reset), w)
 		} else {
-			components.PrintBoxLine(fmt.Sprintf("%sNenhum par de chaves ativo no momento.%s", theme.Red, theme.Reset), w)
+			components.PrintBoxLine(fmt.Sprintf("%s%s%s", theme.Red, i18n.T("dnstt_keys_none"), theme.Reset), w)
 		}
 
 		components.PrintBoxDivider(w)
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Gerar Novo Par de Chaves (Gera nova Chave Pública & Privada)%s", theme.White, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Alterar Caminho do Arquivo de Chave (privkey_file)%s", theme.White, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s3 • Definir Chave Privada Hex Manualmente (privkey)%s", theme.White, theme.Reset), w)
-		components.PrintBoxDivider(w)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • Voltar ao Menu DNSTT%s", theme.Red, theme.Reset), w)
-		components.PrintBoxFooter(w)
+		components.PrintBoxLine(menuItem("1", i18n.T("dnstt_keys_opt_generate"), ""), w)
+		components.PrintBoxLine(menuItem("2", i18n.T("dnstt_keys_opt_file"), ""), w)
+		components.PrintBoxLine(menuItem("3", i18n.T("dnstt_keys_opt_manual"), ""), w)
+		printMenuBack(w)
 
-		choice := strings.TrimSpace(components.ReadOption("Selecione a opção [0-3]"))
-		switch choice {
+		switch readMenuOption("0-3") {
 		case "1":
-			if pubHex != "" {
-				if !components.Confirm("ATENÇÃO: Gerar uma nova chave tornará inválidas as configurações anteriores dos clientes. Continuar?", false) {
-					continue
-				}
+			if pubHex != "" && !components.Confirm(i18n.T("dnstt_keys_confirm_regen"), false) {
+				continue
 			}
 			newPriv, newPub, err := system.GenerateDNSTTKeypair()
 			if err != nil {
-				components.PrintError(fmt.Sprintf("Falha ao gerar chave: %v", err))
+				components.PrintError(i18n.T("dnstt_keygen_failed", err))
 				components.Pause()
 				continue
 			}
-
 			keyFile := cfg.DNSTT.PrivkeyFile
 			if keyFile == "" {
 				keyFile = system.DefaultDNSTTKeyFile
 				cfg.DNSTT.PrivkeyFile = keyFile
 			}
-
 			if err := system.SavePrivateKeyToFile(newPriv, keyFile); err != nil {
-				components.PrintWarning(fmt.Sprintf("Aviso ao salvar arquivo (%v). Salvando chave diretamente no config.json...", err))
+				components.PrintWarning(i18n.T("dnstt_keys_save_warn", err))
 				cfg.DNSTT.Privkey = newPriv
 			} else {
-				cfg.DNSTT.Privkey = "" // Mantém em arquivo
+				cfg.DNSTT.Privkey = ""
 			}
-
-			if err := cfgMgr.Save(cfg); err == nil {
-				components.PrintSuccess("Novo par de chaves Curve25519 gerado com sucesso!")
-				fmt.Printf("\n%sNova Chave Pública para Clientes:%s\n%s%s%s\n\n", theme.Green, theme.Reset, theme.Yellow, newPub, theme.Reset)
-				if system.IsServiceActive(system.ProxyServiceName) && cfg.DNSTT.Enable {
-					if components.Confirm("Reiniciar o proxy para carregar a nova chave?", true) {
-						_ = system.RestartService(system.ProxyServiceName)
-					}
-				}
+			if err := cfgMgr.Save(cfg); err != nil {
+				components.PrintError(i18n.T("save_failed", err))
+			} else {
+				components.PrintSuccess(i18n.T("dnstt_keys_generated"))
+				fmt.Printf("\n%s%s%s\n%s%s%s\n\n", theme.Green, i18n.T("dnstt_keys_new_pub"), theme.Reset, theme.Yellow, newPub, theme.Reset)
 			}
 			components.Pause()
-
 		case "2":
-			newFile := components.Prompt("Novo caminho do arquivo de chave privada", cfg.DNSTT.PrivkeyFile)
+			newFile := strings.TrimSpace(components.Prompt(i18n.T("dnstt_keys_opt_file"), cfg.DNSTT.PrivkeyFile))
 			if newFile != "" && newFile != cfg.DNSTT.PrivkeyFile {
-				cfg.DNSTT.PrivkeyFile = strings.TrimSpace(newFile)
-				_ = cfgMgr.Save(cfg)
-				components.PrintSuccess("Caminho privkey_file atualizado.")
+				cfg.DNSTT.PrivkeyFile = newFile
+				saveField(cfgMgr, cfg, "dnstt.privkey_file")
 				components.Pause()
 			}
-
 		case "3":
-			newPriv := components.Prompt("Digite a chave privada Curve25519 (64 caracteres hex)", "")
-			cleanPriv := strings.TrimSpace(newPriv)
+			cleanPriv := strings.TrimSpace(components.Prompt(i18n.T("dnstt_keys_prompt_manual"), ""))
 			if cleanPriv != "" {
-				pub, err := system.PubkeyFromPrivkeyHex(cleanPriv)
-				if err != nil {
-					components.PrintError(fmt.Sprintf("Chave privada inválida: %v", err))
+				if pub, err := system.PubkeyFromPrivkeyHex(cleanPriv); err != nil {
+					components.PrintError(i18n.T("dnstt_keys_invalid", err))
 				} else {
 					cfg.DNSTT.Privkey = cleanPriv
-					_ = cfgMgr.Save(cfg)
-					components.PrintSuccess(fmt.Sprintf("Chave privada salva! Chave pública derivada: %s", pub))
+					saveField(cfgMgr, cfg, "dnstt.privkey")
+					components.PrintInfo(i18n.T("dnstt_pubkey", pub))
 				}
 				components.Pause()
 			}
-
 		case "0", "":
 			return
+		default:
+			components.PrintError(i18n.T("invalid_option"))
+			components.Pause()
 		}
 	}
 }
 
 func handleEditFallback(cfgMgr *config.Manager, cfg *config.Config) {
-	components.ClearScreen()
-	fmt.Printf("\n%s=== CONFIGURAR FALLBACK UDP ===%s\n\n", theme.Cyan, theme.Reset)
-	fmt.Printf("%sDescrição:%s Endereço UDP para onde pacotes que NÃO sejam consultas DNS do túnel\n", theme.Gray, theme.Reset)
-	fmt.Printf("são encaminhados automaticamente (ex: um servidor DNS real ou outro serviço UDP local).\n")
-	fmt.Printf("Exemplo: %s127.0.0.1:8888%s ou vazio para desativar.\n\n", theme.White, theme.Reset)
+	dnsttScreenTitle("dnstt_fallback_title")
+	fmt.Printf("%s%s%s\n\n", theme.Gray, i18n.T("dnstt_fallback_desc"), theme.Reset)
 
-	newFallback := components.Prompt("Endereço UDP de fallback (vazio para desativar)", cfg.DNSTT.Fallback)
-	cfg.DNSTT.Fallback = strings.TrimSpace(newFallback)
-	if err := cfgMgr.Save(cfg); err == nil {
-		components.PrintSuccess("Configuração de fallback atualizada.")
-		if system.IsServiceActive(system.ProxyServiceName) && cfg.DNSTT.Enable {
-			if components.Confirm("Reiniciar proxy para aplicar alteração de fallback?", true) {
-				_ = system.RestartService(system.ProxyServiceName)
-			}
-		}
-	}
+	cfg.DNSTT.Fallback = strings.TrimSpace(components.Prompt(i18n.T("dnstt_prompt_fallback"), cfg.DNSTT.Fallback))
+	saveField(cfgMgr, cfg, "dnstt.fallback")
 	components.Pause()
 }
 
 func handleEditUpstream(cfgMgr *config.Manager, cfg *config.Config) {
-	components.ClearScreen()
-	fmt.Printf("\n%s=== CONFIGURAR UPSTREAM TCP ===%s\n\n", theme.Cyan, theme.Reset)
-	fmt.Printf("%sDescrição:%s Endereço TCP para onde o túnel DNSTT despacha conexões.\n", theme.Gray, theme.Reset)
-	fmt.Printf("Se deixado vazio, utiliza o pipeline em memória nativo do VTProxy (recomendado).\n")
-	fmt.Printf("Exemplo: %s127.0.0.1:22%s (para despachar diretamente para OpenSSH).\n\n", theme.White, theme.Reset)
+	dnsttScreenTitle("dnstt_upstream_title")
+	fmt.Printf("%s%s%s\n\n", theme.Gray, i18n.T("dnstt_upstream_desc"), theme.Reset)
 
-	newUpstream := components.Prompt("Endereço TCP de upstream (vazio = pipeline interno)", cfg.DNSTT.Upstream)
-	cfg.DNSTT.Upstream = strings.TrimSpace(newUpstream)
-	if err := cfgMgr.Save(cfg); err == nil {
-		components.PrintSuccess("Configuração de upstream atualizada.")
-		if system.IsServiceActive(system.ProxyServiceName) && cfg.DNSTT.Enable {
-			if components.Confirm("Reiniciar proxy para aplicar alteração de upstream?", true) {
-				_ = system.RestartService(system.ProxyServiceName)
-			}
-		}
-	}
+	cfg.DNSTT.Upstream = strings.TrimSpace(components.Prompt(i18n.T("dnstt_prompt_upstream"), cfg.DNSTT.Upstream))
+	saveField(cfgMgr, cfg, "dnstt.upstream")
 	components.Pause()
 }
 
 func handleEditMTU(cfgMgr *config.Manager, cfg *config.Config) {
-	components.ClearScreen()
-	fmt.Printf("\n%s=== CONFIGURAR MTU DO TÚNEL DNS ===%s\n\n", theme.Cyan, theme.Reset)
-	fmt.Printf("%sPadrão recomendado:%s 1232 (valor padrão DNS EDNS0 seguro para evitar fragmentação UDP)\n\n", theme.Gray, theme.Reset)
+	dnsttScreenTitle("dnstt_mtu_title")
+	fmt.Printf("%s%s%s\n\n", theme.Gray, i18n.T("dnstt_mtu_desc"), theme.Reset)
 
-	resp := components.Prompt("Tamanho do MTU DNS (512 a 4096)", strconv.Itoa(cfg.DNSTT.MTU))
+	resp := components.Prompt(i18n.T("dnstt_prompt_mtu"), strconv.Itoa(cfg.DNSTT.MTU))
 	if val, err := strconv.Atoi(strings.TrimSpace(resp)); err == nil && val >= 512 && val <= 4096 {
 		cfg.DNSTT.MTU = val
-		if err := cfgMgr.Save(cfg); err == nil {
-			components.PrintSuccess(fmt.Sprintf("MTU atualizado para %d bytes.", val))
-			if system.IsServiceActive(system.ProxyServiceName) && cfg.DNSTT.Enable {
-				if components.Confirm("Reiniciar proxy para aplicar novo MTU?", true) {
-					_ = system.RestartService(system.ProxyServiceName)
-				}
-			}
-		}
+		saveField(cfgMgr, cfg, "dnstt.mtu")
 	} else {
-		components.PrintError("Valor de MTU inválido. Deve ser entre 512 e 4096.")
+		components.PrintError(i18n.T("dnstt_mtu_invalid"))
 	}
 	components.Pause()
 }

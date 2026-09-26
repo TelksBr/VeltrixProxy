@@ -59,10 +59,16 @@ func TestConfirmHintFollowsLanguage(t *testing.T) {
 }
 
 func TestFormatBool(t *testing.T) {
-	if !strings.Contains(FormatBool(true), "true") {
-		t.Fatalf("FormatBool(true) deve conter 'true': %q", FormatBool(true))
+	_ = i18n.SetLanguage(i18n.LangPT)
+	if !strings.Contains(FormatBool(true), "[ATIVO]") {
+		t.Fatalf("FormatBool(true) deve conter '[ATIVO]': %q", FormatBool(true))
 	}
-	if !strings.Contains(FormatBool(false), "false") {
-		t.Fatalf("FormatBool(false) deve conter 'false': %q", FormatBool(false))
+	if !strings.Contains(FormatBool(false), "[INATIVO]") {
+		t.Fatalf("FormatBool(false) deve conter '[INATIVO]': %q", FormatBool(false))
 	}
+	_ = i18n.SetLanguage(i18n.LangEN)
+	if !strings.Contains(FormatBool(true), "[ACTIVE]") {
+		t.Fatalf("FormatBool(true) EN: %q", FormatBool(true))
+	}
+	_ = i18n.SetLanguage(i18n.LangPT)
 }

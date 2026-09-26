@@ -70,19 +70,12 @@ func Confirm(question string, defaultYes bool) bool {
 	return parseConfirmAnswer(input, defaultYes)
 }
 
-// FormatBool colorize true/false para menus de configuração.
+// FormatBool renders a config flag as the translated [ATIVO]/[INATIVO] badge.
 func FormatBool(v bool) string {
 	if v {
-		return theme.Green + "true" + theme.Reset
+		return theme.Green + "[" + i18n.T("status_active") + "]" + theme.Reset
 	}
-	return theme.Red + "false" + theme.Reset
-}
-
-func boolStateLabel(v bool) string {
-	if v {
-		return i18n.T("confirm_state_on")
-	}
-	return i18n.T("confirm_state_off")
+	return theme.Red + "[" + i18n.T("status_inactive") + "]" + theme.Reset
 }
 
 // ConfirmToggle pergunta "ativar" se estiver off e "desativar" se estiver on.
@@ -93,7 +86,7 @@ func ConfirmToggle(enableQuestion, disableQuestion string, current bool) (newVal
 		question = disableQuestion
 	}
 
-	fmt.Printf("\n%s%s: %s%s (%s)%s\n", theme.White, i18n.T("confirm_state_current"), FormatBool(current), theme.White, boolStateLabel(current), theme.Reset)
+	fmt.Printf("\n%s%s: %s%s\n", theme.White, i18n.T("confirm_state_current"), FormatBool(current), theme.Reset)
 	if !Confirm(question, false) {
 		return current, false
 	}

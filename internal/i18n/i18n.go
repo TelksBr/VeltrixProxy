@@ -79,23 +79,30 @@ func CurrentLanguage() Language {
 	return currentLang
 }
 
+func dictFor(lang Language) map[string]string {
+	switch lang {
+	case LangEN:
+		return dictEN
+	case LangES:
+		return dictES
+	default:
+		return dictPT
+	}
+}
+
+// Has reports whether key is translated in lang (without the PT fallback).
+func Has(lang Language, key string) bool {
+	_, ok := dictFor(lang)[key]
+	return ok
+}
+
 // T retorna a tradução para a chave no idioma atual
 func T(key string, args ...interface{}) string {
 	mu.RLock()
 	lang := currentLang
 	mu.RUnlock()
 
-	var dict map[string]string
-	switch lang {
-	case LangEN:
-		dict = dictEN
-	case LangES:
-		dict = dictES
-	default:
-		dict = dictPT
-	}
-
-	val, ok := dict[key]
+	val, ok := dictFor(lang)[key]
 	if !ok {
 		// Fallback para português
 		val, ok = dictPT[key]

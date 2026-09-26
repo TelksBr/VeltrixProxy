@@ -414,38 +414,23 @@ func PrintInfo(msg string) {
 	fmt.Printf("\n%sℹ%s %s%s%s\n", theme.Cyan, theme.Reset, theme.Gray, msg, theme.Reset)
 }
 
-// MainMenuMetricsOffsetUp define a quantidade exata de linhas que o cursor precisa subir
-// a partir do prompt de seleção para alcançar a primeira linha dinâmica (CPU/RAM).
-//
-// Detalhamento das 17 linhas a partir da linha do prompt:
-//  1: Linha em branco (\n inicial do prompt em ReadOption)
-//  2: Borda inferior da caixa (PrintBoxFooter de PrintMenuCredits)
-//  3: Linha de créditos (PrintBoxCenterLine de PrintMenuCredits)
-//  4: Divisória de créditos (PrintBoxDivider de PrintMenuCredits)
-//  5: Opção 0 • Sair do Menu
-//  6: Divisória intermediária antes da opção 0
-//  7: Opção 7 • Desinstalar / Remover VTProxy
-//  8: Opção 6 • Mudar Idioma (Change Language)
-//  9: Opção 5 • Atualizar Sistema & Binários
-// 10: Opção 4 • Usuários Conectados (Online)
-// 11: Opção 3 • Gerenciar Tokens de Licença
-// 12: Opção 2 • Menu BadVPN / UDPGW
-// 13: Opção 1 • Menu Proxy (Portas & JSON)
-// 14: Divisória inferior do cabeçalho do Dashboard
-// 15: Linha Dinâmica 3 (BadVPN / UDPGW & Portas)
-// 16: Linha Dinâmica 2 (Proxy VT & Online)
-// 17: Linha Dinâmica 1 (CPU & RAM)  <-- Posição alvo exata
-const MainMenuMetricsOffsetUp = 17
+// MainMenuMetricsOffset returns how many lines the cursor must go up from the
+// selection prompt to reach the first dynamic dashboard line (CPU/RAM).
+// menuLines counts every box line printed between PrintDashboardHeader and
+// PrintMenuCredits (options and dividers). The fixed 8 lines are: prompt blank
+// line, credits footer, credits line, credits divider, dashboard divider and
+// the three dynamic lines (UDPGW, Proxy, CPU/RAM).
+func MainMenuMetricsOffset(menuLines int) int {
+	return menuLines + 8
+}
 
 // UpdateDashboardMetrics atualiza no terminal apenas os valores dinâmicos (CPU, RAM, Online, Status) sem piscar a tela
-func UpdateDashboardMetrics(width int, offsetUp ...int) {
+func UpdateDashboardMetrics(width int, linesUp int) {
 	if width <= 0 {
 		width = GetBoxWidth()
 	}
-
-	linesUp := MainMenuMetricsOffsetUp
-	if len(offsetUp) > 0 && offsetUp[0] > 0 {
-		linesUp = offsetUp[0]
+	if linesUp <= 0 {
+		return
 	}
 
 	cpuUsage := system.GetCPUUsage()

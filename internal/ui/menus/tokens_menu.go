@@ -2,11 +2,11 @@ package menus
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/TelksBr/VeltrixProxy/internal/config"
 	"github.com/TelksBr/VeltrixProxy/internal/i18n"
 	"github.com/TelksBr/VeltrixProxy/internal/proxy"
-	"github.com/TelksBr/VeltrixProxy/internal/system"
 	"github.com/TelksBr/VeltrixProxy/internal/ui/components"
 	"github.com/TelksBr/VeltrixProxy/internal/ui/theme"
 )
@@ -19,55 +19,48 @@ func ShowTokensMenu(cfgMgr *config.Manager) {
 		components.PrintBoxHeader(i18n.T("tokens_menu_title"), theme.Cyan, w)
 
 		currentToken := config.LoadToken()
-		maskedToken := "nenhum"
+		maskedToken := i18n.T("tokens_none")
 		if len(currentToken) > 8 {
 			maskedToken = currentToken[:4] + "..." + currentToken[len(currentToken)-4:]
 		} else if currentToken != "" {
 			maskedToken = currentToken
 		}
 
-		infoLine := fmt.Sprintf("%sToken Atual:%s %s%s%s", theme.Gray, theme.Reset, theme.Cyan, maskedToken, theme.Reset)
-		components.PrintBoxLine(infoLine, w)
+		components.PrintBoxLine(fmt.Sprintf("%s%s:%s %s", theme.Gray, i18n.T("tokens_current"), theme.Reset, valueBadge(maskedToken)), w)
 		components.PrintBoxDivider(w)
+		components.PrintBoxLine(menuItem("1", i18n.T("tokens_opt_set"), ""), w)
+		components.PrintBoxLine(menuItem("2", i18n.T("tokens_opt_validate"), ""), w)
+		printMenuBack(w)
 
-		components.PrintBoxLine(fmt.Sprintf("%s1 • Inserir / Alterar token de acesso%s", theme.White, theme.Reset), w)
-		components.PrintBoxLine(fmt.Sprintf("%s2 • Validar token atual com a API%s", theme.White, theme.Reset), w)
-
-		components.PrintBoxDivider(w)
-		components.PrintBoxLine(fmt.Sprintf("%s0 • Voltar ao menu principal%s", theme.Red, theme.Reset), w)
-		components.PrintBoxFooter(w)
-
-		choice := components.ReadOption("Selecione a opção [0-2]")
-		switch choice {
+		switch readMenuOption("0-2") {
 		case "1":
-			newToken := components.Prompt("Digite seu novo token de acesso", "")
+			newToken := strings.TrimSpace(components.Prompt(i18n.T("tokens_prompt_new"), ""))
 			if newToken != "" {
-				if err := config.SaveToken(newToken); err == nil {
-					cfg, _ := cfgMgr.Get()
-					cfg.Token = newToken
-					_ = cfgMgr.Save(cfg)
-					_ = system.RestartService(system.ProxyServiceName)
-					components.PrintSuccess("Token atualizado e serviço proxy reiniciado.")
+				if err := config.SaveToken(newToken); err != nil {
+					components.PrintError(i18n.T("tokens_save_failed", err))
 				} else {
-					components.PrintError(fmt.Sprintf("Falha ao salvar token: %v", err))
+					if cfg, err := cfgMgr.Get(); err == nil && cfg != nil {
+						cfg.Token = newToken
+						_ = cfgMgr.Save(cfg)
+					}
+					components.PrintSuccess(i18n.T("tokens_saved"))
 				}
 			}
 			components.Pause()
-
 		case "2":
 			if currentToken == "" {
-				components.PrintWarning("Nenhum token configurado no momento.")
+				components.PrintWarning(i18n.T("tokens_not_set"))
+			} else if proxy.ValidateToken(currentToken) {
+				components.PrintSuccess(i18n.T("tokens_valid"))
 			} else {
-				if proxy.ValidateToken(currentToken) {
-					components.PrintSuccess("Token validado com sucesso pela API!")
-				} else {
-					components.PrintError("Token inválido ou expirado.")
-				}
+				components.PrintError(i18n.T("tokens_invalid"))
 			}
 			components.Pause()
-
-		case "0":
+		case "0", "":
 			return
+		default:
+			components.PrintError(i18n.T("invalid_option"))
+			components.Pause()
 		}
 	}
 }
