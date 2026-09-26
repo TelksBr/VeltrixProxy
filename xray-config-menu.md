@@ -62,15 +62,20 @@ O `install.sh` e o `Manager.Load` do menu **injetam** a seção `xray`
 
 Fluxo do wizard:
 
-1. **VLESS ou VMess**
-2. **TLS ou Direct** — TLS pede SNI; Direct **não** inclui SNI
-3. **Porta**
-4. **Proxy** — IP ou domínio que o app conecta (VMess `add`, endereço do
-   `vless://uuid@proxy:porta`)
-5. **Host** — header `Host` do WS/XHTTP (VMess `host`, VLESS `host=`).
-   Enter repete o proxy.
+1. **Proxy** — sempre primeiro; vai no `@` do link (VMess `add`)
+2. **VLESS ou VMess**
+3. **TLS ou Direct** — TLS pede SNI; Direct **não** inclui SNI
+4. **Porta**
+5. **Host do servidor** — domínio que aponta para a VPS; vai em `host=`
+   (VMess `host`). Obrigatório.
 6. **SNI** (só TLS) — `serverName` do handshake (VMess `sni`, VLESS `sni=`).
-   Enter repete o host; precisa ser domínio, não IP.
+   Enter repete o host do servidor; precisa ser domínio, não IP.
+
+Exemplo Direct (proxy `104.18.7.41`, host `bhttp.sshproject.com`):
+
+```
+vless://UUID@104.18.7.41:80?type=ws&security=none&host=bhttp.sshproject.com&path=%2Fvtxray
+```
 7. **Gerar com pcs? (s/N)** — só no TLS. Se sim, consulta
    `https://xray.nulled.pp.ua/api/fingerprint?domain=<SNI>` (o cliente
    valida o certificado servido para o SNI; se faltar, usa host e depois

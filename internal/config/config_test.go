@@ -762,6 +762,30 @@ func TestBuildXrayShareLinksProxyHostSNI(t *testing.T) {
 	}
 }
 
+func TestBuildXrayShareLinksDirectProxyInAt(t *testing.T) {
+	links, err := BuildXrayShareLinks(XrayShareParams{
+		UUID:       "8fc81ef3-0156-4888-a89d-4520c38d7a3a",
+		Address:    "104.18.7.41",
+		Host:       "bhttp.sshproject.com",
+		Port:       80,
+		Path:       "/vtxray",
+		Protocols:  []string{"vless"},
+		Transports: []string{"ws"},
+	})
+	if err != nil || len(links) != 1 {
+		t.Fatalf("err=%v n=%d", err, len(links))
+	}
+	uri := links[0].URI
+	for _, want := range []string{
+		"vless://8fc81ef3-0156-4888-a89d-4520c38d7a3a@104.18.7.41:80?",
+		"type=ws", "security=none", "host=bhttp.sshproject.com", "path=%2Fvtxray",
+	} {
+		if !strings.Contains(uri, want) {
+			t.Fatalf("falta %q em %s", want, uri)
+		}
+	}
+}
+
 func TestBuildXrayShareLinksPCS(t *testing.T) {
 	const pcs = "017e53a24035a56ef5a7688d92526a3907c396f8643163a4df5e4204be141e4e"
 	base := XrayShareParams{

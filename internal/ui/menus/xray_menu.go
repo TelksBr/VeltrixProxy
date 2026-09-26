@@ -195,8 +195,16 @@ func showXrayShareWizard(cfg *config.Config) {
 	components.PrintBoxHeader(i18n.T("xray_share_title"), theme.Cyan, w)
 	components.PrintBoxLine(fmt.Sprintf("%s   %s%s", theme.Gray, i18n.T("xray_share_hint"), theme.Reset), w)
 	components.PrintBoxDivider(w)
+	components.PrintBoxLine(fmt.Sprintf("%s%s: %s%s%s", theme.White, i18n.T("xray_share_format"), theme.Cyan, i18n.T("xray_share_format_value"), theme.Reset), w)
 	components.PrintBoxLine(fmt.Sprintf("%s%s: %s%s%s", theme.White, i18n.T("xray_share_path"), theme.Cyan, cfg.Xray.Path, theme.Reset), w)
 	components.PrintBoxFooter(w)
+
+	proxy := strings.TrimSpace(components.Prompt(i18n.T("xray_share_proxy"), ""))
+	if proxy == "" {
+		components.PrintError(i18n.T("xray_share_invalid_proxy"))
+		components.Pause()
+		return
+	}
 
 	proto := pickXrayShareProtocol(cfg.Xray)
 	if proto == "" {
@@ -214,15 +222,11 @@ func showXrayShareWizard(cfg *config.Config) {
 		components.Pause()
 		return
 	}
-	proxy := strings.TrimSpace(components.Prompt(i18n.T("xray_share_proxy"), ""))
-	if proxy == "" {
-		components.PrintError(i18n.T("xray_share_invalid_proxy"))
+	host := strings.TrimSpace(components.Prompt(i18n.T("xray_share_host"), ""))
+	if host == "" {
+		components.PrintError(i18n.T("xray_share_invalid_host"))
 		components.Pause()
 		return
-	}
-	host := strings.TrimSpace(components.Prompt(i18n.T("xray_share_host"), proxy))
-	if host == "" {
-		host = proxy
 	}
 	sni := ""
 	pcs := ""
@@ -280,6 +284,11 @@ func showXrayShareWizard(cfg *config.Config) {
 	}
 
 	fmt.Println()
+	summary := fmt.Sprintf("%s: %s:%d   %s: %s", i18n.T("xray_share_label_proxy"), proxy, port, i18n.T("xray_share_label_host"), host)
+	if useTLS {
+		summary += fmt.Sprintf("   SNI: %s", sni)
+	}
+	fmt.Printf("%s%s%s\n\n", theme.Gray, summary, theme.Reset)
 	for _, link := range links {
 		fmt.Printf("%s%s%s\n%s\n\n", theme.Cyan, link.Label, theme.Reset, link.URI)
 	}
