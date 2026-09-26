@@ -51,15 +51,18 @@ func TestFetchXrayPCSError(t *testing.T) {
 }
 
 func TestXrayPCSDomain(t *testing.T) {
-	cases := []struct{ host, sni, want string }{
-		{"cdn.example.com", "sni.example.com", "cdn.example.com"},
-		{"1.2.3.4", "sni.example.com", "sni.example.com"},
-		{"[2001:db8::1]:443", "sni.example.com", "sni.example.com"},
-		{"cdn.example.com:8443", "", "cdn.example.com"},
+	cases := []struct {
+		in   []string
+		want string
+	}{
+		{[]string{"sni.example.com", "host.example.com", "1.2.3.4"}, "sni.example.com"},
+		{[]string{"", "host.example.com", "1.2.3.4"}, "host.example.com"},
+		{[]string{"", "", "cdn.example.com:8443"}, "cdn.example.com"},
+		{[]string{"", "[2001:db8::1]:443", "1.2.3.4"}, ""},
 	}
 	for _, c := range cases {
-		if got := XrayPCSDomain(c.host, c.sni); got != c.want {
-			t.Fatalf("XrayPCSDomain(%q,%q)=%q want %q", c.host, c.sni, got, c.want)
+		if got := XrayPCSDomain(c.in...); got != c.want {
+			t.Fatalf("XrayPCSDomain(%q)=%q want %q", c.in, got, c.want)
 		}
 	}
 }

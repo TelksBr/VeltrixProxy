@@ -64,14 +64,21 @@ Fluxo do wizard:
 
 1. **VLESS ou VMess**
 2. **TLS ou Direct** — TLS pede SNI; Direct **não** inclui SNI
-3. **Porta** e **proxy host** (+ SNI se TLS)
-4. **Gerar com pcs? (s/N)** — só no TLS. Se sim, consulta
-   `https://xray.nulled.pp.ua/api/fingerprint?domain=<proxy host>` (usa o
-   SNI se o host for IP) e inclui o SHA-256 do certificado: VLESS
+3. **Porta**
+4. **Proxy** — IP ou domínio que o app conecta (VMess `add`, endereço do
+   `vless://uuid@proxy:porta`)
+5. **Host** — header `Host` do WS/XHTTP (VMess `host`, VLESS `host=`).
+   Enter repete o proxy.
+6. **SNI** (só TLS) — `serverName` do handshake (VMess `sni`, VLESS `sni=`).
+   Enter repete o host; precisa ser domínio, não IP.
+7. **Gerar com pcs? (s/N)** — só no TLS. Se sim, consulta
+   `https://xray.nulled.pp.ua/api/fingerprint?domain=<SNI>` (o cliente
+   valida o certificado servido para o SNI; se faltar, usa host e depois
+   proxy, pulando IPs) e inclui o SHA-256 do certificado: VLESS
    `pcs=<hex>`, VMess campo `"pcs"`. Se a API falhar, pergunta se gera
    sem pcs.
-5. Path = `xray.path` (não se digita)
-6. UUID = fixo `8fc81ef3-0156-4888-a89d-4520c38d7a3a` (não se configura)
+8. Path = `xray.path` (não se digita)
+9. UUID = fixo `8fc81ef3-0156-4888-a89d-4520c38d7a3a` (não se configura)
 
 Se a porta escolhida **não** estiver em `ports` do proxy, o menu gera o
 link e só avisa (informativo).

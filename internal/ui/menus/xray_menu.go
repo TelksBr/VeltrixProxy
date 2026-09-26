@@ -3,6 +3,7 @@ package menus
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -213,23 +214,31 @@ func showXrayShareWizard(cfg *config.Config) {
 		components.Pause()
 		return
 	}
-	host := strings.TrimSpace(components.Prompt(i18n.T("xray_share_host"), ""))
-	if host == "" {
-		components.PrintError(i18n.T("xray_share_invalid_host"))
+	proxy := strings.TrimSpace(components.Prompt(i18n.T("xray_share_proxy"), ""))
+	if proxy == "" {
+		components.PrintError(i18n.T("xray_share_invalid_proxy"))
 		components.Pause()
 		return
+	}
+	host := strings.TrimSpace(components.Prompt(i18n.T("xray_share_host"), proxy))
+	if host == "" {
+		host = proxy
 	}
 	sni := ""
 	pcs := ""
 	if useTLS {
-		sni = strings.TrimSpace(components.Prompt(i18n.T("xray_share_sni"), host))
-		if sni == "" {
+		sniDefault := ""
+		if net.ParseIP(strings.Trim(host, "[]")) == nil {
+			sniDefault = host
+		}
+		sni = strings.TrimSpace(components.Prompt(i18n.T("xray_share_sni"), sniDefault))
+		if sni == "" || net.ParseIP(strings.Trim(sni, "[]")) != nil {
 			components.PrintError(i18n.T("xray_share_invalid_sni"))
 			components.Pause()
 			return
 		}
 		var ok bool
-		if pcs, ok = askXraySharePCS(host, sni); !ok {
+		if pcs, ok = askXraySharePCS(sni, host, proxy); !ok {
 			return
 		}
 	}
@@ -244,7 +253,8 @@ func showXrayShareWizard(cfg *config.Config) {
 	}
 
 	links, err := config.BuildXrayShareLinks(config.XrayShareParams{
-		Address:    host,
+		Address:    proxy,
+		Host:       host,
 		SNI:        sni,
 		Port:       port,
 		Path:       cfg.Xray.Path,
@@ -280,11 +290,11 @@ func showXrayShareWizard(cfg *config.Config) {
 }
 
 // askXraySharePCS returns ok=false when the user aborts after a failed lookup.
-func askXraySharePCS(host, sni string) (string, bool) {
+func askXraySharePCS(sni, host, proxy string) (string, bool) {
 	if !components.Confirm(i18n.T("xray_share_pcs_ask"), false) {
 		return "", true
 	}
-	domain := system.XrayPCSDomain(host, sni)
+	domain := system.XrayPCSDomain(sni, host, proxy)
 	if domain == "" {
 		components.PrintWarning(i18n.T("xray_share_pcs_no_domain"))
 		return "", components.Confirm(i18n.T("xray_share_pcs_continue"), true)

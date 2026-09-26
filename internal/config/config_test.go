@@ -690,6 +690,78 @@ func TestBuildXrayShareLinksDefaultUUIDAndDirect(t *testing.T) {
 	}
 }
 
+func TestBuildXrayShareLinksProxyHostSNI(t *testing.T) {
+	base := XrayShareParams{
+		Address:    "104.16.1.1",
+		Host:       "vpn.example.com",
+		SNI:        "bug.example.net",
+		Port:       443,
+		Path:       "/vtxray",
+		TLS:        true,
+		Transports: []string{"ws"},
+	}
+
+	vmess := base
+	vmess.Protocols = []string{"vmess"}
+	links, err := BuildXrayShareLinks(vmess)
+	if err != nil || len(links) != 1 {
+		t.Fatalf("err=%v n=%d", err, len(links))
+	}
+	card, err := decodeVMessShare(links[0].URI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card["add"] != "104.16.1.1" || card["host"] != "vpn.example.com" || card["sni"] != "bug.example.net" {
+		t.Fatalf("vmess tls add/host/sni: %#v", card)
+	}
+
+	vless := base
+	vless.Protocols = []string{"vless"}
+	links, err = BuildXrayShareLinks(vless)
+	if err != nil || len(links) != 1 {
+		t.Fatalf("err=%v n=%d", err, len(links))
+	}
+	uri := links[0].URI
+	if !strings.Contains(uri, "@104.16.1.1:443?") || !strings.Contains(uri, "host=vpn.example.com") || !strings.Contains(uri, "sni=bug.example.net") {
+		t.Fatalf("vless tls: %s", uri)
+	}
+
+	direct := vmess
+	direct.TLS = false
+	direct.Port = 80
+	links, err = BuildXrayShareLinks(direct)
+	if err != nil || len(links) != 1 {
+		t.Fatalf("err=%v n=%d", err, len(links))
+	}
+	card, err = decodeVMessShare(links[0].URI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card["add"] != "104.16.1.1" || card["host"] != "vpn.example.com" {
+		t.Fatalf("vmess direct add/host: %#v", card)
+	}
+	if card["tls"] != "" || card["sni"] != "" {
+		t.Fatalf("direct nao pode ter tls/sni: %#v", card)
+	}
+
+	noSNI := vmess
+	noSNI.SNI = ""
+	links, err = BuildXrayShareLinks(noSNI)
+	if err != nil || len(links) != 1 {
+		t.Fatalf("err=%v n=%d", err, len(links))
+	}
+	card, _ = decodeVMessShare(links[0].URI)
+	if card["sni"] != "vpn.example.com" {
+		t.Fatalf("sni vazio deve herdar o host: %#v", card)
+	}
+
+	ipSNI := vmess
+	ipSNI.SNI = "1.2.3.4"
+	if _, err := BuildXrayShareLinks(ipSNI); err == nil {
+		t.Fatal("sni IP deveria falhar")
+	}
+}
+
 func TestBuildXrayShareLinksPCS(t *testing.T) {
 	const pcs = "017e53a24035a56ef5a7688d92526a3907c396f8643163a4df5e4204be141e4e"
 	base := XrayShareParams{
@@ -754,5 +826,3 @@ func decodeVMessShare(uri string) (map[string]string, error) {
 	}
 	return card, nil
 }
-
-

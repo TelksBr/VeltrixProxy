@@ -36,13 +36,16 @@ type XrayPCSResult struct {
 	ValidTo string
 }
 
-// XrayPCSDomain picks the host to fingerprint: the proxy host, or the SNI when the host is an IP.
-func XrayPCSDomain(host, sni string) string {
-	host = stripHostPort(host)
-	if host != "" && net.ParseIP(host) == nil {
-		return host
+// XrayPCSDomain returns the first candidate that is a domain (not an IP).
+// Callers pass SNI first: the client pins the certificate served for its SNI.
+func XrayPCSDomain(candidates ...string) string {
+	for _, raw := range candidates {
+		host := stripHostPort(raw)
+		if host != "" && net.ParseIP(host) == nil {
+			return host
+		}
 	}
-	return stripHostPort(sni)
+	return ""
 }
 
 func stripHostPort(raw string) string {

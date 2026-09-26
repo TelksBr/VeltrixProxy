@@ -17,9 +17,12 @@ var (
 )
 
 // XrayShareParams is the client-side share card. Path comes from xray.path.
+// Address is the dial target (VMess "add"), Host the WS/XHTTP Host header and
+// SNI the TLS serverName; they may all differ (CDN / fronting setups).
 type XrayShareParams struct {
 	UUID       string
 	Address    string
+	Host       string
 	SNI        string
 	Port       int
 	Path       string
@@ -160,13 +163,21 @@ func BuildXrayShareLinks(p XrayShareParams) ([]XrayShareLink, error) {
 
 	sni := ""
 	pcs := ""
-	hostHeader := addr
+	hostHeader := strings.TrimSpace(p.Host)
+	if hostHeader == "" && p.TLS {
+		hostHeader = strings.TrimSpace(p.SNI)
+	}
+	if hostHeader == "" {
+		hostHeader = addr
+	}
 	if p.TLS {
 		sni = strings.TrimSpace(p.SNI)
 		if sni == "" {
-			return nil, fmt.Errorf("sni obrigatório no modo tls")
+			sni = hostHeader
 		}
-		hostHeader = sni
+		if sni == "" || net.ParseIP(strings.Trim(sni, "[]")) != nil {
+			return nil, fmt.Errorf("sni obrigatório no modo tls (domínio, não IP)")
+		}
 		pcs = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(p.PCS), ":", ""))
 		if pcs != "" && !sharePCSRe.MatchString(pcs) {
 			return nil, fmt.Errorf("pcs inválido")

@@ -330,8 +330,9 @@ um stub VLESS+WS `/vtxray` (`0.0.0.0:443`, tag `vless-in`) em
 `/usr/local/etc/xray/config.json`.
 
 No menu `vt`, **2 Xray → 1 Gerar link** gera um link: VLESS ou VMess → TLS ou Direct
-→ porta + host (SNI só se TLS) → no TLS, opcionalmente o **pcs**
-(fingerprint SHA-256 do certificado do host, via API). Path e UUID são os
+→ porta → **proxy** (endereço de conexão, `add`) → **host** (header `Host`
+do WS/XHTTP) → **SNI** só se TLS → no TLS, opcionalmente o **pcs**
+(fingerprint SHA-256 do certificado servido para o SNI, via API). Path e UUID são os
 do servidor. Porta fora de `ports` só gera aviso.
 
 ---
