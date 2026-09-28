@@ -340,6 +340,7 @@ var dictPT = map[string]string{
 	"dnstt_free53_done":           "Porta 53 UDP liberada! O DNSTT já pode escutar em :53.",
 	"dnstt_keys_title":            "CHAVES CRIPTOGRÁFICAS (DNSTT)",
 	"dnstt_keys_pub_header":       "CHAVE PÚBLICA (USADA NOS APPS CLIENTES):",
+	"dnstt_keys_copy_hint":        "Chave pública para cópia direta (sem bordas):",
 	"dnstt_keys_in_json":          "[definida no config.json]",
 	"dnstt_keys_hidden":           "[oculta]",
 	"dnstt_keys_none":             "Nenhum par de chaves ativo.",

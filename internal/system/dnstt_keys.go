@@ -49,6 +49,39 @@ func PubkeyFromPrivkeyHex(privHex string) (string, error) {
 	return hex.EncodeToString(priv.PublicKey().Bytes()), nil
 }
 
+// DerivePubkeyFilePath deriva o caminho do arquivo de chave pública (.pub) a partir do caminho da chave privada.
+func DerivePubkeyFilePath(privkeyFile string) string {
+	clean := strings.TrimSpace(privkeyFile)
+	if clean == "" {
+		return ""
+	}
+	ext := filepath.Ext(clean)
+	if ext != "" {
+		return strings.TrimSuffix(clean, ext) + ".pub"
+	}
+	return clean + ".pub"
+}
+
+// SavePublicKeyToFile salva a chave pública em formato hexadecimal no arquivo especificado, com permissão 0644.
+func SavePublicKeyToFile(pubHex string, filePath string) error {
+	clean := strings.TrimSpace(pubHex)
+	if len(clean) != 64 {
+		return fmt.Errorf("a chave pública deve ter exatamente 64 caracteres hexadecimais (obtido %d)", len(clean))
+	}
+
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("falha ao criar diretório %s: %w", dir, err)
+	}
+
+	data := []byte(clean + "\n")
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		return fmt.Errorf("falha ao gravar chave pública em %s: %w", filePath, err)
+	}
+
+	return nil
+}
+
 // SavePrivateKeyToFile salva a chave privada em formato hexadecimal no arquivo especificado, com permissão 0600.
 func SavePrivateKeyToFile(privHex string, filePath string) error {
 	clean := strings.TrimSpace(privHex)
@@ -92,6 +125,11 @@ func LoadOrCreateDNSTTKeys(privkeyHex string, privkeyFile string) (privHex strin
 	if strings.TrimSpace(privkeyHex) != "" {
 		pub, err := PubkeyFromPrivkeyHex(privkeyHex)
 		if err == nil {
+			if privkeyFile != "" {
+				if pubPath := DerivePubkeyFilePath(privkeyFile); pubPath != "" {
+					_ = SavePublicKeyToFile(pub, pubPath)
+				}
+			}
 			return strings.TrimSpace(privkeyHex), pub, false, nil
 		}
 	}
@@ -103,6 +141,9 @@ func LoadOrCreateDNSTTKeys(privkeyHex string, privkeyFile string) (privHex strin
 			if err == nil {
 				pub, errPub := PubkeyFromPrivkeyHex(keyFromFile)
 				if errPub == nil {
+					if pubPath := DerivePubkeyFilePath(privkeyFile); pubPath != "" {
+						_ = SavePublicKeyToFile(pub, pubPath)
+					}
 					return keyFromFile, pub, false, nil
 				}
 			}
@@ -118,6 +159,9 @@ func LoadOrCreateDNSTTKeys(privkeyHex string, privkeyFile string) (privHex strin
 	// Salva em arquivo se privkeyFile foi definido
 	if privkeyFile != "" {
 		_ = SavePrivateKeyToFile(newPriv, privkeyFile)
+		if pubPath := DerivePubkeyFilePath(privkeyFile); pubPath != "" {
+			_ = SavePublicKeyToFile(newPub, pubPath)
+		}
 	}
 
 	return newPriv, newPub, true, nil

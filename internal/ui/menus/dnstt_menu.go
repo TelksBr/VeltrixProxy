@@ -263,9 +263,20 @@ func handleManageKeys(cfgMgr *config.Manager, cfg *config.Config) {
 
 		if pubHex != "" {
 			components.PrintBoxLine(fmt.Sprintf("%s%s%s", theme.Green, i18n.T("dnstt_keys_pub_header"), theme.Reset), w)
-			components.PrintBoxLine(fmt.Sprintf("%s%s%s", theme.Yellow, pubHex, theme.Reset), w)
+			contentWidth := w - 4
+			if len(pubHex) > contentWidth {
+				mid := len(pubHex) / 2
+				components.PrintBoxLine(fmt.Sprintf("%s%s%s", theme.Yellow, pubHex[:mid], theme.Reset), w)
+				components.PrintBoxLine(fmt.Sprintf("%s%s%s", theme.Yellow, pubHex[mid:], theme.Reset), w)
+			} else {
+				components.PrintBoxLine(fmt.Sprintf("%s%s%s", theme.Yellow, pubHex, theme.Reset), w)
+			}
 			components.PrintBoxDivider(w)
 
+			if cfg.DNSTT.PrivkeyFile != "" {
+				pubFile := system.DerivePubkeyFilePath(cfg.DNSTT.PrivkeyFile)
+				components.PrintBoxLine(fmt.Sprintf("pubkey_file:  %s", valueBadge(pubFile)), w)
+			}
 			fileInfo := cfg.DNSTT.PrivkeyFile
 			if fileInfo == "" {
 				fileInfo = i18n.T("dnstt_keys_in_json")
@@ -286,6 +297,10 @@ func handleManageKeys(cfgMgr *config.Manager, cfg *config.Config) {
 		components.PrintBoxLine(menuItem("2", i18n.T("dnstt_keys_opt_file"), ""), w)
 		components.PrintBoxLine(menuItem("3", i18n.T("dnstt_keys_opt_manual"), ""), w)
 		printMenuBack(w)
+
+		if pubHex != "" {
+			fmt.Printf("\n%s%s%s\n%s%s%s\n", theme.Green, i18n.T("dnstt_keys_copy_hint"), theme.Reset, theme.Yellow, pubHex, theme.Reset)
+		}
 
 		switch readMenuOption("0-3") {
 		case "1":
@@ -308,6 +323,9 @@ func handleManageKeys(cfgMgr *config.Manager, cfg *config.Config) {
 				cfg.DNSTT.Privkey = newPriv
 			} else {
 				cfg.DNSTT.Privkey = ""
+				if pubPath := system.DerivePubkeyFilePath(keyFile); pubPath != "" {
+					_ = system.SavePublicKeyToFile(newPub, pubPath)
+				}
 			}
 			if err := cfgMgr.Save(cfg); err != nil {
 				components.PrintError(i18n.T("save_failed", err))
@@ -331,6 +349,11 @@ func handleManageKeys(cfgMgr *config.Manager, cfg *config.Config) {
 				} else {
 					cfg.DNSTT.Privkey = cleanPriv
 					saveField(cfgMgr, cfg, "dnstt.privkey")
+					if cfg.DNSTT.PrivkeyFile != "" {
+						if pubPath := system.DerivePubkeyFilePath(cfg.DNSTT.PrivkeyFile); pubPath != "" {
+							_ = system.SavePublicKeyToFile(pub, pubPath)
+						}
+					}
 					components.PrintInfo(i18n.T("dnstt_pubkey", pub))
 				}
 				components.Pause()

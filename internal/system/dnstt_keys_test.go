@@ -1,7 +1,9 @@
 package system
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -63,5 +65,32 @@ func TestSaveAndReadPrivateKey(t *testing.T) {
 	}
 	if p != privHex || pub != pubHex {
 		t.Fatalf("chaves carregadas incorretas")
+	}
+
+	pubFile := DerivePubkeyFilePath(keyFile)
+	pubData, err := os.ReadFile(pubFile)
+	if err != nil {
+		t.Fatalf("falha ao ler pubkey gerada automaticamente: %v", err)
+	}
+	if strings.TrimSpace(string(pubData)) != pubHex {
+		t.Fatalf("pubkey gravada no arquivo incorreta: %s", string(pubData))
+	}
+}
+
+func TestDerivePubkeyFilePath(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"/etc/dnstt/server.key", "/etc/dnstt/server.pub"},
+		{"/etc/dnstt/priv.txt", "/etc/dnstt/priv.pub"},
+		{"/etc/dnstt/key", "/etc/dnstt/key.pub"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		got := DerivePubkeyFilePath(c.in)
+		if got != c.want {
+			t.Errorf("DerivePubkeyFilePath(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }

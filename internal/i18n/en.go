@@ -340,6 +340,7 @@ var dictEN = map[string]string{
 	"dnstt_free53_done":           "UDP port 53 freed! DNSTT can now listen on :53.",
 	"dnstt_keys_title":            "CRYPTOGRAPHIC KEYS (DNSTT)",
 	"dnstt_keys_pub_header":       "PUBLIC KEY (USED IN CLIENT APPS):",
+	"dnstt_keys_copy_hint":        "Public key for direct copy (no borders):",
 	"dnstt_keys_in_json":          "[set in config.json]",
 	"dnstt_keys_hidden":           "[hidden]",
 	"dnstt_keys_none":             "No active key pair.",
