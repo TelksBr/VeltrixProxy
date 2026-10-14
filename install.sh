@@ -48,7 +48,7 @@ SKIP_UDPGW=true
 
 STEP_TITLES=(
   "Privilégios de Root e Sudo"
-  "Dependências (curl, checksum, iptables)"
+  "Dependências (curl, checksum, install, iptables)"
   "Sincronização de Relógio do Sistema (NTP)"
   "Plataforma e Releases do GitHub"
   "Baixando e Instalando Binário do Proxy"
@@ -368,6 +368,7 @@ get_missing_commands() {
   local missing=()
   has_command curl || missing+=("curl")
   has_checksum_command || missing+=("sha256sum")
+  has_command install || missing+=("install")
   has_command iptables || missing+=("iptables")
   if [[ ${#missing[@]} -gt 0 ]]; then
     printf '%s\n' "${missing[@]}"
@@ -411,7 +412,7 @@ commands_to_packages() {
     [[ -z "$cmd" ]] && continue
     case "$cmd" in
     curl) pkg="curl" ;;
-    sha256sum) pkg="coreutils" ;;
+    sha256sum | install) pkg="coreutils" ;;
     iptables) pkg="iptables" ;;
     *) continue ;;
     esac
@@ -466,6 +467,7 @@ read_nonempty_lines() {
 ensure_dependencies() {
   local missing=() packages=() still_missing=() pm line
 
+  export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
   read_nonempty_lines missing < <(get_missing_commands)
   [[ ${#missing[@]} -eq 0 ]] && return 0
 
@@ -492,25 +494,22 @@ ensure_dependencies() {
   fi
 
   hash -r 2>/dev/null || true
-  export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
 
-  has_command curl || still_missing+=("curl")
-  has_checksum_command || still_missing+=("sha256sum")
-  has_command iptables || still_missing+=("iptables")
+  read_nonempty_lines still_missing < <(get_missing_commands)
 
   if [[ ${#still_missing[@]} -gt 0 ]]; then
     log_error "Ainda faltam dependências após instalação: ${still_missing[*]}"
     for line in "${still_missing[@]}"; do
       case "$line" in
       curl) log_info "curl não encontrado em: $(command -v curl 2>/dev/null || echo 'não localizado')" ;;
-      sha256sum) log_info "Tente: apt install coreutils (ou reinicie o terminal)" ;;
+      sha256sum | install) log_info "Tente: apt install coreutils (ou equivalente no seu distro)" ;;
       iptables) log_info "Tente: apt install iptables (ou equivalente no seu distro)" ;;
       esac
     done
     exit 1
   fi
 
-  log_success "Dependências OK (curl + checksum + iptables)."
+  log_success "Dependências OK (curl + checksum + install + iptables)."
 }
 
 # License v2 rejects client_ts outside ±5 minutes of API time. Local timezone
