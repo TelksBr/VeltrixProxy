@@ -431,7 +431,9 @@ install_packages() {
   case "$pm" in
   apt)
     run_privileged apt-get update -qq
-    run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+    # A package can be registered as installed while its executable is missing.
+    # Reinstall it so APT restores files instead of reporting "already newest".
+    run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install --reinstall -y "${packages[@]}"
     ;;
   apk)
     run_privileged apk add --no-cache "${packages[@]}"

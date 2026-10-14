@@ -12,6 +12,15 @@ fail() {
 }
 
 SKIP_HEADER=true
+# Exercise the real APT package command without changing the host packages.
+(
+  package_commands=()
+  run_privileged() { package_commands+=("$*"); }
+  install_packages apt coreutils
+  [[ "${package_commands[0]}" == "apt-get update -qq" ]] || fail "APT index refresh"
+  [[ "${package_commands[1]}" == "env DEBIAN_FRONTEND=noninteractive apt-get install --reinstall -y coreutils" ]] || fail "APT must restore files from installed packages"
+)
+
 install_available=false
 checksum_available=true
 package_result=success
