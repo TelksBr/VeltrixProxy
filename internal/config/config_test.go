@@ -839,6 +839,50 @@ func TestBuildXrayShareLinksPCS(t *testing.T) {
 	}
 }
 
+func TestBuildXrayShareLinksTrojan(t *testing.T) {
+	links, err := BuildXrayShareLinks(XrayShareParams{
+		UUID:        "8fc81ef3-0156-4888-a89d-4520c38d7a3a",
+		Address:     "1.2.3.4",
+		SNI:         "cdn.example.com",
+		Port:        443,
+		Path:        "/vtxray",
+		Remark:      "TrojanTest",
+		TLS:         true,
+		Protocols:   []string{"trojan"},
+		Transports:  []string{"ws", "xhttp", "httpupgrade", "grpc", "tcp"},
+		GRPCService: "vtxray",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 5 {
+		t.Fatalf("esperado 5 links trojan, obtido %d", len(links))
+	}
+	for _, l := range links {
+		if !strings.HasPrefix(l.URI, "trojan://8fc81ef3-0156-4888-a89d-4520c38d7a3a@1.2.3.4:443?") {
+			t.Fatalf("trojan link inválido: %s", l.URI)
+		}
+		if !strings.Contains(l.URI, "security=tls") || !strings.Contains(l.URI, "sni=cdn.example.com") {
+			t.Fatalf("trojan sem tls/sni: %s", l.URI)
+		}
+	}
+	// gRPC link deve ter serviceName
+	grpcLink := links[3].URI
+	if !strings.Contains(grpcLink, "type=grpc") || !strings.Contains(grpcLink, "serviceName=vtxray") {
+		t.Fatalf("grpc link sem serviceName: %s", grpcLink)
+	}
+	// httpupgrade link
+	huLink := links[2].URI
+	if !strings.Contains(huLink, "type=httpupgrade") {
+		t.Fatalf("httpupgrade link sem type: %s", huLink)
+	}
+	// tcp link
+	tcpLink := links[4].URI
+	if !strings.Contains(tcpLink, "type=tcp") {
+		t.Fatalf("tcp link sem type: %s", tcpLink)
+	}
+}
+
 func decodeVMessShare(uri string) (map[string]string, error) {
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(uri, "vmess://"))
 	if err != nil {

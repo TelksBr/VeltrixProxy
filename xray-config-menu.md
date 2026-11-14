@@ -1,8 +1,8 @@
 # Xray no menu e no instalador
 
-Motor in-process VLESS/VMess no path único `/vtxray` (WS e SplitHTTP no
-mesmo prefixo). Contas: `uuid=` no GECOS de `/etc/passwd`. Fallback
-opcional: lista `clients` de um `config.json` Xray/V2Ray/3x-ui.
+Motor in-process VLESS/VMess/Trojan no path único `/vtxray` (WS, SplitHTTP,
+HTTPUpgrade, gRPC e Raw TCP). Contas: `uuid=` no GECOS de `/etc/passwd`
+(Trojan autentica via SHA-224(UUID)). Fallback opcional: lista `clients` de um `config.json` Xray/V2Ray/3x-ui.
 
 Precedência no proxy: **defaults internos → `config.json` → flags CLI**.
 
@@ -12,8 +12,9 @@ Precedência no proxy: **defaults internos → `config.json` → flags CLI**.
 "xray": {
   "enable": true,
   "path": "/vtxray",
-  "protocols": ["vless", "vmess"],
-  "transports": ["ws", "splithttp"],
+  "protocols": ["vless", "vmess", "trojan"],
+  "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp"],
+  "grpc_service": "vtxray",
   "tls": {
     "inherit_port": true,
     "cert_file": "",
@@ -30,9 +31,10 @@ Precedência no proxy: **defaults internos → `config.json` → flags CLI**.
 | Campo | Default | Notas |
 | --- | --- | --- |
 | `enable` | `true` | Liga o motor. |
-| `path` | `/vtxray` | WS no path exato; SplitHTTP = `path/{session}/{seq}`. |
-| `protocols` | `vless,vmess` | |
-| `transports` | `ws,splithttp` | `xhttp` no menu vira `splithttp`. |
+| `path` | `/vtxray` | WS/HTTPUpgrade no path exato; SplitHTTP = `path/{session}/{seq}`. |
+| `protocols` | `vless,vmess,trojan` | Protocolos suportados. |
+| `transports` | `ws,splithttp,httpupgrade,grpc,tcp` | Transportes suportados (`xhttp` vira `splithttp`). |
+| `grpc_service` | `vtxray` | Nome do serviço gRPC Tun. |
 | `tls.inherit_port` | `true` | v1 usa o TLS da porta do proxy. |
 | `legacy.enable` | `true` | UUID do JSON se não estiver no passwd. |
 | `legacy.config_file` | detectado ou `/usr/local/etc/xray/config.json` | |

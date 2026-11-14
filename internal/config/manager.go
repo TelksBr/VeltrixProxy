@@ -172,6 +172,19 @@ func (m *Manager) Load() (*Config, error) {
 					cfg.Xray.Transports = append([]string(nil), defaults.Xray.Transports...)
 					needsSave = true
 				}
+				if _, ok := xrayKeys["grpc_service"]; !ok {
+					cfg.Xray.GRPCService = defaults.Xray.GRPCService
+					needsSave = true
+				}
+				// Atualiza automaticamente instalações antigas que tinham os defaults legados de protocols/transports
+				if len(cfg.Xray.Protocols) == 2 && cfg.Xray.Protocols[0] == "vless" && cfg.Xray.Protocols[1] == "vmess" {
+					cfg.Xray.Protocols = append([]string(nil), defaults.Xray.Protocols...)
+					needsSave = true
+				}
+				if len(cfg.Xray.Transports) == 2 && cfg.Xray.Transports[0] == "ws" && cfg.Xray.Transports[1] == "splithttp" {
+					cfg.Xray.Transports = append([]string(nil), defaults.Xray.Transports...)
+					needsSave = true
+				}
 				if rawTLS, ok := xrayKeys["tls"]; !ok {
 					cfg.Xray.TLS = defaults.Xray.TLS
 					needsSave = true

@@ -2,10 +2,13 @@ package proxy
 
 import (
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var defaultExecutables = []string{
@@ -88,4 +91,37 @@ func ValidateToken(token string) bool {
 	bin := ResolveExecutable()
 	cmd := exec.Command(bin, "--token", token, "--validate")
 	return cmd.Run() == nil
+}
+
+// ReloadPasswd avisa o proxy em execução para recarregar o /etc/passwd imediatamente
+func ReloadPasswd() error {
+	bin := ResolveExecutable()
+	cmd := exec.Command(bin, "--reload-passwd")
+	if _, err := cmd.CombinedOutput(); err == nil {
+		return nil
+	}
+	// Fallback para socket unix direto se o binário legado não tiver a flag
+	conn, dialErr := net.DialTimeout("unix", "/tmp/proxyvt-tracker.sock", 1*time.Second)
+	if dialErr == nil {
+		defer conn.Close()
+		_, _ = io.WriteString(conn, "RELOAD_PASSWD\n")
+		return nil
+	}
+	return nil // ignora erro se proxy não estiver em execução
+}
+
+// GetUserSessionCount retorna o número de conexões ativas de um usuário
+func GetUserSessionCount(user string) int {
+	user = strings.TrimSpace(user)
+	if user == "" {
+		return 0
+	}
+	bin := ResolveExecutable()
+	cmd := exec.Command(bin, "--onlines-user", user)
+	output, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	count, _ := strconv.Atoi(strings.TrimSpace(string(output)))
+	return count
 }

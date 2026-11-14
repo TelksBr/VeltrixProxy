@@ -10,6 +10,7 @@ const (
 	DefaultXrayPath         = "/vtxray"
 	DefaultXrayLegacyConfig = "/usr/local/etc/xray/config.json"
 	DefaultXrayShareUUID    = "8fc81ef3-0156-4888-a89d-4520c38d7a3a"
+	DefaultXrayGRPCService  = "vtxray"
 )
 
 // XrayLegacyCandidates is the install-time search order for an existing
@@ -39,12 +40,13 @@ type XrayLegacyConfig struct {
 
 // XrayConfig is the in-process VLESS/VMess motor on path /vtxray.
 type XrayConfig struct {
-	Enable     bool            `json:"enable"`
-	Path       string          `json:"path"`
-	Protocols  []string        `json:"protocols"`
-	Transports []string        `json:"transports"`
-	TLS        XrayTLSConfig   `json:"tls"`
-	Legacy     XrayLegacyConfig `json:"legacy"`
+	Enable      bool             `json:"enable"`
+	Path        string           `json:"path"`
+	Protocols   []string         `json:"protocols"`
+	Transports  []string         `json:"transports"`
+	GRPCService string           `json:"grpc_service,omitempty"`
+	TLS         XrayTLSConfig    `json:"tls"`
+	Legacy      XrayLegacyConfig `json:"legacy"`
 }
 
 func defaultXrayConfig(legacyPath string) XrayConfig {
@@ -57,10 +59,11 @@ func defaultXrayConfig(legacyPath string) XrayConfig {
 		}
 	}
 	return XrayConfig{
-		Enable:     true,
-		Path:       DefaultXrayPath,
-		Protocols:  []string{"vless", "vmess"},
-		Transports: []string{"ws", "splithttp"},
+		Enable:      true,
+		Path:        DefaultXrayPath,
+		Protocols:   []string{"vless", "vmess", "trojan"},
+		Transports:  []string{"ws", "splithttp", "httpupgrade", "grpc", "tcp"},
+		GRPCService: DefaultXrayGRPCService,
 		TLS: XrayTLSConfig{
 			InheritPort:  true,
 			CertInternal: true,
@@ -80,15 +83,22 @@ func (x *XrayConfig) Normalize() {
 	if !strings.HasPrefix(x.Path, "/") {
 		x.Path = "/" + x.Path
 	}
-	x.Protocols = normalizeCSVList(x.Protocols, []string{"vless", "vmess"}, map[string]bool{
-		"vless": true,
-		"vmess": true,
+	x.Protocols = normalizeCSVList(x.Protocols, []string{"vless", "vmess", "trojan"}, map[string]bool{
+		"vless":  true,
+		"vmess":  true,
+		"trojan": true,
 	})
-	x.Transports = normalizeCSVList(x.Transports, []string{"ws", "splithttp"}, map[string]bool{
-		"ws":        true,
-		"splithttp": true,
-		"xhttp":     true,
+	x.Transports = normalizeCSVList(x.Transports, []string{"ws", "splithttp", "httpupgrade", "grpc", "tcp"}, map[string]bool{
+		"ws":          true,
+		"splithttp":   true,
+		"xhttp":       true,
+		"httpupgrade": true,
+		"grpc":        true,
+		"tcp":         true,
 	})
+	if strings.TrimSpace(x.GRPCService) == "" {
+		x.GRPCService = DefaultXrayGRPCService
+	}
 	if strings.TrimSpace(x.Legacy.ConfigFile) == "" {
 		if detected, ok := DetectXrayLegacyConfig(); ok {
 			x.Legacy.ConfigFile = detected
@@ -99,7 +109,7 @@ func (x *XrayConfig) Normalize() {
 }
 
 func xrayConfigEqual(a, b XrayConfig) bool {
-	if a.Enable != b.Enable || a.Path != b.Path || a.TLS != b.TLS || a.Legacy != b.Legacy {
+	if a.Enable != b.Enable || a.Path != b.Path || a.GRPCService != b.GRPCService || a.TLS != b.TLS || a.Legacy != b.Legacy {
 		return false
 	}
 	if len(a.Protocols) != len(b.Protocols) || len(a.Transports) != len(b.Transports) {

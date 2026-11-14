@@ -1862,8 +1862,9 @@ default_cfg = {
   "xray": {
     "enable": True,
     "path": "/vtxray",
-    "protocols": ["vless", "vmess"],
-    "transports": ["ws", "splithttp"],
+    "protocols": ["vless", "vmess", "trojan"],
+    "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp"],
+    "grpc_service": "vtxray",
     "tls": {
       "inherit_port": True,
       "cert_file": "",
@@ -1965,8 +1966,9 @@ with open(path, "w", encoding="utf-8") as f:
   "xray": {
     "enable": true,
     "path": "/vtxray",
-    "protocols": ["vless", "vmess"],
-    "transports": ["ws", "splithttp"],
+    "protocols": ["vless", "vmess", "trojan"],
+    "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp"],
+    "grpc_service": "vtxray",
     "tls": {
       "inherit_port": true,
       "cert_file": "",
@@ -2102,8 +2104,9 @@ try:
     xray_defaults = {
         "enable": True,
         "path": "/vtxray",
-        "protocols": ["vless", "vmess"],
-        "transports": ["ws", "splithttp"],
+        "protocols": ["vless", "vmess", "trojan"],
+        "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp"],
+        "grpc_service": "vtxray",
         "tls": {
             "inherit_port": True,
             "cert_file": "",
@@ -2127,11 +2130,20 @@ try:
         if not str(x.get("path") or "").strip():
             x["path"] = "/vtxray"
             changed = True
+        if not str(x.get("grpc_service") or "").strip():
+            x["grpc_service"] = "vtxray"
+            changed = True
         if not isinstance(x.get("protocols"), list) or not x.get("protocols"):
-            x["protocols"] = ["vless", "vmess"]
+            x["protocols"] = ["vless", "vmess", "trojan"]
+            changed = True
+        elif "trojan" not in x["protocols"] and set(x["protocols"]) == {"vless", "vmess"}:
+            x["protocols"].append("trojan")
             changed = True
         if not isinstance(x.get("transports"), list) or not x.get("transports"):
-            x["transports"] = ["ws", "splithttp"]
+            x["transports"] = ["ws", "splithttp", "httpupgrade", "grpc", "tcp"]
+            changed = True
+        elif set(x["transports"]) == {"ws", "splithttp"} or set(x["transports"]) == {"ws", "xhttp"}:
+            x["transports"] = ["ws", "splithttp", "httpupgrade", "grpc", "tcp"]
             changed = True
         if "tls" not in x or not isinstance(x.get("tls"), dict):
             x["tls"] = dict(xray_defaults["tls"])
@@ -2558,8 +2570,9 @@ legacy_path = os.environ.get("PROXYVT_XRAY_LEGACY_CONFIG") or "/usr/local/etc/xr
 xray_defaults = {
     "enable": True,
     "path": "/vtxray",
-    "protocols": ["vless", "vmess"],
-    "transports": ["ws", "splithttp"],
+    "protocols": ["vless", "vmess", "trojan"],
+    "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp"],
+    "grpc_service": "vtxray",
     "tls": {
         "inherit_port": True,
         "cert_file": "",
@@ -2579,10 +2592,16 @@ else:
             config["xray"][k] = v
     if not str(config["xray"].get("path") or "").strip():
         config["xray"]["path"] = "/vtxray"
+    if not str(config["xray"].get("grpc_service") or "").strip():
+        config["xray"]["grpc_service"] = "vtxray"
     if not isinstance(config["xray"].get("protocols"), list) or not config["xray"].get("protocols"):
-        config["xray"]["protocols"] = ["vless", "vmess"]
+        config["xray"]["protocols"] = ["vless", "vmess", "trojan"]
+    elif "trojan" not in config["xray"]["protocols"] and set(config["xray"]["protocols"]) == {"vless", "vmess"}:
+        config["xray"]["protocols"].append("trojan")
     if not isinstance(config["xray"].get("transports"), list) or not config["xray"].get("transports"):
-        config["xray"]["transports"] = ["ws", "splithttp"]
+        config["xray"]["transports"] = ["ws", "splithttp", "httpupgrade", "grpc", "tcp"]
+    elif set(config["xray"]["transports"]) == {"ws", "splithttp"} or set(config["xray"]["transports"]) == {"ws", "xhttp"}:
+        config["xray"]["transports"] = ["ws", "splithttp", "httpupgrade", "grpc", "tcp"]
     if "tls" not in config["xray"] or not isinstance(config["xray"].get("tls"), dict):
         config["xray"]["tls"] = dict(xray_defaults["tls"])
     if "legacy" not in config["xray"] or not isinstance(config["xray"].get("legacy"), dict):

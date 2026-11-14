@@ -143,8 +143,9 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
   "xray": {
     "enable": true,
     "path": "/vtxray",
-    "protocols": ["vless", "vmess"],
-    "transports": ["ws", "splithttp"],
+    "protocols": ["vless", "vmess", "trojan"],
+    "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp"],
+    "grpc_service": "vtxray",
     "tls": {
       "inherit_port": true,
       "cert_file": "",
@@ -307,18 +308,19 @@ No **install/update**, a seção `hcr` (e chaves faltantes) é injetada com esse
 
 ---
 
-### G3. Seção `xray` (VLESS / VMess)
+### G3. Seção `xray` (VLESS / VMess / Trojan)
 
 > Motor in-process nas **mesmas portas TCP** do proxy. Path único `/vtxray`;
-> demux WS vs SplitHTTP pelos headers. UUID no `/etc/passwd` (`uuid=`).
+> demux WS, SplitHTTP, HTTPUpgrade, gRPC e Raw TCP pelos headers e primeiros bytes. UUID no `/etc/passwd` (`uuid=`).
 > Brief: [`xray-config-menu.md`](xray-config-menu.md).
 
 | Campo | Tipo | Default | Descrição |
 | :--- | :--- | :--- | :--- |
 | `enable` | `bool` | `true` | Liga o motor Xray. |
 | `path` | `string` | `"/vtxray"` | Prefixo único (WS exato; SplitHTTP = `path/`). |
-| `protocols` | `string[]` | `["vless","vmess"]` | Protocolos no wire. |
-| `transports` | `string[]` | `["ws","splithttp"]` | `ws` e/ou `splithttp`. |
+| `protocols` | `string[]` | `["vless","vmess","trojan"]` | Protocolos no wire (`vless`, `vmess`, `trojan`). |
+| `transports` | `string[]` | `["ws","splithttp","httpupgrade","grpc","tcp"]` | Transportes suportados (`ws`, `splithttp`, `httpupgrade`, `grpc`, `tcp`). |
+| `grpc_service` | `string` | `"vtxray"` | Nome do serviço gRPC Tun (`POST /<service>/Tun`). |
 | `tls.inherit_port` | `bool` | `true` | Usa o TLS da porta do proxy (v1). |
 | `tls.cert_internal` | `bool` | `true` | Certificado interno da porta. |
 | `legacy.enable` | `bool` | `true` | Fallback de UUID do `xray.json` se o UUID não estiver no passwd. |

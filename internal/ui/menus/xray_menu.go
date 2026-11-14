@@ -78,9 +78,10 @@ func showXrayGeneralSubmenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(menuItem("1", i18n.T("xray_opt_path"), valueBadge(cfg.Xray.Path)), w)
 		components.PrintBoxLine(menuItem("2", i18n.T("xray_opt_protocols"), valueBadge(strings.Join(cfg.Xray.Protocols, ","))), w)
 		components.PrintBoxLine(menuItem("3", i18n.T("xray_opt_transports"), valueBadge(strings.Join(cfg.Xray.Transports, ","))), w)
+		components.PrintBoxLine(menuItem("4", i18n.T("xray_opt_grpc_service"), valueBadge(cfg.Xray.GRPCService)), w)
 		printMenuBack(w)
 
-		switch readMenuOption("0-3") {
+		switch readMenuOption("0-4") {
 		case "1":
 			resp := strings.TrimSpace(components.Prompt(i18n.T("xray_opt_path"), cfg.Xray.Path))
 			if resp != "" {
@@ -92,16 +93,23 @@ func showXrayGeneralSubmenu(cfgMgr *config.Manager) {
 			}
 			components.Pause()
 		case "2":
-			resp := components.Prompt(i18n.T("xray_opt_protocols")+" (vless,vmess)", strings.Join(cfg.Xray.Protocols, ","))
+			resp := components.Prompt(i18n.T("xray_opt_protocols")+" (vless,vmess,trojan)", strings.Join(cfg.Xray.Protocols, ","))
 			cfg.Xray.Protocols = splitCSV(resp)
 			cfg.Xray.Normalize()
 			saveField(cfgMgr, cfg, "xray.protocols")
 			components.Pause()
 		case "3":
-			resp := components.Prompt(i18n.T("xray_opt_transports")+" (ws,splithttp)", strings.Join(cfg.Xray.Transports, ","))
+			resp := components.Prompt(i18n.T("xray_opt_transports")+" (ws,splithttp,httpupgrade,grpc,tcp)", strings.Join(cfg.Xray.Transports, ","))
 			cfg.Xray.Transports = splitCSV(resp)
 			cfg.Xray.Normalize()
 			saveField(cfgMgr, cfg, "xray.transports")
+			components.Pause()
+		case "4":
+			resp := strings.TrimSpace(components.Prompt(i18n.T("xray_opt_grpc_service"), cfg.Xray.GRPCService))
+			if resp != "" {
+				cfg.Xray.GRPCService = resp
+				saveField(cfgMgr, cfg, "xray.grpc_service")
+			}
 			components.Pause()
 		case "0", "":
 			return
@@ -257,16 +265,17 @@ func showXrayShareWizard(cfg *config.Config) {
 	}
 
 	links, err := config.BuildXrayShareLinks(config.XrayShareParams{
-		Address:    proxy,
-		Host:       host,
-		SNI:        sni,
-		Port:       port,
-		Path:       cfg.Xray.Path,
-		Remark:     "Veltrix",
-		TLS:        useTLS,
-		PCS:        pcs,
-		Protocols:  []string{proto},
-		Transports: transports,
+		Address:     proxy,
+		Host:        host,
+		SNI:         sni,
+		Port:        port,
+		Path:        cfg.Xray.Path,
+		Remark:      "Veltrix",
+		TLS:         useTLS,
+		PCS:         pcs,
+		Protocols:   []string{proto},
+		Transports:  transports,
+		GRPCService: cfg.Xray.GRPCService,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "sni") {
@@ -332,7 +341,12 @@ func pickXrayShareProtocol(xray config.XrayConfig) string {
 	fmt.Printf("\n%s%s%s\n", theme.White, i18n.T("xray_share_protocol"), theme.Reset)
 	fmt.Printf("  %s1 • VLESS%s\n", theme.Cyan, theme.Reset)
 	fmt.Printf("  %s2 • VMess%s\n", theme.Cyan, theme.Reset)
+	fmt.Printf("  %s3 • Trojan%s\n", theme.Cyan, theme.Reset)
 	switch components.ReadOption(i18n.T("xray_share_pick")) {
+	case "3", "trojan":
+		if xray.AllowsProtocol("trojan") {
+			return "trojan"
+		}
 	case "2", "vmess":
 		if xray.AllowsProtocol("vmess") {
 			return "vmess"
@@ -347,6 +361,9 @@ func pickXrayShareProtocol(xray config.XrayConfig) string {
 	}
 	if xray.AllowsProtocol("vmess") {
 		return "vmess"
+	}
+	if xray.AllowsProtocol("trojan") {
+		return "trojan"
 	}
 	return ""
 }

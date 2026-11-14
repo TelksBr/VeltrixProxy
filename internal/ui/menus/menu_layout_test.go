@@ -35,7 +35,10 @@ var plainOptionKeys = []string{
 	"dnstt_opt_toggle", "dnstt_opt_domain", "dnstt_opt_keys", "dnstt_opt_udp", "dnstt_opt_fallback",
 	"dnstt_opt_upstream", "dnstt_opt_mtu", "dnstt_opt_free_port53",
 	"dnstt_keys_opt_generate", "dnstt_keys_opt_file", "dnstt_keys_opt_manual",
-	"users_opt_list", "users_opt_kill", "users_opt_kill_expired",
+	"users_opt_accounts", "users_opt_list", "users_opt_kill", "users_opt_kill_expired",
+	"acc_opt_create", "acc_opt_list", "acc_opt_details", "acc_opt_change_pass",
+	"acc_opt_change_expiry", "acc_opt_change_limit", "acc_opt_manage_uuid",
+	"acc_opt_toggle_lock", "acc_opt_delete", "acc_opt_purge_expired",
 	"tokens_opt_set", "tokens_opt_validate", "hcr_opt_sessions_group",
 	"update_opt_apply", "update_opt_check_again", "back",
 }

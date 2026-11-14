@@ -20,17 +20,18 @@ var (
 // Address is the dial target (VMess "add"), Host the WS/XHTTP Host header and
 // SNI the TLS serverName; they may all differ (CDN / fronting setups).
 type XrayShareParams struct {
-	UUID       string
-	Address    string
-	Host       string
-	SNI        string
-	Port       int
-	Path       string
-	Remark     string
-	TLS        bool
-	PCS        string // pinned peer cert SHA-256 (hex), TLS only
-	Protocols  []string
-	Transports []string
+	UUID        string
+	Address     string
+	Host        string
+	SNI         string
+	Port        int
+	Path        string
+	Remark      string
+	TLS         bool
+	PCS         string // pinned peer cert SHA-256 (hex), TLS only
+	Protocols   []string
+	Transports  []string
+	GRPCService string
 }
 
 // XrayShareLink is one importable URI (v2rayN / Nekobox / Xray).
@@ -184,12 +185,17 @@ func BuildXrayShareLinks(p XrayShareParams) ([]XrayShareLink, error) {
 		}
 	}
 
-	protos := normalizeCSVList(p.Protocols, nil, map[string]bool{"vless": true, "vmess": true})
+	protos := normalizeCSVList(p.Protocols, nil, map[string]bool{"vless": true, "vmess": true, "trojan": true})
 	transports := normalizeCSVList(p.Transports, nil, map[string]bool{
-		"ws": true, "splithttp": true, "xhttp": true,
+		"ws": true, "splithttp": true, "xhttp": true, "httpupgrade": true, "grpc": true, "tcp": true,
 	})
 	if len(protos) == 0 || len(transports) == 0 {
 		return nil, fmt.Errorf("nenhum protocolo ou transporte habilitado")
+	}
+
+	grpcService := strings.TrimSpace(p.GRPCService)
+	if grpcService == "" {
+		grpcService = DefaultXrayGRPCService
 	}
 
 	remark := strings.TrimSpace(p.Remark)
@@ -202,9 +208,11 @@ func BuildXrayShareLinks(p XrayShareParams) ([]XrayShareLink, error) {
 			var err error
 			switch proto {
 			case "vless":
-				uri, err = buildVLESSShare(uuid, addr, p.Port, path, hostHeader, sni, pcs, remark, wire, p.TLS)
+				uri, err = buildVLESSShare(uuid, addr, p.Port, path, hostHeader, sni, pcs, remark, wire, grpcService, p.TLS)
 			case "vmess":
-				uri, err = buildVMessShare(uuid, addr, p.Port, path, hostHeader, sni, pcs, remark, wire, p.TLS)
+				uri, err = buildVMessShare(uuid, addr, p.Port, path, hostHeader, sni, pcs, remark, wire, grpcService, p.TLS)
+			case "trojan":
+				uri, err = buildTrojanShare(uuid, addr, p.Port, path, hostHeader, sni, pcs, remark, wire, grpcService, p.TLS)
 			}
 			if err != nil {
 				return nil, err
@@ -221,10 +229,18 @@ func BuildXrayShareLinks(p XrayShareParams) ([]XrayShareLink, error) {
 }
 
 func shareWireTransport(name string) string {
-	if name == "splithttp" || name == "xhttp" {
+	switch name {
+	case "splithttp", "xhttp":
 		return "xhttp"
+	case "httpupgrade":
+		return "httpupgrade"
+	case "grpc":
+		return "grpc"
+	case "tcp":
+		return "tcp"
+	default:
+		return "ws"
 	}
-	return "ws"
 }
 
 // ShareTransportPrompt maps config names to the client labels (xhttp, not SplitHTTP).
@@ -240,7 +256,7 @@ func ShareTransportPrompt(transports []string) string {
 		out = append(out, name)
 	}
 	if len(out) == 0 {
-		return "ws,xhttp"
+		return "ws,xhttp,httpupgrade,grpc,tcp"
 	}
 	return strings.Join(out, ",")
 }
@@ -263,12 +279,25 @@ func shareDialHost(addr string, port int) string {
 	return addr + ":" + strconv.Itoa(port)
 }
 
-func buildVLESSShare(uuid, addr string, port int, path, host, sni, pcs, remark, transport string, tls bool) (string, error) {
+func buildVLESSShare(uuid, addr string, port int, path, host, sni, pcs, remark, transport, grpcService string, tls bool) (string, error) {
 	q := url.Values{}
 	q.Set("encryption", "none")
 	q.Set("type", transport)
-	q.Set("path", path)
-	if host != "" {
+	if transport == "grpc" {
+		q.Set("serviceName", grpcService)
+		q.Set("mode", "gun")
+		if host != "" {
+			q.Set("authority", host)
+		}
+	} else if transport == "tcp" {
+		// raw tcp sem path
+		if tls {
+			q.Set("flow", "xtls-rprx-vision")
+		}
+	} else {
+		q.Set("path", path)
+	}
+	if host != "" && transport != "tcp" {
 		q.Set("host", host)
 	}
 	if tls {
@@ -280,9 +309,11 @@ func buildVLESSShare(uuid, addr string, port int, path, host, sni, pcs, remark, 
 		if pcs != "" {
 			q.Set("pcs", pcs)
 		}
-		if transport == "xhttp" {
+		if transport == "xhttp" || transport == "grpc" {
 			q.Set("alpn", "h2,http/1.1")
-			q.Set("mode", "auto")
+			if transport == "xhttp" {
+				q.Set("mode", "auto")
+			}
 		} else {
 			q.Set("alpn", "http/1.1")
 		}
@@ -302,7 +333,7 @@ func buildVLESSShare(uuid, addr string, port int, path, host, sni, pcs, remark, 
 	return u.String(), nil
 }
 
-func buildVMessShare(uuid, addr string, port int, path, host, sni, pcs, remark, transport string, tls bool) (string, error) {
+func buildVMessShare(uuid, addr string, port int, path, host, sni, pcs, remark, transport, grpcService string, tls bool) (string, error) {
 	card := map[string]string{
 		"v":    "2",
 		"ps":   remark,
@@ -313,8 +344,18 @@ func buildVMessShare(uuid, addr string, port int, path, host, sni, pcs, remark, 
 		"scy":  "auto",
 		"net":  transport,
 		"type": "none",
-		"host": host,
-		"path": path,
+	}
+	if transport == "grpc" {
+		card["path"] = grpcService
+		card["type"] = "gun"
+		if host != "" {
+			card["authority"] = host
+		}
+	} else if transport == "tcp" {
+		// raw tcp sem path e sem host
+	} else {
+		card["host"] = host
+		card["path"] = path
 	}
 	if transport == "xhttp" {
 		card["net"] = "xhttp"
@@ -329,7 +370,7 @@ func buildVMessShare(uuid, addr string, port int, path, host, sni, pcs, remark, 
 		if pcs != "" {
 			card["pcs"] = pcs
 		}
-		if transport == "xhttp" {
+		if transport == "xhttp" || transport == "grpc" {
 			card["alpn"] = "h2,http/1.1"
 		}
 	}
@@ -338,4 +379,54 @@ func buildVMessShare(uuid, addr string, port int, path, host, sni, pcs, remark, 
 		return "", err
 	}
 	return "vmess://" + base64.StdEncoding.EncodeToString(raw), nil
+}
+
+func buildTrojanShare(uuid, addr string, port int, path, host, sni, pcs, remark, transport, grpcService string, tls bool) (string, error) {
+	q := url.Values{}
+	q.Set("type", transport)
+	if transport == "grpc" {
+		q.Set("serviceName", grpcService)
+		q.Set("mode", "gun")
+		if host != "" {
+			q.Set("authority", host)
+		}
+	} else if transport == "tcp" {
+		// raw tcp sem path
+	} else {
+		q.Set("path", path)
+	}
+	if host != "" && transport != "tcp" {
+		q.Set("host", host)
+	}
+	if tls {
+		q.Set("security", "tls")
+		if sni != "" {
+			q.Set("sni", sni)
+		}
+		q.Set("fp", "chrome")
+		if pcs != "" {
+			q.Set("pcs", pcs)
+		}
+		if transport == "xhttp" || transport == "grpc" {
+			q.Set("alpn", "h2,http/1.1")
+			if transport == "xhttp" {
+				q.Set("mode", "auto")
+			}
+		} else {
+			q.Set("alpn", "http/1.1")
+		}
+	} else {
+		q.Set("security", "none")
+		if transport == "xhttp" {
+			q.Set("mode", "auto")
+		}
+	}
+	u := url.URL{
+		Scheme:   "trojan",
+		User:     url.User(uuid),
+		Host:     shareDialHost(addr, port),
+		RawQuery: q.Encode(),
+		Fragment: remark,
+	}
+	return u.String(), nil
 }
