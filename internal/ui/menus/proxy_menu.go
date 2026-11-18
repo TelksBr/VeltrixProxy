@@ -45,14 +45,14 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(menuItem("1", i18n.T("proxy_opt_add"), ""), w)
 		components.PrintBoxLine(menuItem("2", i18n.T("proxy_opt_remove"), ""), w)
 		components.PrintBoxLine(menuItem("3", i18n.T("proxy_opt_details"), ""), w)
-		components.PrintBoxLine(menuItem("9", i18n.T("proxy_opt_multistatus"), featureBadge(cfg.Multistatus)), w)
+		components.PrintBoxLine(menuItem("4", i18n.T("proxy_opt_multistatus"), featureBadge(cfg.Multistatus)), w)
 		components.PrintBoxDivider(w)
-		components.PrintBoxLine(menuItem("4", i18n.T("proxy_opt_start"), ""), w)
-		components.PrintBoxLine(menuItem("5", i18n.T("proxy_opt_stop"), ""), w)
-		components.PrintBoxLine(menuItem("6", i18n.T("proxy_opt_restart"), ""), w)
+		components.PrintBoxLine(menuItem("5", i18n.T("proxy_opt_start"), ""), w)
+		components.PrintBoxLine(menuItem("6", i18n.T("proxy_opt_stop"), ""), w)
+		components.PrintBoxLine(menuItem("7", i18n.T("proxy_opt_restart"), ""), w)
 		components.PrintBoxDivider(w)
-		components.PrintBoxLine(menuItem("7", i18n.T("proxy_opt_journal_logs"), ""), w)
-		components.PrintBoxLine(menuItem("8", i18n.T("proxy_opt_file_logs"), ""), w)
+		components.PrintBoxLine(menuItem("8", i18n.T("proxy_opt_journal_logs"), ""), w)
+		components.PrintBoxLine(menuItem("9", i18n.T("proxy_opt_file_logs"), ""), w)
 		printMenuBack(w)
 
 		switch readMenuOption("0-9") {
@@ -62,9 +62,9 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 			removePortInteractive(cfgMgr)
 		case "3":
 			showPortDetails(cfgMgr)
-		case "9":
-			withRestartPrompt(cfgMgr, func() { showMultistatusSubmenu(cfgMgr) })
 		case "4":
+			withRestartPrompt(cfgMgr, func() { showMultistatusSubmenu(cfgMgr) })
+		case "5":
 			if system.IsServiceActive(system.ProxyServiceName) {
 				components.PrintInfo(i18n.T("proxy_already_running"))
 			} else if confirmPortConflicts(cfg, "proxy_confirm_start_conflict") {
@@ -75,7 +75,7 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 				}
 			}
 			components.Pause()
-		case "5":
+		case "6":
 			if !system.IsServiceActive(system.ProxyServiceName) {
 				components.PrintInfo(i18n.T("proxy_already_stopped"))
 			} else if err := system.StopService(system.ProxyServiceName); err == nil {
@@ -84,7 +84,7 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 				components.PrintError(i18n.T("proxy_stop_failed", err))
 			}
 			components.Pause()
-		case "6":
+		case "7":
 			if system.IsServiceActive(system.ProxyServiceName) || confirmPortConflicts(cfg, "proxy_confirm_restart_conflict") {
 				if err := system.RestartService(system.ProxyServiceName); err == nil {
 					components.PrintSuccess(i18n.T("proxy_restarted"))
@@ -93,9 +93,9 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 				}
 			}
 			components.Pause()
-		case "7", "j":
+		case "8", "j":
 			handleRealtimeJournalLogs()
-		case "8", "l":
+		case "9", "l":
 			showLiveProxyMetricsBanner(cfgMgr)
 		case "0", "":
 			return

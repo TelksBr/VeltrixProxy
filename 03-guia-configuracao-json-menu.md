@@ -217,7 +217,7 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 | `cert_internal` | `bool` | `true` | Se `true`, usa o certificado Cloudflare TLS embutido nas portas `:ssl`. |
 | `display_banner`| `bool` | `true` | Exibe o banner informativo com portas e status na inicialização. |
 | `response` | `string` | `"VeltrixProxy"` | Mensagem da resposta HTTP 200/101 do payload falso. |
-| `multistatus` | `bool` | `true` | Habilita suporte a capas HTTP multi-status / UNLOCK (TIM / CDN). |
+| `multistatus` | `bool` | `true` | Habilita suporte a capas HTTP multi-status / UNLOCK (CDN). |
 | `multistatus_ports` | `string` | `""` | Portas dedicadas ao handshake Multistatus nativo (CSV, ex.: `"80,443"`). Vazio mantém classificação automática em todas as portas. Alias legado migrado: `sshplus_multistatus_ports`. |
 | `ulimit` | `int` | `65536` | Limite de descritores de arquivos (`RLIMIT_NOFILE`) no Linux. |
 
