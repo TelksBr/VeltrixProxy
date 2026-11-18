@@ -28,11 +28,12 @@ func ShowSettingsMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(menuItem("2", i18n.T("adv_opt_ssl"), featureBadge(cfg.CertInternal)), w)
 		components.PrintBoxLine(menuItem("3", i18n.T("adv_opt_perf"), ""), w)
 		components.PrintBoxLine(menuItem("4", i18n.T("adv_opt_http_logs"), ""), w)
+		components.PrintBoxLine(menuItem("5", i18n.T("adv_opt_multistatus"), featureBadge(cfg.Multistatus)), w)
 		components.PrintBoxDivider(w)
-		components.PrintBoxLine(menuItem("5", i18n.T("adv_opt_view_json"), ""), w)
+		components.PrintBoxLine(menuItem("6", i18n.T("adv_opt_view_json"), ""), w)
 		printMenuBack(w)
 
-		switch readMenuOption("0-5") {
+		switch readMenuOption("0-6") {
 		case "1":
 			showProtocolsSubmenu(cfgMgr)
 		case "2":
@@ -42,6 +43,8 @@ func ShowSettingsMenu(cfgMgr *config.Manager) {
 		case "4":
 			showHttpLogsSubmenu(cfgMgr)
 		case "5":
+			showMultistatusSubmenu(cfgMgr)
+		case "6":
 			viewConfigFile(cfgMgr)
 		case "0", "":
 			return
@@ -67,9 +70,10 @@ func showProtocolsSubmenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(menuItem("3", i18n.T("adv_opt_xhttp"), ""), w)
 		components.PrintBoxLine(menuItem("4", i18n.T("adv_opt_ztun"), featureBadge(cfg.Ztun.Enable)), w)
 		components.PrintBoxLine(menuItem("5", i18n.T("adv_opt_hcr"), featureBadge(cfg.HCR.Enable)), w)
+		components.PrintBoxLine(menuItem("6", i18n.T("adv_opt_multistatus"), featureBadge(cfg.Multistatus)), w)
 		printMenuBack(w)
 
-		switch readMenuOption("0-5") {
+		switch readMenuOption("0-6") {
 		case "1":
 			showSSHSubmenu(cfgMgr)
 		case "2":
@@ -80,6 +84,8 @@ func showProtocolsSubmenu(cfgMgr *config.Manager) {
 			showZtunSubmenu(cfgMgr)
 		case "5":
 			showHCRSubmenu(cfgMgr)
+		case "6":
+			showMultistatusSubmenu(cfgMgr)
 		case "0", "":
 			return
 		default:

@@ -17,7 +17,7 @@ BINARY_NAME="proxy-server"
 UDPGW_BINARY_NAME="udpgw"
 MENU_NAME="vt"
 INSTALL_DIR="/usr/local/bin"
-INSTALLER_REV="47"
+INSTALLER_REV="48"
 MENU_REV_FILE="/etc/vt-menu-revision"
 DEFAULT_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 VERSION_FILE="/etc/proxy-version"
@@ -1777,7 +1777,7 @@ ensure_proxy_json_config() {
   [[ -z "$token" ]] && token=$(load_saved_proxy_token || true)
 
   prepare_xray_legacy_config >/dev/null || true
-  run_privileged mkdir -p "$PROXY_JSON_DIR" "$PROXY_LOG_DIR" 2>/dev/null || true
+  run_privileged mkdir -p "$PROXY_JSON_DIR" "$PROXY_LOG_DIR" "/var/lib/vtproxy" 2>/dev/null || true
 
   if [[ ! -f "$PROXY_JSON_FILE" ]]; then
     if [[ -x "/usr/local/bin/proxy-server" ]] && /usr/local/bin/proxy-server --dump-config >/dev/null 2>&1; then
@@ -1805,6 +1805,8 @@ default_cfg = {
   "cert_internal": True,
   "display_banner": True,
   "response": "VeltrixProxy",
+  "multistatus": True,
+  "multistatus_ports": "",
   "ulimit": 65536,
   "ssh": {
     "internal": True,
@@ -1821,6 +1823,7 @@ default_cfg = {
     "enable": True,
     "tun": "btun0",
     "subnet": "10.77.0.0/16",
+    "subnet6": "fd77::/64",
     "auth": "shadow",
     "auth_file": "/etc/btun/users",
     "udp_port": 0
@@ -1862,9 +1865,37 @@ default_cfg = {
   "xray": {
     "enable": True,
     "path": "/vtxray",
-    "protocols": ["vless", "vmess", "trojan"],
-    "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp"],
+    "ws_path": "",
+    "splithttp_path": "",
+    "httpupgrade_path": "",
+    "splithttp_config": "",
+    "protocols": ["vless", "vmess", "trojan", "socks", "http", "shadowsocks"],
+    "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp", "mkcp", "hysteria"],
     "grpc_service": "vtxray",
+    "h3": True,
+    "h3_config": "",
+    "udp_listen": "",
+    "tcp_finalmask_listen": "",
+    "tcp_finalmask_config": "",
+    "kcp_listen": "",
+    "kcp_tls": False,
+    "kcp_cert_file": "",
+    "kcp_key_file": "",
+    "kcp_config": "",
+    "hysteria_listen": "",
+    "hysteria_config": "",
+    "udp_finalmask_config": "",
+    "ss2022_listen": "",
+    "ss2022_method": "2022-blake3-aes-128-gcm",
+    "ss2022_master_key": "",
+    "masque_listen": "",
+    "masque_subnet": "10.13.0.1/24",
+    "masque_path": "/.well-known/masque/ip/*/*/",
+    "wireguard_config": "",
+    "xdrive_config": "",
+    "native_config": "",
+    "sync_passwd": False,
+    "traffic_usage_file": "/var/lib/vtproxy/xray-traffic-usage.json",
     "tls": {
       "inherit_port": True,
       "cert_file": "",
@@ -1909,6 +1940,8 @@ with open(path, "w", encoding="utf-8") as f:
   "cert_internal": true,
   "display_banner": true,
   "response": "VeltrixProxy",
+  "multistatus": true,
+  "multistatus_ports": "",
   "ulimit": 65536,
   "ssh": {
     "internal": true,
@@ -1925,6 +1958,7 @@ with open(path, "w", encoding="utf-8") as f:
     "enable": true,
     "tun": "btun0",
     "subnet": "10.77.0.0/16",
+    "subnet6": "fd77::/64",
     "auth": "shadow",
     "auth_file": "/etc/btun/users",
     "udp_port": 0
@@ -1966,9 +2000,37 @@ with open(path, "w", encoding="utf-8") as f:
   "xray": {
     "enable": true,
     "path": "/vtxray",
-    "protocols": ["vless", "vmess", "trojan"],
-    "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp"],
+    "ws_path": "",
+    "splithttp_path": "",
+    "httpupgrade_path": "",
+    "splithttp_config": "",
+    "protocols": ["vless", "vmess", "trojan", "socks", "http", "shadowsocks"],
+    "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp", "mkcp", "hysteria"],
     "grpc_service": "vtxray",
+    "h3": true,
+    "h3_config": "",
+    "udp_listen": "",
+    "tcp_finalmask_listen": "",
+    "tcp_finalmask_config": "",
+    "kcp_listen": "",
+    "kcp_tls": false,
+    "kcp_cert_file": "",
+    "kcp_key_file": "",
+    "kcp_config": "",
+    "hysteria_listen": "",
+    "hysteria_config": "",
+    "udp_finalmask_config": "",
+    "ss2022_listen": "",
+    "ss2022_method": "2022-blake3-aes-128-gcm",
+    "ss2022_master_key": "",
+    "masque_listen": "",
+    "masque_subnet": "10.13.0.1/24",
+    "masque_path": "/.well-known/masque/ip/*/*/",
+    "wireguard_config": "",
+    "xdrive_config": "",
+    "native_config": "",
+    "sync_passwd": false,
+    "traffic_usage_file": "/var/lib/vtproxy/xray-traffic-usage.json",
     "tls": {
       "inherit_port": true,
       "cert_file": "",
@@ -2008,6 +2070,23 @@ try:
         changed = True
     if sys.argv[1] and (not d.get("token") or d.get("token") != sys.argv[1]):
         d["token"] = sys.argv[1]
+        changed = True
+    # Multistatus e migracao do alias legado sshplus_multistatus_ports
+    if "multistatus" not in d:
+        d["multistatus"] = True
+        changed = True
+    if "multistatus_ports" not in d:
+        if "sshplus_multistatus_ports" in d:
+            d["multistatus_ports"] = str(d.pop("sshplus_multistatus_ports") or "")
+        else:
+            d["multistatus_ports"] = ""
+        changed = True
+    elif "sshplus_multistatus_ports" in d:
+        d.pop("sshplus_multistatus_ports", None)
+        changed = True
+    # BTUN subnet6 (preserva vazio explicito caso o usuario tenha desligado IPv6)
+    if "btun" in d and isinstance(d.get("btun"), dict) and "subnet6" not in d["btun"]:
+        d["btun"]["subnet6"] = "fd77::/64"
         changed = True
     # Injeta ssh.banner_enable + ssh.banner_file (diretiva OpenSSH Banner) em JSONs antigos
     if "ssh" not in d or not isinstance(d.get("ssh"), dict):
@@ -2099,14 +2178,44 @@ try:
         if "session_stats_interval" not in h:
             h["session_stats_interval"] = 10
             changed = True
-    # Injeta seção xray (VLESS/VMess /vtxray) em JSONs antigos
+    # Injeta seção xray completa em JSONs antigos
     legacy_path = os.environ.get("PROXYVT_XRAY_LEGACY_CONFIG") or "/usr/local/etc/xray/config.json"
+    full_protocols = ["vless", "vmess", "trojan", "socks", "http", "shadowsocks"]
+    full_transports = ["ws", "splithttp", "httpupgrade", "grpc", "tcp", "mkcp", "hysteria"]
     xray_defaults = {
         "enable": True,
         "path": "/vtxray",
-        "protocols": ["vless", "vmess", "trojan"],
-        "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp"],
+        "ws_path": "",
+        "splithttp_path": "",
+        "httpupgrade_path": "",
+        "splithttp_config": "",
+        "protocols": list(full_protocols),
+        "transports": list(full_transports),
         "grpc_service": "vtxray",
+        "h3": True,
+        "h3_config": "",
+        "udp_listen": "",
+        "tcp_finalmask_listen": "",
+        "tcp_finalmask_config": "",
+        "kcp_listen": "",
+        "kcp_tls": False,
+        "kcp_cert_file": "",
+        "kcp_key_file": "",
+        "kcp_config": "",
+        "hysteria_listen": "",
+        "hysteria_config": "",
+        "udp_finalmask_config": "",
+        "ss2022_listen": "",
+        "ss2022_method": "2022-blake3-aes-128-gcm",
+        "ss2022_master_key": "",
+        "masque_listen": "",
+        "masque_subnet": "10.13.0.1/24",
+        "masque_path": "/.well-known/masque/ip/*/*/",
+        "wireguard_config": "",
+        "xdrive_config": "",
+        "native_config": "",
+        "sync_passwd": False,
+        "traffic_usage_file": "/var/lib/vtproxy/xray-traffic-usage.json",
         "tls": {
             "inherit_port": True,
             "cert_file": "",
@@ -2123,6 +2232,7 @@ try:
         changed = True
     else:
         x = d["xray"]
+        has_new_schema = "traffic_usage_file" in x
         for k, v in xray_defaults.items():
             if k not in x:
                 x[k] = v
@@ -2133,17 +2243,36 @@ try:
         if not str(x.get("grpc_service") or "").strip():
             x["grpc_service"] = "vtxray"
             changed = True
-        if not isinstance(x.get("protocols"), list) or not x.get("protocols"):
-            x["protocols"] = ["vless", "vmess", "trojan"]
+        if not str(x.get("ss2022_method") or "").strip():
+            x["ss2022_method"] = "2022-blake3-aes-128-gcm"
             changed = True
-        elif "trojan" not in x["protocols"] and set(x["protocols"]) == {"vless", "vmess"}:
-            x["protocols"].append("trojan")
+        if not str(x.get("masque_subnet") or "").strip():
+            x["masque_subnet"] = "10.13.0.1/24"
+            changed = True
+        if not str(x.get("masque_path") or "").strip():
+            x["masque_path"] = "/.well-known/masque/ip/*/*/"
+            changed = True
+        if not str(x.get("traffic_usage_file") or "").strip():
+            x["traffic_usage_file"] = "/var/lib/vtproxy/xray-traffic-usage.json"
+            changed = True
+        if not isinstance(x.get("protocols"), list) or not x.get("protocols"):
+            x["protocols"] = list(full_protocols)
+            changed = True
+        elif not has_new_schema and set(x["protocols"]) in ({"vless", "vmess"}, {"vless", "vmess", "trojan"}):
+            x["protocols"] = list(full_protocols)
             changed = True
         if not isinstance(x.get("transports"), list) or not x.get("transports"):
-            x["transports"] = ["ws", "splithttp", "httpupgrade", "grpc", "tcp"]
+            x["transports"] = list(full_transports)
             changed = True
-        elif set(x["transports"]) == {"ws", "splithttp"} or set(x["transports"]) == {"ws", "xhttp"}:
-            x["transports"] = ["ws", "splithttp", "httpupgrade", "grpc", "tcp"]
+        elif not has_new_schema and set(x["transports"]) in ({"ws", "splithttp"}, {"ws", "xhttp"}, {"ws", "splithttp", "httpupgrade", "grpc", "tcp"}):
+            x["transports"] = list(full_transports)
+            changed = True
+        if any(str(x.get(fk) or "").strip() for fk in ("ss2022_listen", "masque_listen", "wireguard_config", "xdrive_config")):
+            if x.get("sync_passwd") is not True:
+                x["sync_passwd"] = True
+                changed = True
+        elif x.get("sync_passwd") is True and not str(x.get("native_config") or "").strip():
+            x["sync_passwd"] = False
             changed = True
         if "tls" not in x or not isinstance(x.get("tls"), dict):
             x["tls"] = dict(xray_defaults["tls"])
@@ -2210,7 +2339,7 @@ migrate_flags_to_json_config() {
   log_info "Verificando migração de configurações do proxy para JSON (/etc/proxyvt/config.json)..."
 
   prepare_xray_legacy_config >/dev/null || true
-  run_privileged mkdir -p "$PROXY_JSON_DIR" "$PROXY_LOG_DIR" 2>/dev/null || true
+  run_privileged mkdir -p "$PROXY_JSON_DIR" "$PROXY_LOG_DIR" "/var/lib/vtproxy" 2>/dev/null || true
 
   if ! command -v python3 >/dev/null 2>&1; then
     log_info "Python 3 não detectado; utilizando gerador nativo de config.json."
@@ -2223,6 +2352,9 @@ import json, os, re, glob, sys
 
 json_path = "/etc/proxyvt/config.json"
 default_token = sys.argv[1] if len(sys.argv) > 1 else ""
+legacy_path = os.environ.get("PROXYVT_XRAY_LEGACY_CONFIG") or "/usr/local/etc/xray/config.json"
+full_protocols = ["vless", "vmess", "trojan", "socks", "http", "shadowsocks"]
+full_transports = ["ws", "splithttp", "httpupgrade", "grpc", "tcp", "mkcp", "hysteria"]
 
 config = {
     "token": default_token or "",
@@ -2238,6 +2370,8 @@ config = {
     "cert_internal": True,
     "display_banner": True,
     "response": "VeltrixProxy",
+    "multistatus": True,
+    "multistatus_ports": "",
     "ulimit": 65536,
     "ssh": {
         "internal": True,
@@ -2254,6 +2388,7 @@ config = {
         "enable": True,
         "tun": "btun0",
         "subnet": "10.77.0.0/16",
+        "subnet6": "fd77::/64",
         "auth": "shadow",
         "auth_file": "/etc/btun/users",
         "udp_port": 0
@@ -2295,8 +2430,37 @@ config = {
     "xray": {
         "enable": True,
         "path": "/vtxray",
-        "protocols": ["vless", "vmess"],
-        "transports": ["ws", "splithttp"],
+        "ws_path": "",
+        "splithttp_path": "",
+        "httpupgrade_path": "",
+        "splithttp_config": "",
+        "protocols": list(full_protocols),
+        "transports": list(full_transports),
+        "grpc_service": "vtxray",
+        "h3": True,
+        "h3_config": "",
+        "udp_listen": "",
+        "tcp_finalmask_listen": "",
+        "tcp_finalmask_config": "",
+        "kcp_listen": "",
+        "kcp_tls": False,
+        "kcp_cert_file": "",
+        "kcp_key_file": "",
+        "kcp_config": "",
+        "hysteria_listen": "",
+        "hysteria_config": "",
+        "udp_finalmask_config": "",
+        "ss2022_listen": "",
+        "ss2022_method": "2022-blake3-aes-128-gcm",
+        "ss2022_master_key": "",
+        "masque_listen": "",
+        "masque_subnet": "10.13.0.1/24",
+        "masque_path": "/.well-known/masque/ip/*/*/",
+        "wireguard_config": "",
+        "xdrive_config": "",
+        "native_config": "",
+        "sync_passwd": False,
+        "traffic_usage_file": "/var/lib/vtproxy/xray-traffic-usage.json",
         "tls": {
             "inherit_port": True,
             "cert_file": "",
@@ -2305,7 +2469,7 @@ config = {
         },
         "legacy": {
             "enable": True,
-            "config_file": os.environ.get("PROXYVT_XRAY_LEGACY_CONFIG") or "/usr/local/etc/xray/config.json"
+            "config_file": legacy_path
         }
     },
     "udpgw": {
@@ -2315,15 +2479,24 @@ config = {
     }
 }
 
+has_new_xray_schema = False
 if os.path.exists(json_path):
     try:
         with open(json_path, "r", encoding="utf-8") as f:
             existing = json.load(f)
+            had_native_ms_ports = "multistatus_ports" in existing
+            legacy_ms_ports = existing.get("sshplus_multistatus_ports")
+            if isinstance(existing.get("xray"), dict) and "traffic_usage_file" in existing["xray"]:
+                has_new_xray_schema = True
             for k, v in existing.items():
+                if k == "sshplus_multistatus_ports":
+                    continue
                 if isinstance(v, dict) and k in config and isinstance(config[k], dict):
                     config[k].update(v)
                 else:
                     config[k] = v
+            if not had_native_ms_ports and legacy_ms_ports is not None:
+                config["multistatus_ports"] = str(legacy_ms_ports)
     except Exception:
         pass
 
@@ -2444,9 +2617,85 @@ for sf in service_files:
         m_sub = re.search(r"--btun-subnet[= ]([^\s]+)", exec_cmd)
         if m_sub:
             config["btun"]["subnet"] = m_sub.group(1)
+        m_sub6 = re.search(r"--btun-subnet6[= ]([^\s]*)", exec_cmd)
+        if m_sub6:
+            config["btun"]["subnet6"] = m_sub6.group(1)
         m_udp = re.search(r"--btun-udp-port[= ]([0-9]+)", exec_cmd)
         if m_udp:
             config["btun"]["udp_port"] = int(m_udp.group(1))
+
+        if "--multistatus=false" in exec_cmd or "--multi-status=false" in exec_cmd:
+            config["multistatus"] = False
+        elif re.search(r"--multi-?status(?:=true)?(?=\s|$)", exec_cmd):
+            config["multistatus"] = True
+        for m_ms in re.finditer(r"--(?:sshplus-)?multistatus-ports[= ]([^\s]*)", exec_cmd):
+            config["multistatus_ports"] = m_ms.group(1).strip()
+
+        if "--xray-enable=false" in exec_cmd:
+            config["xray"]["enable"] = False
+        elif re.search(r"--xray-enable(?:=true)?(?=\s|$)", exec_cmd):
+            config["xray"]["enable"] = True
+        if "--xray-h3=false" in exec_cmd:
+            config["xray"]["h3"] = False
+        elif re.search(r"--xray-h3(?:=true)?(?=\s|$)", exec_cmd):
+            config["xray"]["h3"] = True
+        if "--xray-kcp-tls=false" in exec_cmd:
+            config["xray"]["kcp_tls"] = False
+        elif re.search(r"--xray-kcp-tls(?:=true)?(?=\s|$)", exec_cmd):
+            config["xray"]["kcp_tls"] = True
+        if "--xray-sync-passwd=false" in exec_cmd:
+            config["xray"]["sync_passwd"] = False
+        elif re.search(r"--xray-sync-passwd(?:=true)?(?=\s|$)", exec_cmd):
+            config["xray"]["sync_passwd"] = True
+        if "--xray-legacy=false" in exec_cmd:
+            config["xray"]["legacy"]["enable"] = False
+        elif re.search(r"--xray-legacy(?:=true)?(?=\s|$)", exec_cmd):
+            config["xray"]["legacy"]["enable"] = True
+        m_xlc = re.search(r"--xray-legacy-config[= ]([^\s]+)", exec_cmd)
+        if m_xlc:
+            config["xray"]["legacy"]["config_file"] = m_xlc.group(1).strip()
+
+        xray_str_flags = {
+            "--xray-path": "path",
+            "--xray-ws-path": "ws_path",
+            "--xray-splithttp-path": "splithttp_path",
+            "--xray-httpupgrade-path": "httpupgrade_path",
+            "--xray-splithttp-config": "splithttp_config",
+            "--xray-grpc-service": "grpc_service",
+            "--xray-h3-config": "h3_config",
+            "--xray-udp-listen": "udp_listen",
+            "--xray-tcp-finalmask-listen": "tcp_finalmask_listen",
+            "--xray-tcp-finalmask-config": "tcp_finalmask_config",
+            "--xray-kcp-listen": "kcp_listen",
+            "--xray-kcp-cert": "kcp_cert_file",
+            "--xray-kcp-key": "kcp_key_file",
+            "--xray-kcp-config": "kcp_config",
+            "--xray-hysteria-listen": "hysteria_listen",
+            "--xray-hysteria-config": "hysteria_config",
+            "--xray-udp-finalmask-config": "udp_finalmask_config",
+            "--xray-ss2022-listen": "ss2022_listen",
+            "--xray-ss2022-method": "ss2022_method",
+            "--xray-ss2022-master-key": "ss2022_master_key",
+            "--xray-masque-listen": "masque_listen",
+            "--xray-masque-subnet": "masque_subnet",
+            "--xray-masque-path": "masque_path",
+            "--xray-wireguard-config": "wireguard_config",
+            "--xray-xdrive-config": "xdrive_config",
+            "--xray-native-config": "native_config",
+            "--xray-traffic-usage-file": "traffic_usage_file",
+        }
+        for flag_name, json_key in xray_str_flags.items():
+            m_xf = re.search(re.escape(flag_name) + r"[= ]([^\s]+)", exec_cmd)
+            if m_xf:
+                config["xray"][json_key] = m_xf.group(1).strip()
+        m_xpr = re.search(r"--xray-protocols[= ]([^\s]+)", exec_cmd)
+        if m_xpr:
+            config["xray"]["protocols"] = [x.strip() for x in m_xpr.group(1).split(",") if x.strip()]
+            has_new_xray_schema = True
+        m_xtr = re.search(r"--xray-transports[= ]([^\s]+)", exec_cmd)
+        if m_xtr:
+            config["xray"]["transports"] = [x.strip() for x in m_xtr.group(1).split(",") if x.strip()]
+            has_new_xray_schema = True
 
         if "--ssh-internal=false" in exec_cmd:
             config["ssh"]["internal"] = False
@@ -2566,13 +2815,40 @@ else:
     if not str(config["hcr"].get("transport") or "").strip():
         config["hcr"]["transport"] = "auto"
 
-legacy_path = os.environ.get("PROXYVT_XRAY_LEGACY_CONFIG") or "/usr/local/etc/xray/config.json"
 xray_defaults = {
     "enable": True,
     "path": "/vtxray",
-    "protocols": ["vless", "vmess", "trojan"],
-    "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp"],
+    "ws_path": "",
+    "splithttp_path": "",
+    "httpupgrade_path": "",
+    "splithttp_config": "",
+    "protocols": list(full_protocols),
+    "transports": list(full_transports),
     "grpc_service": "vtxray",
+    "h3": True,
+    "h3_config": "",
+    "udp_listen": "",
+    "tcp_finalmask_listen": "",
+    "tcp_finalmask_config": "",
+    "kcp_listen": "",
+    "kcp_tls": False,
+    "kcp_cert_file": "",
+    "kcp_key_file": "",
+    "kcp_config": "",
+    "hysteria_listen": "",
+    "hysteria_config": "",
+    "udp_finalmask_config": "",
+    "ss2022_listen": "",
+    "ss2022_method": "2022-blake3-aes-128-gcm",
+    "ss2022_master_key": "",
+    "masque_listen": "",
+    "masque_subnet": "10.13.0.1/24",
+    "masque_path": "/.well-known/masque/ip/*/*/",
+    "wireguard_config": "",
+    "xdrive_config": "",
+    "native_config": "",
+    "sync_passwd": False,
+    "traffic_usage_file": "/var/lib/vtproxy/xray-traffic-usage.json",
     "tls": {
         "inherit_port": True,
         "cert_file": "",
@@ -2594,14 +2870,26 @@ else:
         config["xray"]["path"] = "/vtxray"
     if not str(config["xray"].get("grpc_service") or "").strip():
         config["xray"]["grpc_service"] = "vtxray"
+    if not str(config["xray"].get("ss2022_method") or "").strip():
+        config["xray"]["ss2022_method"] = "2022-blake3-aes-128-gcm"
+    if not str(config["xray"].get("masque_subnet") or "").strip():
+        config["xray"]["masque_subnet"] = "10.13.0.1/24"
+    if not str(config["xray"].get("masque_path") or "").strip():
+        config["xray"]["masque_path"] = "/.well-known/masque/ip/*/*/"
+    if not str(config["xray"].get("traffic_usage_file") or "").strip():
+        config["xray"]["traffic_usage_file"] = "/var/lib/vtproxy/xray-traffic-usage.json"
     if not isinstance(config["xray"].get("protocols"), list) or not config["xray"].get("protocols"):
-        config["xray"]["protocols"] = ["vless", "vmess", "trojan"]
-    elif "trojan" not in config["xray"]["protocols"] and set(config["xray"]["protocols"]) == {"vless", "vmess"}:
-        config["xray"]["protocols"].append("trojan")
+        config["xray"]["protocols"] = list(full_protocols)
+    elif not has_new_xray_schema and set(config["xray"]["protocols"]) in ({"vless", "vmess"}, {"vless", "vmess", "trojan"}):
+        config["xray"]["protocols"] = list(full_protocols)
     if not isinstance(config["xray"].get("transports"), list) or not config["xray"].get("transports"):
-        config["xray"]["transports"] = ["ws", "splithttp", "httpupgrade", "grpc", "tcp"]
-    elif set(config["xray"]["transports"]) == {"ws", "splithttp"} or set(config["xray"]["transports"]) == {"ws", "xhttp"}:
-        config["xray"]["transports"] = ["ws", "splithttp", "httpupgrade", "grpc", "tcp"]
+        config["xray"]["transports"] = list(full_transports)
+    elif not has_new_xray_schema and set(config["xray"]["transports"]) in ({"ws", "splithttp"}, {"ws", "xhttp"}, {"ws", "splithttp", "httpupgrade", "grpc", "tcp"}):
+        config["xray"]["transports"] = list(full_transports)
+    if any(str(config["xray"].get(fk) or "").strip() for fk in ("ss2022_listen", "masque_listen", "wireguard_config", "xdrive_config")):
+        config["xray"]["sync_passwd"] = True
+    elif config["xray"].get("sync_passwd") is True and not str(config["xray"].get("native_config") or "").strip():
+        config["xray"]["sync_passwd"] = False
     if "tls" not in config["xray"] or not isinstance(config["xray"].get("tls"), dict):
         config["xray"]["tls"] = dict(xray_defaults["tls"])
     if "legacy" not in config["xray"] or not isinstance(config["xray"].get("legacy"), dict):
@@ -2616,6 +2904,7 @@ else:
             config["xray"]["legacy"]["config_file"] = legacy_path
 
 os.makedirs("/var/log/proxy", exist_ok=True)
+os.makedirs("/var/lib/vtproxy", exist_ok=True)
 os.makedirs(os.path.dirname(json_path), exist_ok=True)
 temp_path = json_path + ".tmp"
 with open(temp_path, "w", encoding="utf-8") as f:
@@ -2660,7 +2949,7 @@ After=network.target
 [Service]
 Environment="GOMEMLIMIT=${gomemlimit}"
 Environment="GOGC=100"
-ExecStartPre=-/bin/mkdir -p /var/log/proxy
+ExecStartPre=-/bin/mkdir -p /var/log/proxy /var/lib/vtproxy
 ExecStartPre=-/usr/local/bin/vt-iptables
 ExecStart=$proxy_bin --config /etc/proxyvt/config.json
 Restart=always
@@ -3394,6 +3683,7 @@ run_uninstall() {
                         /etc/proxy \
                         /etc/udpgw \
                         /etc/btun \
+                        /var/lib/vtproxy \
                         /var/log/proxy 2>/dev/null || true
 
   # 6. Remover arquivos de versão e cache

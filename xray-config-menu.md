@@ -12,9 +12,37 @@ Precedência no proxy: **defaults internos → `config.json` → flags CLI**.
 "xray": {
   "enable": true,
   "path": "/vtxray",
-  "protocols": ["vless", "vmess", "trojan"],
-  "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp"],
+  "ws_path": "",
+  "splithttp_path": "",
+  "httpupgrade_path": "",
+  "splithttp_config": "",
+  "protocols": ["vless", "vmess", "trojan", "socks", "http", "shadowsocks"],
+  "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp", "mkcp", "hysteria"],
   "grpc_service": "vtxray",
+  "h3": true,
+  "h3_config": "",
+  "udp_listen": "",
+  "tcp_finalmask_listen": "",
+  "tcp_finalmask_config": "",
+  "kcp_listen": "",
+  "kcp_tls": false,
+  "kcp_cert_file": "",
+  "kcp_key_file": "",
+  "kcp_config": "",
+  "hysteria_listen": "",
+  "hysteria_config": "",
+  "udp_finalmask_config": "",
+  "ss2022_listen": "",
+  "ss2022_method": "2022-blake3-aes-128-gcm",
+  "ss2022_master_key": "",
+  "masque_listen": "",
+  "masque_subnet": "10.13.0.1/24",
+  "masque_path": "/.well-known/masque/ip/*/*/",
+  "wireguard_config": "",
+  "xdrive_config": "",
+  "native_config": "",
+  "sync_passwd": false,
+  "traffic_usage_file": "/var/lib/vtproxy/xray-traffic-usage.json",
   "tls": {
     "inherit_port": true,
     "cert_file": "",
@@ -31,13 +59,25 @@ Precedência no proxy: **defaults internos → `config.json` → flags CLI**.
 | Campo | Default | Notas |
 | --- | --- | --- |
 | `enable` | `true` | Liga o motor. |
-| `path` | `/vtxray` | WS/HTTPUpgrade no path exato; SplitHTTP = `path/{session}/{seq}`. |
-| `protocols` | `vless,vmess,trojan` | Protocolos suportados. |
-| `transports` | `ws,splithttp,httpupgrade,grpc,tcp` | Transportes suportados (`xhttp` vira `splithttp`). |
+| `path` | `/vtxray` | Path padrão/fallback para WS, SplitHTTP e HTTPUpgrade. |
+| `ws_path` / `splithttp_path` / `httpupgrade_path` | `""` | Overrides de rota por transporte (vazio herda `path`). |
+| `splithttp_config` | `""` | JSON de `splithttpSettings`; seu `path` prevalece sobre `splithttp_path`. |
+| `protocols` | `vless,vmess,trojan,socks,http,shadowsocks` | Protocolos aceitos pelo motor custom. |
+| `transports` | `ws,splithttp,httpupgrade,grpc,tcp,mkcp,hysteria` | Transportes suportados (`xhttp` vira `splithttp`). |
 | `grpc_service` | `vtxray` | Nome do serviço gRPC Tun. |
-| `tls.inherit_port` | `true` | v1 usa o TLS da porta do proxy. |
-| `legacy.enable` | `true` | UUID do JSON se não estiver no passwd. |
-| `legacy.config_file` | detectado ou `/usr/local/etc/xray/config.json` | |
+| `h3` / `h3_config` | `true` / `""` | HTTP/3 (QUIC) para SplitHTTP nas portas TLS + `QuicParams` opcional. |
+| `udp_listen` | `""` | Listener UDP dedicado para Shadowsocks AEAD (ex: `:8388`). |
+| `kcp_listen` / `kcp_tls` / `kcp_cert_file` / `kcp_key_file` / `kcp_config` | `""` / `false` | Listener UDP mKCP opcional + TLS/config. |
+| `hysteria_listen` / `hysteria_config` | `""` | Listener UDP Hysteria 2 QUIC opcional + `hysteriaSettings`. |
+| `udp_finalmask_config` | `""` | Fragmento `StreamConfig` com `finalmask.udp` para mKCP/Hysteria. |
+| `tcp_finalmask_listen` / `tcp_finalmask_config` | `""` | Listener TCP dedicado aplicando `finalmask.tcp`. |
+| `ss2022_listen` / `ss2022_method` / `ss2022_master_key` | `""` / `2022-blake3-aes-128-gcm` | Listener TCP+UDP SS2022 integrado ao `/etc/passwd` (auto-ativa `sync_passwd`). |
+| `masque_listen` / `masque_subnet` / `masque_path` | `""` / `10.13.0.1/24` / `/.well-known/masque/ip/*/*/` | Listener HTTP/3 MASQUE dedicado (auto-ativa `sync_passwd`). |
+| `wireguard_config` / `xdrive_config` | `""` | Listeners dedicados WireGuard e VLESS/X-Drive (auto-ativam `sync_passwd`). |
+| `native_config` / `sync_passwd` | `""` / `false` | Core Xray oficial adicional + sincronização de contas/cota `/etc/passwd`. |
+| `traffic_usage_file` | `/var/lib/vtproxy/xray-traffic-usage.json` | Ledger persistente de cota por usuário (`traffic_limit_bytes=N` no GECOS). |
+| `tls.inherit_port` | `true` | Usa o TLS da porta do proxy. |
+| `legacy.enable` / `legacy.config_file` | `true` / detectado | UUID do JSON se não estiver no passwd. |
 
 Idle Xray **não** é exposto (desligado no motor).
 

@@ -225,3 +225,41 @@ func TestAccountOperationsMock(t *testing.T) {
 		t.Fatalf("DeleteAccount erro: %v", err)
 	}
 }
+
+func TestTrafficQuotaGecosPreservation(t *testing.T) {
+	// Must not confuse traffic_limit with connection limit
+	if lim, ok := ParseLimitFromGecos("uuid=550e8400-e29b-41d4-a716-446655440000,traffic_limit=8192"); ok || lim != 0 {
+		t.Fatalf("traffic_limit mistaken for connection limit: %d, %v", lim, ok)
+	}
+	if q, ok := ParseTrafficLimitFromGecos("limit=2,traffic_limit_bytes=1073741824,uuid=550e8400-e29b-41d4-a716-446655440000"); !ok || q != 1073741824 {
+		t.Fatalf("ParseTrafficLimitFromGecos failed: %d, %v", q, ok)
+	}
+	gb10, err := ParseTrafficQuotaInput("10GB")
+	if err != nil || gb10 != 10*1024*1024*1024 {
+		t.Fatalf("ParseTrafficQuotaInput(10GB) = %d, %v", gb10, err)
+	}
+	if FormatTrafficBytes(gb10) != "10 GB" {
+		t.Fatalf("FormatTrafficBytes = %q", FormatTrafficBytes(gb10))
+	}
+
+	tmpDir := t.TempDir()
+	passwdPath := filepath.Join(tmpDir, "passwd")
+	shadowPath := filepath.Join(tmpDir, "shadow")
+	_ = os.WriteFile(passwdPath, []byte("quotauser:x:1001:1001:limit=2,traffic_limit_bytes=1073741824,uuid=550e8400-e29b-41d4-a716-446655440000:/home/quotauser:/bin/false\n"), 0644)
+	_ = os.WriteFile(shadowPath, []byte("quotauser:$6$salt$validpasswordhashthatislongenoughforlinuxshadow:19000:0:99999:7:::\n"), 0644)
+
+	var lastGecos string
+	mgr := NewAccountManager(passwdPath, shadowPath)
+	mgr.Runner = func(name string, args ...string) ([]byte, error) {
+		if name == "usermod" && len(args) >= 2 && args[0] == "-c" {
+			lastGecos = args[1]
+		}
+		return []byte("ok"), nil
+	}
+	if err := mgr.UpdateLimit("quotauser", 4); err != nil {
+		t.Fatal(err)
+	}
+	if lastGecos != "limit=4,traffic_limit_bytes=1073741824,uuid=550e8400-e29b-41d4-a716-446655440000" {
+		t.Fatalf("traffic_limit_bytes lost during UpdateLimit: %q", lastGecos)
+	}
+}

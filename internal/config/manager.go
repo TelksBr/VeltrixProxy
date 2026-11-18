@@ -70,10 +70,39 @@ func (m *Manager) Load() (*Config, error) {
 		needsSave = true
 	}
 
-	// Persiste seções novas (ztun / hcr / xray / udpgw) se o JSON antigo ainda não as tiver
+	// Persiste seções novas (multistatus / btun.subnet6 / ztun / hcr / xray / udpgw) se o JSON antigo ainda não as tiver
 	var rawKeys map[string]json.RawMessage
 	if err := json.Unmarshal(data, &rawKeys); err == nil {
 		defaults := NewDefaultConfig(token)
+		if _, ok := rawKeys["multistatus"]; !ok {
+			cfg.Multistatus = defaults.Multistatus
+			needsSave = true
+		}
+		if _, hasNative := rawKeys["multistatus_ports"]; !hasNative {
+			if rawLegacyPorts, hasLegacy := rawKeys["sshplus_multistatus_ports"]; hasLegacy {
+				var legacyPorts string
+				if err := json.Unmarshal(rawLegacyPorts, &legacyPorts); err == nil {
+					cfg.MultistatusPorts = legacyPorts
+				}
+			} else {
+				cfg.MultistatusPorts = defaults.MultistatusPorts
+			}
+			needsSave = true
+		} else if _, hasLegacy := rawKeys["sshplus_multistatus_ports"]; hasLegacy {
+			needsSave = true
+		}
+		if rawBTUN, ok := rawKeys["btun"]; ok {
+			var btunKeys map[string]json.RawMessage
+			if err := json.Unmarshal(rawBTUN, &btunKeys); err == nil {
+				if _, ok := btunKeys["subnet6"]; !ok {
+					cfg.BTUN.Subnet6 = defaults.BTUN.Subnet6
+					needsSave = true
+				}
+			}
+		} else {
+			cfg.BTUN.Subnet6 = defaults.BTUN.Subnet6
+			needsSave = true
+		}
 		if rawSSH, ok := rawKeys["ssh"]; ok {
 			var sshKeys map[string]json.RawMessage
 			if err := json.Unmarshal(rawSSH, &sshKeys); err == nil {
@@ -156,32 +185,46 @@ func (m *Manager) Load() (*Config, error) {
 		} else {
 			var xrayKeys map[string]json.RawMessage
 			if err := json.Unmarshal(rawXray, &xrayKeys); err == nil {
+				for _, expectedKey := range []string{
+					"enable", "path", "ws_path", "splithttp_path", "httpupgrade_path", "splithttp_config",
+					"protocols", "transports", "grpc_service", "h3", "h3_config",
+					"udp_listen", "tcp_finalmask_listen", "tcp_finalmask_config",
+					"kcp_listen", "kcp_tls", "kcp_cert_file", "kcp_key_file", "kcp_config",
+					"hysteria_listen", "hysteria_config", "udp_finalmask_config",
+					"ss2022_listen", "ss2022_method", "ss2022_master_key",
+					"masque_listen", "masque_subnet", "masque_path",
+					"wireguard_config", "xdrive_config", "native_config",
+					"sync_passwd", "traffic_usage_file",
+				} {
+					if _, ok := xrayKeys[expectedKey]; !ok {
+						needsSave = true
+					}
+				}
 				if _, ok := xrayKeys["enable"]; !ok {
 					cfg.Xray.Enable = defaults.Xray.Enable
-					needsSave = true
 				}
 				if _, ok := xrayKeys["path"]; !ok {
 					cfg.Xray.Path = defaults.Xray.Path
-					needsSave = true
 				}
 				if _, ok := xrayKeys["protocols"]; !ok {
 					cfg.Xray.Protocols = append([]string(nil), defaults.Xray.Protocols...)
-					needsSave = true
 				}
 				if _, ok := xrayKeys["transports"]; !ok {
 					cfg.Xray.Transports = append([]string(nil), defaults.Xray.Transports...)
-					needsSave = true
 				}
 				if _, ok := xrayKeys["grpc_service"]; !ok {
 					cfg.Xray.GRPCService = defaults.Xray.GRPCService
-					needsSave = true
 				}
+				if _, ok := xrayKeys["h3"]; !ok {
+					cfg.Xray.H3 = defaults.Xray.H3
+				}
+				_, hasNewXraySchema := xrayKeys["traffic_usage_file"]
 				// Atualiza automaticamente instalações antigas que tinham os defaults legados de protocols/transports
-				if len(cfg.Xray.Protocols) == 2 && cfg.Xray.Protocols[0] == "vless" && cfg.Xray.Protocols[1] == "vmess" {
+				if !hasNewXraySchema && isLegacyDefaultProtocols(cfg.Xray.Protocols) {
 					cfg.Xray.Protocols = append([]string(nil), defaults.Xray.Protocols...)
 					needsSave = true
 				}
-				if len(cfg.Xray.Transports) == 2 && cfg.Xray.Transports[0] == "ws" && cfg.Xray.Transports[1] == "splithttp" {
+				if !hasNewXraySchema && isLegacyDefaultTransports(cfg.Xray.Transports) {
 					cfg.Xray.Transports = append([]string(nil), defaults.Xray.Transports...)
 					needsSave = true
 				}
@@ -245,6 +288,11 @@ func (m *Manager) Load() (*Config, error) {
 		}
 	}
 
+	if _, normPorts, err := ParseMultistatusPorts(cfg.MultistatusPorts); err == nil && normPorts != cfg.MultistatusPorts {
+		cfg.MultistatusPorts = normPorts
+		needsSave = true
+	}
+
 	beforeMin, beforeMax := cfg.UDPGW.PortMin, cfg.UDPGW.PortMax
 	cfg.UDPGW.Normalize()
 	if cfg.UDPGW.PortMin != beforeMin || cfg.UDPGW.PortMax != beforeMax {
@@ -289,6 +337,9 @@ func (m *Manager) Save(cfg *Config) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if cfg != nil {
+		if _, normPorts, err := ParseMultistatusPorts(cfg.MultistatusPorts); err == nil {
+			cfg.MultistatusPorts = normPorts
+		}
 		cfg.UDPGW.Normalize()
 		cfg.HCR.Normalize()
 		cfg.Xray.Normalize()

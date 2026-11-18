@@ -114,12 +114,13 @@ func showBTUNSubmenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(menuItem("1", i18n.T("btun_opt_enable"), featureBadge(cfg.BTUN.Enable)), w)
 		components.PrintBoxLine(menuItem("2", i18n.T("btun_opt_tun"), valueBadge(cfg.BTUN.Tun)), w)
 		components.PrintBoxLine(menuItem("3", i18n.T("btun_opt_subnet"), valueBadge(cfg.BTUN.Subnet)), w)
-		components.PrintBoxLine(menuItem("4", i18n.T("btun_opt_udp"), valueBadge(cfg.BTUN.UDPPort)), w)
-		components.PrintBoxLine(menuItem("5", i18n.T("btun_opt_auth"), valueBadge(displayOrEmpty(cfg.BTUN.Auth))), w)
-		components.PrintBoxLine(menuItem("6", i18n.T("btun_opt_auth_file"), valueBadge(displayOrEmpty(cfg.BTUN.AuthFile))), w)
+		components.PrintBoxLine(menuItem("4", i18n.T("btun_opt_subnet6"), valueBadge(displayOrEmpty(cfg.BTUN.Subnet6))), w)
+		components.PrintBoxLine(menuItem("5", i18n.T("btun_opt_udp"), valueBadge(cfg.BTUN.UDPPort)), w)
+		components.PrintBoxLine(menuItem("6", i18n.T("btun_opt_auth"), valueBadge(displayOrEmpty(cfg.BTUN.Auth))), w)
+		components.PrintBoxLine(menuItem("7", i18n.T("btun_opt_auth_file"), valueBadge(displayOrEmpty(cfg.BTUN.AuthFile))), w)
 		printMenuBack(w)
 
-		switch readMenuOption("0-6") {
+		switch readMenuOption("0-7") {
 		case "1":
 			applyJSONBoolToggle(cfgMgr, cfg, cfg.BTUN.Enable, func(v bool) { cfg.BTUN.Enable = v },
 				i18n.T("toggle_btun_on"), i18n.T("toggle_btun_off"), "btun.enable")
@@ -138,6 +139,10 @@ func showBTUNSubmenu(cfgMgr *config.Manager) {
 			}
 			components.Pause()
 		case "4":
+			cfg.BTUN.Subnet6 = promptOptionalValue(i18n.T("btun_opt_subnet6"), cfg.BTUN.Subnet6)
+			saveField(cfgMgr, cfg, "btun.subnet6")
+			components.Pause()
+		case "5":
 			if val, ok := promptInt(i18n.T("btun_opt_udp"), cfg.BTUN.UDPPort, 0); ok {
 				if val == cfg.BTUN.UDPPort || confirmPortInUse("udp", val) {
 					cfg.BTUN.UDPPort = val
@@ -145,12 +150,77 @@ func showBTUNSubmenu(cfgMgr *config.Manager) {
 				}
 			}
 			components.Pause()
-		case "5":
+		case "6":
 			promptAuth(cfgMgr, cfg, &cfg.BTUN.Auth, &cfg.BTUN.AuthFile, i18n.T("btun_opt_auth_file"), "", "btun.auth")
 			components.Pause()
-		case "6":
+		case "7":
 			cfg.BTUN.AuthFile = strings.TrimSpace(components.Prompt(i18n.T("btun_opt_auth_file"), cfg.BTUN.AuthFile))
 			saveField(cfgMgr, cfg, "btun.auth_file")
+			components.Pause()
+		case "0", "":
+			return
+		default:
+			components.PrintError(i18n.T("invalid_option"))
+			components.Pause()
+		}
+	}
+}
+
+func showMultistatusSubmenu(cfgMgr *config.Manager) {
+	for {
+		cfg, ok := loadConfigOrWarn(cfgMgr)
+		if !ok {
+			return
+		}
+		w := components.GetBoxWidth()
+		components.ClearScreen()
+		components.PrintBoxHeader(i18n.T("multistatus_title"), theme.Cyan, w)
+		components.PrintBoxLine(fmt.Sprintf("%s   %s%s", theme.Gray, i18n.T("multistatus_hint_1"), theme.Reset), w)
+		components.PrintBoxLine(fmt.Sprintf("%s   %s%s", theme.Gray, i18n.T("multistatus_hint_2"), theme.Reset), w)
+		components.PrintBoxDivider(w)
+		components.PrintBoxLine(menuItem("1", i18n.T("multistatus_opt_enable"), featureBadge(cfg.Multistatus)), w)
+		components.PrintBoxLine(menuItem("2", i18n.T("multistatus_opt_ports"), valueBadge(displayOrEmpty(cfg.MultistatusPorts))), w)
+		components.PrintBoxLine(menuItem("3", i18n.T("multistatus_opt_clear_ports"), ""), w)
+		components.PrintBoxLine(menuItem("4", i18n.T("httplogs_opt_response"), valueBadge(cfg.Response)), w)
+		printMenuBack(w)
+
+		switch readMenuOption("0-4") {
+		case "1":
+			applyJSONBoolToggle(cfgMgr, cfg, cfg.Multistatus, func(v bool) { cfg.Multistatus = v },
+				i18n.T("toggle_multistatus_on"), i18n.T("toggle_multistatus_off"), "multistatus")
+		case "2":
+			raw := promptOptionalValue(i18n.T("multistatus_prompt_ports"), cfg.MultistatusPorts)
+			ports, canonical, err := config.ParseMultistatusPorts(raw)
+			if err != nil {
+				components.PrintError(err.Error())
+				components.Pause()
+				continue
+			}
+			cfg.MultistatusPorts = canonical
+			if canonical != "" && !cfg.Multistatus {
+				cfg.Multistatus = true
+			}
+			saveField(cfgMgr, cfg, "multistatus_ports")
+			for _, p := range ports {
+				if !config.XrayPortConfigured(cfg.Ports, p) {
+					components.PrintWarning(fmt.Sprintf(i18n.T("multistatus_warn_port_inactive"), p, config.FormatPortList(cfg.Ports)))
+				}
+			}
+			components.Pause()
+		case "3":
+			if cfg.MultistatusPorts != "" {
+				cfg.MultistatusPorts = ""
+				saveField(cfgMgr, cfg, "multistatus_ports")
+			} else {
+				components.PrintInfo(i18n.T("confirm_no_change", "multistatus_ports", i18n.T("empty_value")))
+			}
+			components.Pause()
+		case "4":
+			resp := strings.TrimSpace(components.Prompt(i18n.T("httplogs_opt_response"), cfg.Response))
+			if resp != "" && resp != cfg.Response {
+				cfg.Response = resp
+				saveField(cfgMgr, cfg, "response")
+			}
 			components.Pause()
 		case "0", "":
 			return

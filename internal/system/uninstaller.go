@@ -182,6 +182,7 @@ func removeConfigFilesAndLogs() error {
 		"/etc/proxy",
 		"/etc/udpgw",
 		"/etc/btun",
+		"/var/lib/vtproxy",
 		"/var/log/proxy",
 	}
 

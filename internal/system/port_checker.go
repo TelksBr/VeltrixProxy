@@ -211,6 +211,23 @@ func EnsurePortNotBusy(proto string, port int) error {
 	return nil
 }
 
+// ParseListenPort extrai o número da porta de um endereço como ":8388", "0.0.0.0:443" ou "8388".
+func ParseListenPort(addr string) int {
+	clean := strings.TrimSpace(addr)
+	if clean == "" {
+		return 0
+	}
+	portStr := clean
+	if idx := strings.LastIndex(clean, ":"); idx >= 0 {
+		portStr = clean[idx+1:]
+	}
+	var port int
+	if _, err := fmt.Sscanf(portStr, "%d", &port); err == nil && port > 0 && port <= 65535 {
+		return port
+	}
+	return 0
+}
+
 // CheckConfiguredPortsConflict verifica se alguma das portas configuradas está ocupada por processos externos.
 // Retorna uma lista com a descrição de cada conflito detectado.
 func CheckConfiguredPortsConflict(ports []string, internalPort int, dnsttEnabled bool, dnsttUDP string) []string {
@@ -259,6 +276,35 @@ func CheckConfiguredPortsConflict(ports []string, internalPort int, dnsttEnabled
 		}
 	}
 
+	return conflicts
+}
+
+// XrayDedicatedListener descreve um listener dedicado do Xray para checagem de conflitos.
+type XrayDedicatedListener struct {
+	Label string
+	Proto string // "tcp", "udp" ou "both"
+	Addr  string
+}
+
+// CheckXrayListenersConflict verifica conflitos em listeners dedicados Xray configurados.
+func CheckXrayListenersConflict(listeners []XrayDedicatedListener) []string {
+	var conflicts []string
+	for _, l := range listeners {
+		port := ParseListenPort(l.Addr)
+		if port <= 0 {
+			continue
+		}
+		if l.Proto == "tcp" || l.Proto == "both" {
+			if inUse, proc := IsPortInUseByOther("tcp", port); inUse {
+				conflicts = append(conflicts, fmt.Sprintf("Porta TCP %d (%s) em uso por '%s'", port, l.Label, proc))
+			}
+		}
+		if l.Proto == "udp" || l.Proto == "both" {
+			if inUse, proc := IsPortInUseByOther("udp", port); inUse {
+				conflicts = append(conflicts, fmt.Sprintf("Porta UDP %d (%s) em uso por '%s'", port, l.Label, proc))
+			}
+		}
+	}
 	return conflicts
 }
 

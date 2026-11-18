@@ -67,6 +67,8 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
   "cert_internal": true,
   "display_banner": true,
   "response": "VeltrixProxy",
+  "multistatus": true,
+  "multistatus_ports": "",
   "ulimit": 65536,
 
   "ssh": {
@@ -85,6 +87,7 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
     "enable": true,
     "tun": "btun0",
     "subnet": "10.77.0.0/16",
+    "subnet6": "fd77::/64",
     "auth": "shadow",
     "auth_file": "/etc/btun/users",
     "udp_port": 0
@@ -143,9 +146,37 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
   "xray": {
     "enable": true,
     "path": "/vtxray",
-    "protocols": ["vless", "vmess", "trojan"],
-    "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp"],
+    "ws_path": "",
+    "splithttp_path": "",
+    "httpupgrade_path": "",
+    "splithttp_config": "",
+    "protocols": ["vless", "vmess", "trojan", "socks", "http", "shadowsocks"],
+    "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp", "mkcp", "hysteria"],
     "grpc_service": "vtxray",
+    "h3": true,
+    "h3_config": "",
+    "udp_listen": "",
+    "tcp_finalmask_listen": "",
+    "tcp_finalmask_config": "",
+    "kcp_listen": "",
+    "kcp_tls": false,
+    "kcp_cert_file": "",
+    "kcp_key_file": "",
+    "kcp_config": "",
+    "hysteria_listen": "",
+    "hysteria_config": "",
+    "udp_finalmask_config": "",
+    "ss2022_listen": "",
+    "ss2022_method": "2022-blake3-aes-128-gcm",
+    "ss2022_master_key": "",
+    "masque_listen": "",
+    "masque_subnet": "10.13.0.1/24",
+    "masque_path": "/.well-known/masque/ip/*/*/",
+    "wireguard_config": "",
+    "xdrive_config": "",
+    "native_config": "",
+    "sync_passwd": false,
+    "traffic_usage_file": "/var/lib/vtproxy/xray-traffic-usage.json",
     "tls": {
       "inherit_port": true,
       "cert_file": "",
@@ -186,6 +217,8 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 | `cert_internal` | `bool` | `true` | Se `true`, usa o certificado Cloudflare TLS embutido nas portas `:ssl`. |
 | `display_banner`| `bool` | `true` | Exibe o banner informativo com portas e status na inicialização. |
 | `response` | `string` | `"VeltrixProxy"` | Mensagem da resposta HTTP 200/101 do payload falso. |
+| `multistatus` | `bool` | `true` | Habilita suporte a capas HTTP multi-status / UNLOCK (TIM / CDN). |
+| `multistatus_ports` | `string` | `""` | Portas dedicadas ao handshake Multistatus nativo (CSV, ex.: `"80,443"`). Vazio mantém classificação automática em todas as portas. Alias legado migrado: `sshplus_multistatus_ports`. |
 | `ulimit` | `int` | `65536` | Limite de descritores de arquivos (`RLIMIT_NOFILE`) no Linux. |
 
 ---
@@ -217,6 +250,7 @@ Abaixo está o modelo completo recomendado com todas as seções e valores padr�
 | `enable` | `bool` | `true` | Habilita o servidor BTUN nativo via dispositivo TUN. |
 | `tun` | `string` | `"btun0"` | Nome da interface de rede virtual TUN criada no Linux. |
 | `subnet` | `string` | `"10.77.0.0/16"` | Sub-rede IPv4 atribuída aos clientes conectados via BTUN. |
+| `subnet6` | `string` | `"fd77::/64"` | Sub-rede IPv6 atribuída aos clientes conectados via BTUN (`""`/`"off"` desativa). |
 | `auth` | `string` | `"shadow"` | Mecanismo de autenticação: `"shadow"`, `"file"` ou `"allow"`. |
 | `auth_file` | `string` | `"/etc/btun/users"` | Caminho do arquivo de senhas caso `auth` seja `"file"`. |
 | `udp_port` | `int` | `0` | Porta UDP direta para datagramas (`0` = desativado). |
@@ -308,23 +342,33 @@ No **install/update**, a seção `hcr` (e chaves faltantes) é injetada com esse
 
 ---
 
-### G3. Seção `xray` (VLESS / VMess / Trojan)
+### G3. Seção `xray` (VLESS / VMess / Trojan / SOCKS5 / HTTP / Shadowsocks / Core Nativo)
 
-> Motor in-process nas **mesmas portas TCP** do proxy. Path único `/vtxray`;
-> demux WS, SplitHTTP, HTTPUpgrade, gRPC e Raw TCP pelos headers e primeiros bytes. UUID no `/etc/passwd` (`uuid=`).
-> Brief: [`xray-config-menu.md`](xray-config-menu.md).
+> Motor in-process nas **mesmas portas TCP** do proxy (path base `/vtxray` + overrides opcionais por transporte) e listeners dedicados opcionais (UDP/QUIC H3, mKCP, Hysteria2, FinalMask, SS2022, MASQUE, WireGuard, X-Drive). Contas via `/etc/passwd` (`uuid=`, `traffic_limit_bytes=`).
+> Brief completo: [`xray-config-menu.md`](xray-config-menu.md).
 
 | Campo | Tipo | Default | Descrição |
 | :--- | :--- | :--- | :--- |
 | `enable` | `bool` | `true` | Liga o motor Xray. |
-| `path` | `string` | `"/vtxray"` | Prefixo único (WS exato; SplitHTTP = `path/`). |
-| `protocols` | `string[]` | `["vless","vmess","trojan"]` | Protocolos no wire (`vless`, `vmess`, `trojan`). |
-| `transports` | `string[]` | `["ws","splithttp","httpupgrade","grpc","tcp"]` | Transportes suportados (`ws`, `splithttp`, `httpupgrade`, `grpc`, `tcp`). |
+| `path` | `string` | `"/vtxray"` | Prefixo base compartilhado (WS, SplitHTTP, HTTPUpgrade). |
+| `ws_path` / `splithttp_path` / `httpupgrade_path` | `string` | `""` | Overrides dedicados por transporte HTTP (`""` herda `path`). |
+| `splithttp_config` | `string` | `""` | JSON de parâmetros XHTTP/SplitHTTP (`xPaddingBytes`, `scMaxEachPostBytes`, etc.). |
+| `protocols` | `string[]` | `["vless","vmess","trojan","socks","http","shadowsocks"]` | Protocolos ativos no wire. |
+| `transports` | `string[]` | `["ws","splithttp","httpupgrade","grpc","tcp","mkcp","hysteria"]` | Transportes ativos. |
 | `grpc_service` | `string` | `"vtxray"` | Nome do serviço gRPC Tun (`POST /<service>/Tun`). |
-| `tls.inherit_port` | `bool` | `true` | Usa o TLS da porta do proxy (v1). |
-| `tls.cert_internal` | `bool` | `true` | Certificado interno da porta. |
-| `legacy.enable` | `bool` | `true` | Fallback de UUID do `xray.json` se o UUID não estiver no passwd. |
-| `legacy.config_file` | `string` | detectado ou `"/usr/local/etc/xray/config.json"` | Caminho do JSON de painel/Xray. |
+| `h3` / `h3_config` | `bool` / `string` | `true` / `""` | HTTP/3 (QUIC) espelhando portas `:ssl` em UDP + JSON `quicSettings` opcional. |
+| `udp_listen` | `string` | `""` | Listener UDP Shadowsocks dedicado (`host:port`). |
+| `tcp_finalmask_listen` / `tcp_finalmask_config` | `string` | `""` | Listener TCP dedicado com FinalMask (requer o arquivo JSON correspondente). |
+| `kcp_listen` / `kcp_tls` / `kcp_cert_file` / `kcp_key_file` / `kcp_config` | misto | `""` / `false` | Listener UDP mKCP dedicado, TLS opcional sobre KCP e JSON `kcpSettings`. |
+| `hysteria_listen` / `hysteria_config` | `string` | `""` | Listener UDP Hysteria2 dedicado e JSON `hysteriaSettings`. |
+| `udp_finalmask_config` | `string` | `""` | JSON FinalMask aplicado aos listeners UDP dedicados (mKCP/Hysteria2). |
+| `ss2022_listen` / `ss2022_method` / `ss2022_master_key` | `string` | `""` / `"2022-blake3-aes-128-gcm"` / `""` | Inbound Shadowsocks 2022 multiusuário (requer `sync_passwd: true`). |
+| `masque_listen` / `masque_subnet` / `masque_path` | `string` | `""` / `"10.13.0.1/24"` / `"/.well-known/masque/ip/*/*/"` | Inbound MASQUE (`connect-ip` HTTP/3, requer `sync_passwd: true`). |
+| `wireguard_config` / `xdrive_config` / `native_config` | `string` | `""` | Configs JSON do Xray-core embutido (`wireguard`/`xdrive` requerem `sync_passwd: true`). |
+| `sync_passwd` | `bool` | `false` | Sincroniza contas `/etc/passwd` com inbounds nativos do Xray-core. |
+| `traffic_usage_file` | `string` | `"/var/lib/vtproxy/xray-traffic-usage.json"` | Persistência de consumo para cotas `traffic_limit_bytes=N` no GECOS. |
+| `tls.inherit_port` / `tls.cert_file` / `tls.key_file` / `tls.cert_internal` | `bool` / `string` | `true` / `""` / `""` / `true` | Certificados TLS do Xray e listeners QUIC/UDP. |
+| `legacy.enable` / `legacy.config_file` | `bool` / `string` | `true` / `"/usr/local/etc/xray/config.json"` | Fallback de credenciais de painel/Xray JSON legado. |
 
 No **install/update**, a seção `xray` é injetada com fallback ativo. O
 instalador detecta um JSON existente (Xray-core, V2Ray, 3x-ui) ou cria

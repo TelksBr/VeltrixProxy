@@ -57,6 +57,7 @@ func ShowAccountsMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(menuItem("4", i18n.T("acc_opt_change_pass"), ""), w)
 		components.PrintBoxLine(menuItem("5", i18n.T("acc_opt_change_expiry"), ""), w)
 		components.PrintBoxLine(menuItem("6", i18n.T("acc_opt_change_limit"), ""), w)
+		components.PrintBoxLine(menuItem("C", i18n.T("acc_opt_change_quota"), ""), w)
 		components.PrintBoxLine(menuItem("7", i18n.T("acc_opt_manage_uuid"), ""), w)
 		components.PrintBoxLine(menuItem("8", i18n.T("acc_opt_toggle_lock"), ""), w)
 		components.PrintBoxLine(menuItem("9", i18n.T("acc_opt_delete"), ""), w)
@@ -64,7 +65,7 @@ func ShowAccountsMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(menuItem("E", i18n.T("acc_opt_purge_expired"), ""), w)
 		printMenuBack(w)
 
-		switch readMenuOption("0-9/E") {
+		switch readMenuOption("0-9/C/E") {
 		case "1":
 			createAccountWizard(cfgMgr, mgr)
 		case "2":
@@ -77,6 +78,8 @@ func ShowAccountsMenu(cfgMgr *config.Manager) {
 			changeExpiryWizard(mgr)
 		case "6":
 			changeLimitWizard(mgr)
+		case "c":
+			changeQuotaWizard(mgr)
 		case "7":
 			manageUUIDWizard(mgr)
 		case "8":
@@ -159,7 +162,15 @@ func createAccountWizard(cfgMgr *config.Manager, mgr *system.AccountManager) {
 		}
 	}
 
-	// 5. Validade em dias
+	// 5. Cota de tráfego opcional (traffic_limit_bytes)
+	var quotaBytes int64
+	if quotaInput := strings.TrimSpace(components.Prompt(i18n.T("acc_prompt_quota"), "0")); quotaInput != "" {
+		if qb, err := system.ParseTrafficQuotaInput(quotaInput); err == nil {
+			quotaBytes = qb
+		}
+	}
+
+	// 6. Validade em dias
 	days := 30
 	if daysInput := strings.TrimSpace(components.Prompt(i18n.T("acc_prompt_days"), "30")); daysInput != "" {
 		if val, err := strconv.Atoi(daysInput); err == nil {
@@ -168,7 +179,7 @@ func createAccountWizard(cfgMgr *config.Manager, mgr *system.AccountManager) {
 	}
 
 	// Criação
-	err := mgr.CreateAccount(username, password, uuidStr, limit, days)
+	err := mgr.CreateAccountWithQuota(username, password, uuidStr, limit, quotaBytes, days)
 	if err != nil {
 		components.PrintError(fmt.Sprintf(i18n.T("acc_err_create_failed"), err))
 		components.Pause()
@@ -195,6 +206,12 @@ func createAccountWizard(cfgMgr *config.Manager, mgr *system.AccountManager) {
 		limitText = fmt.Sprintf("%d", limit)
 	}
 	components.PrintBoxLine(fmt.Sprintf("%s%s:%s %s%s%s", theme.Gray, i18n.T("acc_label_limit"), theme.Reset, theme.White, limitText, theme.Reset), w)
+
+	quotaText := i18n.T("acc_unlimited")
+	if quotaBytes > 0 {
+		quotaText = system.FormatTrafficBytes(quotaBytes)
+	}
+	components.PrintBoxLine(fmt.Sprintf("%s%s:%s %s%s%s", theme.Gray, i18n.T("acc_label_quota"), theme.Reset, theme.White, quotaText, theme.Reset), w)
 
 	expiryText := i18n.T("acc_unlimited")
 	if days > 0 {
@@ -311,6 +328,12 @@ func showAccountDetailsWizard(cfgMgr *config.Manager, mgr *system.AccountManager
 	components.PrintBoxLine(fmt.Sprintf("%s%s:%s %s%s%s │ %s%s:%s %s%d%s",
 		theme.Gray, i18n.T("acc_label_limit"), theme.Reset, theme.White, limitStr, theme.Reset,
 		theme.Gray, i18n.T("acc_col_conns"), theme.Reset, theme.Cyan, activeConns, theme.Reset), w)
+
+	quotaStr := i18n.T("acc_unlimited")
+	if acc.HasTrafficLimit && acc.TrafficLimitBytes > 0 {
+		quotaStr = system.FormatTrafficBytes(acc.TrafficLimitBytes)
+	}
+	components.PrintBoxLine(fmt.Sprintf("%s%s:%s %s%s%s", theme.Gray, i18n.T("acc_label_quota"), theme.Reset, theme.White, quotaStr, theme.Reset), w)
 
 	expiryStr := i18n.T("acc_unlimited")
 	if acc.ExpiryDays >= 0 {
@@ -444,6 +467,35 @@ func changeLimitWizard(mgr *system.AccountManager) {
 		} else {
 			components.PrintError(err.Error())
 		}
+	}
+	components.Pause()
+}
+
+func changeQuotaWizard(mgr *system.AccountManager) {
+	acc := selectAccountPrompt(mgr)
+	if acc == nil {
+		return
+	}
+
+	curQuota := "0"
+	if acc.HasTrafficLimit && acc.TrafficLimitBytes > 0 {
+		curQuota = system.FormatTrafficBytes(acc.TrafficLimitBytes)
+	}
+	raw := strings.TrimSpace(components.Prompt(i18n.T("acc_prompt_quota"), curQuota))
+	val, err := system.ParseTrafficQuotaInput(raw)
+	if err != nil {
+		components.PrintError(err.Error())
+		components.Pause()
+		return
+	}
+	if err := mgr.UpdateTrafficLimit(acc.Username, val); err != nil {
+		components.PrintError(err.Error())
+	} else {
+		label := i18n.T("acc_unlimited")
+		if val > 0 {
+			label = system.FormatTrafficBytes(val)
+		}
+		components.PrintSuccess(fmt.Sprintf(i18n.T("acc_quota_updated"), acc.Username, label))
 	}
 	components.Pause()
 }
@@ -660,28 +712,32 @@ func generateXrayShareForAccount(acc *system.Account, cfg *config.Config) {
 		}
 	}
 
-	transports := cfg.Xray.Transports
-	if len(cfg.Xray.Transports) > 1 {
-		resp := components.Prompt(i18n.T("xray_share_transport"), config.ShareTransportPrompt(cfg.Xray.Transports))
-		picked := intersectXrayList(splitCSV(resp), cfg.Xray.Transports, cfg.Xray.AllowsTransport)
+	shareTransports := cfg.Xray.ShareableTransports()
+	transports := shareTransports
+	if len(shareTransports) > 1 {
+		resp := components.Prompt(i18n.T("xray_share_transport"), config.ShareTransportPrompt(shareTransports))
+		picked := intersectXrayList(splitCSV(resp), shareTransports, cfg.Xray.AllowsTransport)
 		if len(picked) > 0 {
 			transports = picked
 		}
 	}
 
 	links, err := config.BuildXrayShareLinks(config.XrayShareParams{
-		UUID:        acc.UUID,
-		Address:     proxyAddr,
-		Host:        host,
-		SNI:         sni,
-		Port:        port,
-		Path:        cfg.Xray.Path,
-		Remark:      "Veltrix-" + acc.Username,
-		TLS:         useTLS,
-		PCS:         pcs,
-		Protocols:   []string{proto},
-		Transports:  transports,
-		GRPCService: cfg.Xray.GRPCService,
+		UUID:            acc.UUID,
+		Address:         proxyAddr,
+		Host:            host,
+		SNI:             sni,
+		Port:            port,
+		Path:            cfg.Xray.Path,
+		WSPath:          cfg.Xray.WSPath,
+		SplitHTTPPath:   cfg.Xray.SplitHTTPPath,
+		HTTPUpgradePath: cfg.Xray.HTTPUpgradePath,
+		Remark:          "Veltrix-" + acc.Username,
+		TLS:             useTLS,
+		PCS:             pcs,
+		Protocols:       []string{proto},
+		Transports:      transports,
+		GRPCService:     cfg.Xray.GRPCService,
 	})
 	if err != nil {
 		components.PrintError(err.Error())

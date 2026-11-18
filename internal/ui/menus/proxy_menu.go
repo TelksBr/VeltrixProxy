@@ -45,6 +45,7 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(menuItem("1", i18n.T("proxy_opt_add"), ""), w)
 		components.PrintBoxLine(menuItem("2", i18n.T("proxy_opt_remove"), ""), w)
 		components.PrintBoxLine(menuItem("3", i18n.T("proxy_opt_details"), ""), w)
+		components.PrintBoxLine(menuItem("9", i18n.T("proxy_opt_multistatus"), featureBadge(cfg.Multistatus)), w)
 		components.PrintBoxDivider(w)
 		components.PrintBoxLine(menuItem("4", i18n.T("proxy_opt_start"), ""), w)
 		components.PrintBoxLine(menuItem("5", i18n.T("proxy_opt_stop"), ""), w)
@@ -54,13 +55,15 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 		components.PrintBoxLine(menuItem("8", i18n.T("proxy_opt_file_logs"), ""), w)
 		printMenuBack(w)
 
-		switch readMenuOption("0-8") {
+		switch readMenuOption("0-9") {
 		case "1":
 			addPortInteractive(cfgMgr)
 		case "2":
 			removePortInteractive(cfgMgr)
 		case "3":
 			showPortDetails(cfgMgr)
+		case "9":
+			withRestartPrompt(cfgMgr, func() { showMultistatusSubmenu(cfgMgr) })
 		case "4":
 			if system.IsServiceActive(system.ProxyServiceName) {
 				components.PrintInfo(i18n.T("proxy_already_running"))
@@ -106,6 +109,16 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 // confirmPortConflicts lists busy ports before (re)starting and asks to go on.
 func confirmPortConflicts(cfg *config.Config, confirmKey string) bool {
 	conflicts := system.CheckConfiguredPortsConflict(cfg.Ports, cfg.SSH.InternalPort, cfg.DNSTT.Enable, cfg.DNSTT.UDP)
+	if cfg.Xray.Enable {
+		conflicts = append(conflicts, system.CheckXrayListenersConflict([]system.XrayDedicatedListener{
+			{Label: "Xray SS UDP", Proto: "udp", Addr: cfg.Xray.UDPListen},
+			{Label: "Xray mKCP", Proto: "udp", Addr: cfg.Xray.KCPListen},
+			{Label: "Xray Hysteria", Proto: "udp", Addr: cfg.Xray.HysteriaListen},
+			{Label: "Xray FinalMask TCP", Proto: "tcp", Addr: cfg.Xray.TCPFinalMaskListen},
+			{Label: "Xray SS2022", Proto: "both", Addr: cfg.Xray.SS2022Listen},
+			{Label: "Xray MASQUE", Proto: "udp", Addr: cfg.Xray.MASQUEListen},
+		})...)
+	}
 	if len(conflicts) == 0 {
 		return true
 	}
@@ -216,6 +229,7 @@ func showPortDetails(cfgMgr *config.Manager) {
 
 	components.PrintBoxDivider(w)
 	detail(i18n.T("details_http_response"), valueBadge(cfg.Response))
+	detail("Multistatus", withExtra(cfg.Multistatus, strings.TrimSpace(cfg.MultistatusPorts)))
 	detail("Buffer", valueBadge(fmt.Sprintf("%d bytes", cfg.BufferSize)))
 	detail(i18n.T("details_ssh_native"), featureBadge(cfg.SSH.Internal))
 	if cfg.SSH.Internal {

@@ -20,18 +20,21 @@ var (
 // Address is the dial target (VMess "add"), Host the WS/XHTTP Host header and
 // SNI the TLS serverName; they may all differ (CDN / fronting setups).
 type XrayShareParams struct {
-	UUID        string
-	Address     string
-	Host        string
-	SNI         string
-	Port        int
-	Path        string
-	Remark      string
-	TLS         bool
-	PCS         string // pinned peer cert SHA-256 (hex), TLS only
-	Protocols   []string
-	Transports  []string
-	GRPCService string
+	UUID            string
+	Address         string
+	Host            string
+	SNI             string
+	Port            int
+	Path            string
+	WSPath          string
+	SplitHTTPPath   string
+	HTTPUpgradePath string
+	Remark          string
+	TLS             bool
+	PCS             string // pinned peer cert SHA-256 (hex), TLS only
+	Protocols       []string
+	Transports      []string
+	GRPCService     string
 }
 
 // XrayShareLink is one importable URI (v2rayN / Nekobox / Xray).
@@ -127,8 +130,19 @@ func (x XrayConfig) AllowsProtocol(name string) bool {
 
 func (x XrayConfig) AllowsTransport(name string) bool {
 	name = strings.ToLower(strings.TrimSpace(name))
-	if name == "xhttp" {
+	switch name {
+	case "xhttp", "split":
 		name = "splithttp"
+	case "kcp":
+		name = "mkcp"
+	case "raw":
+		name = "tcp"
+	case "websocket":
+		name = "ws"
+	case "upgrade":
+		name = "httpupgrade"
+	case "gun":
+		name = "grpc"
 	}
 	for _, item := range x.Transports {
 		if item == name {
@@ -136,6 +150,35 @@ func (x XrayConfig) AllowsTransport(name string) bool {
 		}
 	}
 	return false
+}
+
+// ShareableTransports returns enabled transports supported by shared-port URI links.
+func (x XrayConfig) ShareableTransports() []string {
+	out := make([]string, 0, len(x.Transports))
+	for _, tr := range x.Transports {
+		if shareWireTransport(tr) != "" {
+			out = append(out, tr)
+		}
+	}
+	return out
+}
+
+func resolveShareTransportPath(wire, basePath, wsPath, splitPath, upgradePath string) string {
+	switch wire {
+	case "ws":
+		if p := normalizeOptionalHTTPPath(wsPath); p != "" {
+			return p
+		}
+	case "xhttp", "splithttp":
+		if p := normalizeOptionalHTTPPath(splitPath); p != "" {
+			return p
+		}
+	case "httpupgrade":
+		if p := normalizeOptionalHTTPPath(upgradePath); p != "" {
+			return p
+		}
+	}
+	return basePath
 }
 
 // BuildXrayShareLinks builds VLESS/VMess URIs for the enabled proto×transport pairs.
@@ -203,16 +246,20 @@ func BuildXrayShareLinks(p XrayShareParams) ([]XrayShareLink, error) {
 	for _, proto := range protos {
 		for _, tr := range transports {
 			wire := shareWireTransport(tr)
+			if wire == "" {
+				continue
+			}
+			trPath := resolveShareTransportPath(wire, path, p.WSPath, p.SplitHTTPPath, p.HTTPUpgradePath)
 			label := shareLabel(proto, wire, p.TLS)
 			var uri string
 			var err error
 			switch proto {
 			case "vless":
-				uri, err = buildVLESSShare(uuid, addr, p.Port, path, hostHeader, sni, pcs, remark, wire, grpcService, p.TLS)
+				uri, err = buildVLESSShare(uuid, addr, p.Port, trPath, hostHeader, sni, pcs, remark, wire, grpcService, p.TLS)
 			case "vmess":
-				uri, err = buildVMessShare(uuid, addr, p.Port, path, hostHeader, sni, pcs, remark, wire, grpcService, p.TLS)
+				uri, err = buildVMessShare(uuid, addr, p.Port, trPath, hostHeader, sni, pcs, remark, wire, grpcService, p.TLS)
 			case "trojan":
-				uri, err = buildTrojanShare(uuid, addr, p.Port, path, hostHeader, sni, pcs, remark, wire, grpcService, p.TLS)
+				uri, err = buildTrojanShare(uuid, addr, p.Port, trPath, hostHeader, sni, pcs, remark, wire, grpcService, p.TLS)
 			}
 			if err != nil {
 				return nil, err
@@ -229,17 +276,19 @@ func BuildXrayShareLinks(p XrayShareParams) ([]XrayShareLink, error) {
 }
 
 func shareWireTransport(name string) string {
-	switch name {
-	case "splithttp", "xhttp":
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "ws", "websocket":
+		return "ws"
+	case "splithttp", "xhttp", "split":
 		return "xhttp"
-	case "httpupgrade":
+	case "httpupgrade", "upgrade":
 		return "httpupgrade"
-	case "grpc":
+	case "grpc", "gun":
 		return "grpc"
-	case "tcp":
+	case "tcp", "raw":
 		return "tcp"
 	default:
-		return "ws"
+		return ""
 	}
 }
 

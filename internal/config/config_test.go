@@ -894,3 +894,160 @@ func decodeVMessShare(uri string) (map[string]string, error) {
 	}
 	return card, nil
 }
+
+func TestParseMultistatusPorts(t *testing.T) {
+	ports, csv, err := ParseMultistatusPorts("80, 443:ssl, 80")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if csv != "80,443" || len(ports) != 2 || ports[0] != 80 || ports[1] != 443 {
+		t.Fatalf("unexpected result: ports=%v csv=%q", ports, csv)
+	}
+	for _, empty := range []string{"", "   ", "-", "off", "none"} {
+		p, c, err := ParseMultistatusPorts(empty)
+		if err != nil || len(p) != 0 || c != "" {
+			t.Fatalf("expected empty for %q, got %v %q %v", empty, p, c, err)
+		}
+	}
+	for _, bad := range []string{"0", "65536", "80,,443", "abc"} {
+		if _, _, err := ParseMultistatusPorts(bad); err == nil {
+			t.Fatalf("expected error for invalid multistatus_ports %q", bad)
+		}
+	}
+}
+
+func TestManagerMultistatusMigrationAndPrecedence(t *testing.T) {
+	// 1. Legacy sshplus_multistatus_ports migrates to multistatus_ports and removes legacy key
+	dir := t.TempDir()
+	p1 := filepath.Join(dir, "legacy.json")
+	if err := os.WriteFile(p1, []byte(`{"token":"T","ports":["80","443:ssl"],"sshplus_multistatus_ports":"80, 443"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	m1 := NewManager(p1)
+	c1, err := m1.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c1.Multistatus || c1.MultistatusPorts != "80,443" {
+		t.Fatalf("expected multistatus=true ports=80,443, got %v %q", c1.Multistatus, c1.MultistatusPorts)
+	}
+	raw1, _ := os.ReadFile(p1)
+	if strings.Contains(string(raw1), "sshplus_multistatus_ports") || !strings.Contains(string(raw1), `"multistatus_ports": "80,443"`) {
+		t.Fatalf("legacy key not migrated cleanly: %s", string(raw1))
+	}
+
+	// 2. Canonical multistatus_ports (even empty) wins over sshplus_multistatus_ports
+	p2 := filepath.Join(dir, "precedence.json")
+	if err := os.WriteFile(p2, []byte(`{"token":"T","multistatus":false,"multistatus_ports":"","sshplus_multistatus_ports":"80,443","btun":{"enable":true,"subnet6":""}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	m2 := NewManager(p2)
+	c2, err := m2.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c2.Multistatus || c2.MultistatusPorts != "" {
+		t.Fatalf("expected multistatus=false and empty ports, got %v %q", c2.Multistatus, c2.MultistatusPorts)
+	}
+	if c2.BTUN.Subnet6 != "" {
+		t.Fatalf("expected explicit empty btun.subnet6 preserved, got %q", c2.BTUN.Subnet6)
+	}
+}
+
+func TestManagerXrayFullFieldsAndSchemaUpgrade(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	oldJSON := `{
+  "token": "T",
+  "ports": ["80", "443:ssl"],
+  "xray": {
+    "enable": true,
+    "path": "/vtxray",
+    "protocols": ["vless", "vmess", "trojan"],
+    "transports": ["ws", "splithttp", "httpupgrade", "grpc", "tcp"]
+  }
+}`
+	if err := os.WriteFile(cfgPath, []byte(oldJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewManager(cfgPath)
+	cfg, err := mgr.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Xray.Protocols) != 6 || len(cfg.Xray.Transports) != 7 {
+		t.Fatalf("expected schema upgrade to 6 protocols and 7 transports, got %v / %v", cfg.Xray.Protocols, cfg.Xray.Transports)
+	}
+	if !cfg.Xray.H3 || cfg.Xray.TrafficUsageFile != DefaultXrayTrafficUsageFile || cfg.Xray.SS2022Method != DefaultXraySS2022Method {
+		t.Fatalf("unexpected defaults: %+v", cfg.Xray)
+	}
+
+	// Custom subset after upgrade must be preserved on subsequent Load()
+	cfg.Xray.Protocols = []string{"vless", "trojan"}
+	cfg.Xray.Transports = []string{"ws", "splithttp"}
+	cfg.Xray.WSPath = "ws-custom"
+	cfg.Xray.SplitHTTPPath = "/split-custom"
+	cfg.Xray.HTTPUpgradePath = "/hu-custom"
+	cfg.Xray.SplitHTTPConfig = "/etc/proxyvt/split.json"
+	cfg.Xray.H3 = false
+	cfg.Xray.H3Config = "/etc/proxyvt/h3.json"
+	cfg.Xray.UDPListen = ":8388"
+	cfg.Xray.KCPListen = ":4000"
+	cfg.Xray.KCPTLS = true
+	cfg.Xray.HysteriaListen = ":44443"
+	cfg.Xray.SS2022Listen = "0.0.0.0:9388"
+	cfg.Xray.SS2022MasterKey = GenerateSS2022MasterKey("2022-blake3-aes-256-gcm")
+	cfg.Xray.SS2022Method = "2022-blake3-aes-256-gcm"
+	if err := mgr.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr2 := NewManager(cfgPath)
+	reloaded, err := mgr2.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.Xray.Protocols) != 2 || len(reloaded.Xray.Transports) != 2 {
+		t.Fatalf("custom subset overwritten on reload: %v / %v", reloaded.Xray.Protocols, reloaded.Xray.Transports)
+	}
+	if reloaded.Xray.WSPath != "/ws-custom" || reloaded.Xray.H3 || !reloaded.Xray.SyncPasswd {
+		t.Fatalf("expected WSPath=/ws-custom H3=false SyncPasswd=true (auto-enabled by SS2022Listen), got %+v", reloaded.Xray)
+	}
+	if reloaded.Xray.UDPListen != ":8388" || reloaded.Xray.KCPListen != ":4000" || reloaded.Xray.HysteriaListen != ":44443" {
+		t.Fatalf("dedicated listeners not persisted: %+v", reloaded.Xray)
+	}
+}
+
+func TestBuildXrayShareLinksDedicatedPathsAndShareableTransports(t *testing.T) {
+	if got := ShareTransportPrompt(DefaultXrayTransports); got != "ws,xhttp,httpupgrade,grpc,tcp" {
+		t.Fatalf("ShareTransportPrompt included non-URI transports: %s", got)
+	}
+	links, err := BuildXrayShareLinks(XrayShareParams{
+		Address:         "1.2.3.4",
+		Host:            "cdn.example.com",
+		SNI:             "cdn.example.com",
+		Port:            443,
+		Path:            "/vtxray",
+		WSPath:          "/ws-only",
+		SplitHTTPPath:   "/split-only",
+		HTTPUpgradePath: "/up-only",
+		TLS:             true,
+		Protocols:       []string{"vless"},
+		Transports:      DefaultXrayTransports,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 5 {
+		t.Fatalf("expected 5 URI links (skipping mkcp/hysteria), got %d", len(links))
+	}
+	if !strings.Contains(links[0].URI, "path=%2Fws-only") {
+		t.Fatalf("ws link missing dedicated ws_path: %s", links[0].URI)
+	}
+	if !strings.Contains(links[1].URI, "path=%2Fsplit-only") {
+		t.Fatalf("xhttp link missing dedicated splithttp_path: %s", links[1].URI)
+	}
+	if !strings.Contains(links[2].URI, "path=%2Fup-only") {
+		t.Fatalf("httpupgrade link missing dedicated httpupgrade_path: %s", links[2].URI)
+	}
+}

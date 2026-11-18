@@ -79,28 +79,62 @@ func (pl *PortList) UnmarshalJSON(data []byte) error {
 
 // Config representa a estrutura principal do /etc/proxyvt/config.json
 type Config struct {
-	Token          string           `json:"token"`
-	Ports          PortList         `json:"ports"`
-	LogLevel       string           `json:"log_level"`
-	LogFile        string           `json:"log_file"`
-	BufferSize     int              `json:"buffer_size"`
-	MaxConnections int              `json:"max_connections"`
-	IdleTimeout    int              `json:"idle_timeout"`
-	WriteTimeout   int              `json:"write_timeout"`
-	Cert           string           `json:"cert"`
-	CertInternal   bool             `json:"cert_internal"`
-	DisplayBanner  bool             `json:"display_banner"`
-	Response       string           `json:"response"`
-	Ulimit         int              `json:"ulimit"`
-	SSH            SSHConfig        `json:"ssh"`
-	BTUN           BTUNConfig       `json:"btun"`
-	Limits         LimitsConfig     `json:"limits"`
-	XHTTP          XHTTPConfig      `json:"xhttp"`
-	DNSTT          DNSTTConfig      `json:"dnstt"`
-	Ztun           ZtunConfig       `json:"ztun"`
-	HCR            HCRConfig        `json:"hcr"`
-	Xray           XrayConfig       `json:"xray"`
-	UDPGW          UDPGWConfig      `json:"udpgw"`
+	Token            string       `json:"token"`
+	Ports            PortList     `json:"ports"`
+	LogLevel         string       `json:"log_level"`
+	LogFile          string       `json:"log_file"`
+	BufferSize       int          `json:"buffer_size"`
+	MaxConnections   int          `json:"max_connections"`
+	IdleTimeout      int          `json:"idle_timeout"`
+	WriteTimeout     int          `json:"write_timeout"`
+	Cert             string       `json:"cert"`
+	CertInternal     bool         `json:"cert_internal"`
+	DisplayBanner    bool         `json:"display_banner"`
+	Response         string       `json:"response"`
+	Multistatus      bool         `json:"multistatus"`
+	MultistatusPorts string       `json:"multistatus_ports"`
+	Ulimit           int          `json:"ulimit"`
+	SSH              SSHConfig    `json:"ssh"`
+	BTUN             BTUNConfig   `json:"btun"`
+	Limits           LimitsConfig `json:"limits"`
+	XHTTP            XHTTPConfig  `json:"xhttp"`
+	DNSTT            DNSTTConfig  `json:"dnstt"`
+	Ztun             ZtunConfig   `json:"ztun"`
+	HCR              HCRConfig    `json:"hcr"`
+	Xray             XrayConfig   `json:"xray"`
+	UDPGW            UDPGWConfig  `json:"udpgw"`
+}
+
+// ParseMultistatusPorts valida e normaliza uma lista CSV de portas dedicadas ao handshake Multistatus.
+// Aceita vazio (ou "-", "off", "none") para desativar portas dedicadas.
+func ParseMultistatusPorts(raw string) ([]int, string, error) {
+	trimmed := strings.TrimSpace(raw)
+	switch strings.ToLower(trimmed) {
+	case "", "-", "off", "none":
+		return nil, "", nil
+	}
+
+	parts := strings.Split(trimmed, ",")
+	ports := make([]int, 0, len(parts))
+	strs := make([]string, 0, len(parts))
+	seen := make(map[int]bool, len(parts))
+
+	for _, item := range parts {
+		clean := strings.TrimSpace(item)
+		if strings.HasSuffix(strings.ToLower(clean), ":ssl") {
+			clean = strings.TrimSpace(clean[:len(clean)-4])
+		}
+		portNum, err := strconv.Atoi(clean)
+		if err != nil || portNum < 1 || portNum > 65535 {
+			return nil, "", fmt.Errorf("porta multistatus inválida: %q", item)
+		}
+		if !seen[portNum] {
+			seen[portNum] = true
+			ports = append(ports, portNum)
+			strs = append(strs, strconv.Itoa(portNum))
+		}
+	}
+	return ports, strings.Join(strs, ","), nil
 }
 
 // SSHConfig define parâmetros do servidor SSH interno/legado
@@ -121,6 +155,7 @@ type BTUNConfig struct {
 	Enable   bool   `json:"enable"`
 	Tun      string `json:"tun"`
 	Subnet   string `json:"subnet"`
+	Subnet6  string `json:"subnet6"`
 	Auth     string `json:"auth"`
 	AuthFile string `json:"auth_file"`
 	UDPPort  int    `json:"udp_port"`
@@ -276,10 +311,12 @@ func NewDefaultConfig(token string) *Config {
 		IdleTimeout:    0,
 		WriteTimeout:   0,
 		Cert:           "",
-		CertInternal:   true,
-		DisplayBanner:  true,
-		Response:       "VeltrixProxy",
-		Ulimit:         65536,
+		CertInternal:     true,
+		DisplayBanner:    true,
+		Response:         "VeltrixProxy",
+		Multistatus:      true,
+		MultistatusPorts: "",
+		Ulimit:           65536,
 		SSH: SSHConfig{
 			Internal:     true,
 			InternalPort: 0,
@@ -295,6 +332,7 @@ func NewDefaultConfig(token string) *Config {
 			Enable:   true,
 			Tun:      "btun0",
 			Subnet:   "10.77.0.0/16",
+			Subnet6:  "fd77::/64",
 			Auth:     "shadow",
 			AuthFile: "/etc/btun/users",
 			UDPPort:  0,
