@@ -53,9 +53,12 @@ func ShowProxyMenu(cfgMgr *config.Manager) {
 		components.PrintBoxDivider(w)
 		components.PrintBoxLine(menuItem("8", i18n.T("proxy_opt_journal_logs"), ""), w)
 		components.PrintBoxLine(menuItem("9", i18n.T("proxy_opt_file_logs"), ""), w)
+		components.PrintBoxLine(menuItem("S", i18n.T("acme_title"), ""), w)
 		printMenuBack(w)
 
-		switch readMenuOption("0-9") {
+		switch readMenuOption("0-9/S") {
+		case "s":
+			withRestartPrompt(cfgMgr, func() { showManagedSSLMenu(cfgMgr) })
 		case "1":
 			addPortInteractive(cfgMgr)
 		case "2":

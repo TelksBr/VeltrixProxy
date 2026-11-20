@@ -423,3 +423,10 @@ O instalador configura o proxy como serviço gerenciado pelo `systemd`:
 
 Desenvolvido por **Telks** ([@telks13](https://github.com/telks13)).  
 Todos os direitos reservados. Distribuído sob licença comercial protegida.
+
+## SSL grátis no menu
+
+O menu VT integra a emissão HTTP-01 do ProxyVT na porta 80, com staging,
+validação antes de ativar o domínio e renovação pelo daemon. Acesso:
+**Proxy → S → SSL grátis / Let's Encrypt**. Atualize menu e proxy juntos.
+Consulte [configuração e limites](ssl-config-menu.md).

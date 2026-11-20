@@ -79,6 +79,7 @@ func (pl *PortList) UnmarshalJSON(data []byte) error {
 
 // Config representa a estrutura principal do /etc/proxyvt/config.json
 type Config struct {
+	SSL              SSLConfig    `json:"ssl"`
 	Token            string       `json:"token"`
 	Ports            PortList     `json:"ports"`
 	LogLevel         string       `json:"log_level"`
@@ -104,6 +105,14 @@ type Config struct {
 	Xray             XrayConfig   `json:"xray"`
 	UDPGW            UDPGWConfig  `json:"udpgw"`
 }
+
+type SSLConfig struct {
+	Domain    string `json:"domain"`
+	StateDir  string `json:"state_dir,omitempty"`
+	AutoRenew *bool  `json:"auto_renew,omitempty"`
+}
+
+func (c SSLConfig) RenewEnabled() bool { return c.AutoRenew == nil || *c.AutoRenew }
 
 // ParseMultistatusPorts valida e normaliza uma lista CSV de portas dedicadas ao handshake Multistatus.
 // Aceita vazio (ou "-", "off", "none") para desativar portas dedicadas.
@@ -200,14 +209,14 @@ type ZtunConfig struct {
 }
 
 const (
-	DefaultHCRMaxSessions            = 128
-	DefaultHCRMaxSourceSessions        = 128
-	DefaultHCRMaxConnections           = 2048
-	DefaultHCRPollTimeout              = 8
-	DefaultHCRIdle                     = 120
-	DefaultHCRMaxDownloadFrame         = 6144
-	DefaultHCRMaxReplayBytes           = 8 * 1024 * 1024
-	DefaultHCRSessionStatsInterval     = 10
+	DefaultHCRMaxSessions          = 128
+	DefaultHCRMaxSourceSessions    = 128
+	DefaultHCRMaxConnections       = 2048
+	DefaultHCRPollTimeout          = 8
+	DefaultHCRIdle                 = 120
+	DefaultHCRMaxDownloadFrame     = 6144
+	DefaultHCRMaxReplayBytes       = 8 * 1024 * 1024
+	DefaultHCRSessionStatsInterval = 10
 )
 
 // HCRConfig define o motor HCR / HTTP Custom Relay (header 62 B, opcodes 1..6)
@@ -302,15 +311,15 @@ func (u UDPGWConfig) PortRangeLabel() string {
 // NewDefaultConfig gera uma configuração com todos os valores padrão recomendados
 func NewDefaultConfig(token string) *Config {
 	return &Config{
-		Token:          token,
-		Ports:          PortList{"80", "443:ssl"},
-		LogLevel:       "error",
-		LogFile:        "/var/log/proxy/proxy.log",
-		BufferSize:     32768,
-		MaxConnections: 0,
-		IdleTimeout:    0,
-		WriteTimeout:   0,
-		Cert:           "",
+		Token:            token,
+		Ports:            PortList{"80", "443:ssl"},
+		LogLevel:         "error",
+		LogFile:          "/var/log/proxy/proxy.log",
+		BufferSize:       32768,
+		MaxConnections:   0,
+		IdleTimeout:      0,
+		WriteTimeout:     0,
+		Cert:             "",
 		CertInternal:     true,
 		DisplayBanner:    true,
 		Response:         "VeltrixProxy",

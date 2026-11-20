@@ -1,6 +1,30 @@
 package i18n
 
 var dictEN = map[string]string{
+	"acme_title":           "Free SSL / Let's Encrypt",
+	"acme_domain":          "Domain",
+	"acme_check":           "Check DNS and port 80",
+	"acme_issue":           "Issue and register domain",
+	"acme_staging":         "Test issuance (staging)",
+	"acme_status":          "Validity and diagnostics",
+	"acme_renew":           "Renew when due",
+	"acme_auto":            "Automatic renewal",
+	"acme_disable":         "Disable managed domain",
+	"acme_disable_confirm": "Switch to the internal certificate? It is not publicly trusted for direct connections. Managed certificates will be preserved.",
+	"acme_add80":           "Add port 80 and restart the proxy to validate the domain?",
+	"acme_port_busy":       "Port 80 belongs to another service. Free it or configure forwarding before issuance.",
+	"acme_start_proxy":     "Start the proxy to serve validation on port 80?",
+	"acme_requirements":    "The domain must reach this VPS on TCP port 80, including IPv6 when AAAA exists. HTTP-01 does not support wildcards. The CA will verify domain control.",
+	"acme_email":           "ACME account email",
+	"acme_terms":           "Accept Let's Encrypt terms? https://letsencrypt.org/repository/",
+	"acme_working":         "Processing certificate; waiting for CA validation...",
+	"acme_staging_done":    "Test issuance completed. The staging certificate was not activated and is not publicly trusted.",
+	"acme_invalid":         "The returned certificate cannot be activated.",
+	"acme_saved":           "Domain verified and saved. On leaving this menu, restart the proxy to apply. Uses existing :ssl ports and keeps port 80 HTTP. Review PCS links after renewal.",
+	"acme_check_done":      "DNS and local HTTP-01 route are ready. Domain control will only be verified by the CA during issuance.",
+	"acme_expiry":          "Expires",
+	"acme_reload_hint":     "Automatic renewal requires a running proxy and reachable port 80. TLS/HCR/H3/FinalMask: new handshakes; mKCP/Hysteria/MASQUE: core reload within 1h. External native JSON keeps its certificates.",
+
 	// Main Menu
 	"app_title":                "VELTRIX PROXY MANAGER",
 	"menu_opt_proxy":           "Proxy (Ports, Service & Logs)",

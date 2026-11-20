@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	CurrentMenuVersion = "3.0.0"
+	CurrentMenuVersion = "3.0.52"
 )
 
 const (

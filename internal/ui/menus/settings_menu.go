@@ -259,22 +259,35 @@ func showSSLSubmenu(cfgMgr *config.Manager) {
 		if certPath == "" {
 			certPath = i18n.T("ssl_none")
 		}
-		components.PrintBoxLine(menuItem("1", i18n.T("ssl_opt_internal"), featureBadge(cfg.CertInternal)), w)
+		components.PrintBoxLine(menuItem("1", i18n.T("ssl_opt_internal"), featureBadge(cfg.CertInternal && cfg.SSL.Domain == "")), w)
 		components.PrintBoxLine(menuItem("2", i18n.T("ssl_opt_external"), valueBadge(certPath)), w)
+		components.PrintBoxLine(menuItem("3", i18n.T("acme_title"), ""), w)
 		printMenuBack(w)
 
-		switch readMenuOption("0-2") {
+		switch readMenuOption("0-3") {
+		case "3":
+			showManagedSSLMenu(cfgMgr)
 		case "1":
+			if cfg.SSL.Domain != "" {
+				if components.Confirm(i18n.T("acme_disable_confirm"), false) {
+					cfg.SSL.Domain, cfg.Cert, cfg.CertInternal = "", "", true
+					saveField(cfgMgr, cfg, "ssl.domain")
+				}
+				components.Pause()
+				continue
+			}
 			applyJSONBoolToggle(cfgMgr, cfg, cfg.CertInternal, func(v bool) {
 				cfg.CertInternal = v
 				if v {
 					cfg.Cert = ""
+					cfg.SSL.Domain = ""
 				}
 			}, i18n.T("toggle_cert_internal_on"), i18n.T("toggle_cert_internal_off"), "cert_internal")
 		case "2":
 			resp := strings.TrimSpace(components.Prompt(i18n.T("ssl_prompt_external"), cfg.Cert))
 			if resp != "" {
 				cfg.Cert = resp
+				cfg.SSL.Domain = ""
 				cfg.CertInternal = false
 				saveField(cfgMgr, cfg, "cert")
 			}

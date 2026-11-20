@@ -1,6 +1,30 @@
 package i18n
 
 var dictES = map[string]string{
+	"acme_title":           "SSL gratis / Let's Encrypt",
+	"acme_domain":          "Dominio",
+	"acme_check":           "Validar DNS y puerto 80",
+	"acme_issue":           "Emitir y registrar dominio",
+	"acme_staging":         "Probar emisión (staging)",
+	"acme_status":          "Validez y diagnóstico",
+	"acme_renew":           "Renovar si corresponde",
+	"acme_auto":            "Renovación automática",
+	"acme_disable":         "Desactivar dominio gestionado",
+	"acme_disable_confirm": "¿Volver al certificado interno? No tiene confianza pública para conexiones directas. Se conservarán los certificados gestionados.",
+	"acme_add80":           "¿Agregar el puerto 80 y reiniciar el proxy para validar el dominio?",
+	"acme_port_busy":       "El puerto 80 pertenece a otro servicio. Libérelo o configure el reenvío antes de emitir.",
+	"acme_start_proxy":     "¿Iniciar el proxy para validar en el puerto 80?",
+	"acme_requirements":    "El dominio debe llegar a esta VPS por TCP 80, incluido IPv6 si hay AAAA. HTTP-01 no admite wildcard. La CA comprobará el control del dominio.",
+	"acme_email":           "Correo de la cuenta ACME",
+	"acme_terms":           "¿Acepta los términos de Let's Encrypt? https://letsencrypt.org/repository/",
+	"acme_working":         "Procesando certificado; espere la validación de la CA...",
+	"acme_staging_done":    "Emisión de prueba completada. El certificado de staging no se activó y no tiene confianza pública.",
+	"acme_invalid":         "El certificado recibido no se puede activar.",
+	"acme_saved":           "Dominio validado y guardado. Al salir de este menú, reinicie el proxy para aplicar. Usa los puertos :ssl existentes y mantiene HTTP en el 80. Revise enlaces PCS tras renovar.",
+	"acme_check_done":      "DNS y ruta local HTTP-01 listos. La CA comprobará el control del dominio durante la emisión.",
+	"acme_expiry":          "Vencimiento",
+	"acme_reload_hint":     "La renovación automática requiere el proxy activo y el puerto 80 accesible. TLS/HCR/H3/FinalMask: nuevos handshakes; mKCP/Hysteria/MASQUE: recarga del core hasta 1h. JSON nativo externo conserva sus certificados.",
+
 	// Menu Principal
 	"app_title":                "ADMINISTRADOR VELTRIX PROXY",
 	"menu_opt_proxy":           "Proxy (Puertos, Servicio & Logs)",
